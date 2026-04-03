@@ -1,0 +1,17 @@
+# Lively Wallpaper System Files
+backup/
+
+# IDE and Project Settings
+.gemini/
+.vscode/
+.idea/
+*.lnk
+*.url
+
+# OS Metadata
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+node_modules/

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LivelySam (라이블리쌤) - 교사용 대시보드</title>
+  <meta name="description" content="한국 교사를 위한 올인원 대시보드 배경화면. 시계, 시간표, 급식, 날씨, 캘린더 등 교사에게 필요한 모든 정보를 한 화면에.">
+
+  <!-- Pretendard 폰트 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+
+  <!-- Gridstack CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@7.3.0/dist/gridstack.min.css">
+
+  <!-- 앱 스타일 -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Gridstack 컨테이너 (위젯은 JS에서 동적 생성) -->
+    <div class="grid-stack"></div>
+
+    <!-- 설정 버튼 -->
+    <button id="settings-btn" title="설정 열기">⚙️</button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       설정 모달
+       ══════════════════════════════════════════════════════════════ -->
+  <div id="settings-modal">
+    <div id="settings-overlay"></div>
+    <div class="settings-container">
+      <!-- 헤더 -->
+      <div class="settings-header">
+        <h2>⚙️ 라이블리쌤 설정</h2>
+        <button id="settings-close">✕</button>
+      </div>
+
+      <!-- 탭 버튼 -->
+      <div class="settings-tabs">
+        <button class="settings-tab-btn active" data-tab="school">🏫 학교</button>
+        <button class="settings-tab-btn" data-tab="schedule">⏰ 시간표</button>
+        <button class="settings-tab-btn" data-tab="display">🎨 화면</button>
+        <button class="settings-tab-btn" data-tab="data">💾 데이터</button>
+      </div>
+
+      <!-- 탭 내용 -->
+      <div class="settings-body">
+
+        <!-- 학교 설정 탭 -->
+        <div id="settings-school" class="settings-panel active">
+          <div class="setting-group">
+            <div class="setting-group-title">🔑 API 키 설정</div>
+
+            <div class="setting-row">
+              <label class="setting-label">NEIS API 키</label>
+              <input type="text" id="neis-key-input" class="setting-input" placeholder="NEIS API 키를 입력하세요">
+            </div>
+            <div class="api-help">
+              📖 <a href="https://open.neis.go.kr" target="_blank">open.neis.go.kr</a>에서 회원가입 후 '인증키 신청'에서 발급받으세요.
+              <br>인증키 발급 시 '활용 용도'에 '개인 학습용'을 선택하세요.
+            </div>
+
+            <div class="setting-row" style="margin-top: 14px;">
+              <label class="setting-label">날씨 API 키</label>
+              <input type="text" id="weather-key-input" class="setting-input" placeholder="OpenWeatherMap API 키">
+            </div>
+            <div class="api-help">
+              📖 <a href="https://openweathermap.org/api" target="_blank">openweathermap.org</a>에서 무료 계정 생성 후 API Keys에서 확인하세요.
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">🏫 학교 검색</div>
+            <div class="school-search-row">
+              <input type="text" id="school-name-input" class="setting-input" placeholder="학교명 입력 (예: 한국고등학교)">
+              <button id="school-search-btn">🔍 검색</button>
+            </div>
+            <div id="school-info-display">학교를 검색해주세요</div>
+            <div id="school-search-results"></div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">📚 학년/반</div>
+            <div class="setting-row">
+              <label class="setting-label">학년</label>
+              <select id="grade-select" class="setting-select">
+                <option value="0">1학년</option>
+                <option value="1">2학년</option>
+                <option value="2">3학년</option>
+              </select>
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">반</label>
+              <input type="text" id="class-input" class="setting-input" value="1" placeholder="반 번호">
+            </div>
+          </div>
+        </div>
+
+        <!-- 시간표 설정 탭 -->
+        <div id="settings-schedule" class="settings-panel">
+          <div class="setting-group">
+            <div class="setting-group-title">📋 시간표 모드</div>
+            <div class="setting-row">
+              <label class="setting-label">표시 모드</label>
+              <select id="timetable-mode-select" class="setting-select">
+                <option value="0" selected>학급 시간표 (자동 연동)</option>
+                <option value="1">내 시간표 (수동 입력/교사용)</option>
+              </select>
+            </div>
+            <div class="api-help">내 시간표를 선택하면 시간표 창에서 요일별로 직접 클릭하여 과목을 고정 등록할 수 있습니다.</div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">⏰ 일과 시간 설정</div>
+            <p style="font-size: 0.8em; color: var(--text-tertiary); margin-bottom: 12px;">
+              아래 값을 입력하면 교시가 자동 계산됩니다. 계산 후 개별 수정도 가능합니다.
+            </p>
+
+            <div class="setting-row">
+              <label class="setting-label">일과 시작 시간</label>
+              <input type="time" id="start-time-input" class="setting-input" value="08:20">
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">조례 시간 (분)</label>
+              <input type="number" id="morning-min-input" class="setting-input" value="10" min="5" max="30" step="5">
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">수업 시간 (분)</label>
+              <input type="number" id="class-min-input" class="setting-input" value="50" min="40" max="60" step="5">
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">쉬는 시간 (분)</label>
+              <input type="number" id="break-min-input" class="setting-input" value="10" min="5" max="20" step="5">
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">점심 시간 (분)</label>
+              <input type="number" id="lunch-min-input" class="setting-input" value="60" min="40" max="80" step="5">
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">점심 위치</label>
+              <select id="lunch-after-select" class="setting-select">
+                <option value="0">3교시 후</option>
+                <option value="1" selected>4교시 후</option>
+                <option value="2">5교시 후</option>
+              </select>
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">정규 교시 수</label>
+              <select id="total-periods-select" class="setting-select">
+                <option value="0">6교시</option>
+                <option value="1" selected>7교시</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">📚 방과후 수업</div>
+            <div class="setting-row">
+              <div class="setting-checkbox">
+                <input type="checkbox" id="afterschool-check">
+                <label for="afterschool-check">방과후 수업 사용</label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">방과후 시간 (분)</label>
+              <input type="number" id="afterschool-min-input" class="setting-input" value="70" min="60" max="90" step="5">
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">수업 요일</label>
+              <input type="text" id="afterschool-days-input" class="setting-input" value="1,3,5" placeholder="1=월 ~ 5=금, 쉼표 구분">
+            </div>
+            <div class="api-help">예: 월/수/금 → 1,3,5 | 화/목 → 2,4</div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">📋 교시 시간표 미리보기</div>
+            <div id="period-preview"></div>
+          </div>
+        </div>
+
+        <!-- 화면 설정 탭 -->
+        <div id="settings-display" class="settings-panel">
+          <div class="setting-group">
+            <div class="setting-group-title">🎨 테마</div>
+            <div class="setting-row">
+              <label class="setting-label">테마 색상</label>
+              <select id="theme-select" class="setting-select">
+                <option value="0">🌸 벚꽃 파스텔</option>
+                <option value="1" selected>🌊 오션 브리즈</option>
+                <option value="2">🌿 민트 가든</option>
+                <option value="3">🍑 피치 코랄</option>
+                <option value="4">💜 라벤더 드림</option>
+                <option value="5">🌻 선샤인</option>
+                <option value="6">🧊 아이스 그레이</option>
+                <option value="7">🌅 선셋</option>
+              </select>
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">위젯 투명도</label>
+              <div class="setting-slider-wrap">
+                <input type="range" id="opacity-slider" class="setting-slider" min="10" max="100" step="5" value="75">
+                <span id="opacity-value" class="setting-slider-value">75%</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">글자 크기</label>
+              <div class="setting-slider-wrap">
+                <input type="range" id="fontsize-slider" class="setting-slider" min="10" max="24" step="1" value="14">
+                <span id="fontsize-value" class="setting-slider-value">14px</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">⏰ 시계 설정</div>
+            <div class="setting-row">
+              <label class="setting-label">시계 형식</label>
+              <select id="clock-format-select" class="setting-select">
+                <option value="0">12시간 (오전/오후)</option>
+                <option value="1" selected>24시간</option>
+              </select>
+            </div>
+            <div class="setting-row">
+              <div class="setting-checkbox">
+                <input type="checkbox" id="show-analog-check" checked>
+                <label for="show-analog-check">아날로그 시계 표시</label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-checkbox">
+                <input type="checkbox" id="show-seconds-check" checked>
+                <label for="show-seconds-check">초 표시</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">📐 레이아웃</div>
+            <div class="data-btn-group">
+              <button id="reset-layout-btn" class="data-btn">🔄 기본 레이아웃으로 초기화</button>
+            </div>
+            <div class="api-help">위젯을 드래그하여 위치를 변경하고, 모서리를 잡아 크기를 조절할 수 있습니다.</div>
+          </div>
+        </div>
+
+        <!-- 데이터 관리 탭 -->
+        <div id="settings-data" class="settings-panel">
+          <div class="setting-group">
+            <div class="setting-group-title">💾 데이터 백업</div>
+            <p style="font-size: 0.8em; color: var(--text-tertiary); margin-bottom: 12px;">
+              모든 설정과 데이터는 이 PC에만 저장됩니다. 정기적으로 백업하는 것을 권장합니다.
+              <br>자동 백업: 매일 1회 (최근 7일분 보관)
+            </p>
+            <div class="data-btn-group">
+              <button id="export-btn" class="data-btn">📤 데이터 내보내기 (JSON)</button>
+              <button id="import-btn" class="data-btn">📥 데이터 가져오기</button>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">ℹ️ 정보</div>
+            <p style="font-size: 0.8em; color: var(--text-secondary); line-height: 1.7;">
+              <strong>LivelySam (라이블리쌤)</strong>
+              <br>한국 교사를 위한 올인원 대시보드
+              <br>버전: 1.0.0
+              <br>라이선스: MIT 오픈소스
+              <br><br>
+              🔒 <strong>개인정보 보호</strong>: 모든 데이터는 사용자 PC에만 저장되며, 외부로 전송되지 않습니다.
+              <br>날씨 및 학교 정보는 공식 API를 통해 직접 조회됩니다.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 하단 버튼 -->
+      <div class="settings-footer">
+        <button id="settings-cancel" class="settings-footer-btn btn-secondary" onclick="document.getElementById('settings-modal').classList.remove('active')">취소</button>
+        <button id="settings-save" class="settings-footer-btn btn-primary">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       입력 공통 모달 (Custom Prompt)
+       ══════════════════════════════════════════════════════════════ -->
+  <div class="prompt-modal-overlay" id="prompt-modal">
+    <div class="prompt-modal-content">
+      <div class="prompt-modal-title" id="prompt-modal-title">입력</div>
+      <div id="prompt-modal-body" style="display:flex; flex-direction:column; gap:12px;"></div>
+      <div class="prompt-footer">
+        <button class="prompt-btn prompt-cancel" id="prompt-modal-cancel">취소</button>
+        <button class="prompt-btn prompt-confirm" id="prompt-modal-confirm">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       스크립트 로드 (순서 중요!)
+       ══════════════════════════════════════════════════════════════ -->
+  <!-- Gridstack JS & SheetJS -->
+  <script src="https://cdn.jsdelivr.net/npm/gridstack@7.3.0/dist/gridstack-all.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+  <!-- 유틸리티 (의존성 없음) -->
+  <script src="js/utils/helpers.js"></script>
+  <script src="js/utils/holidays.js"></script>
+  <script src="js/utils/storage.js"></script>
+
+  <!-- API 모듈 -->
+  <script src="js/api/neis.js"></script>
+  <script src="js/api/openweather.js"></script>
+
+  <!-- 설정 관리 -->
+  <script src="js/config.js"></script>
+
+  <!-- Lively 연동 -->
+  <script src="js/lively.js"></script>
+
+  <!-- 위젯 -->
+  <script src="js/widgets/clock.js"></script>
+  <script src="js/widgets/timetable.js"></script>
+  <script src="js/widgets/meal.js"></script>
+  <script src="js/widgets/weather.js"></script>
+  <script src="js/widgets/calendar.js"></script>
+  <script src="js/widgets/memo.js"></script>
+  <script src="js/widgets/todo.js"></script>
+  <script src="js/widgets/timer.js"></script>
+  <script src="js/widgets/dday.js"></script>
+  <script src="js/widgets/bookmarks.js"></script>
+
+  <!-- 메인 앱 (마지막 로드) -->
+  <script src="js/app.js"></script>
+</body>
+</html>
