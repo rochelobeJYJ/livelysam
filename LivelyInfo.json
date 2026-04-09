@@ -1,0 +1,11 @@
+{
+  "Title": "LivelySam (라이블리쌤)",
+  "Desc": "한국 교사를 위한 올인원 대시보드 배경화면. 시계, 시간표, 급식, 날씨, 캘린더 등 필요한 정보를 한 화면에 제공합니다.",
+  "Author": "LivelySam Project",
+  "License": "MIT",
+  "Type": "web",
+  "FileName": "index.html",
+  "Arguments": "",
+  "Contact": "https://github.com/livelysam",
+  "IsAbsolutePath": false
+}

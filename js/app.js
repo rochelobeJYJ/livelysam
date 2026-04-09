@@ -18,6 +18,14 @@
 
   LS.App = {
     grid: null,
+    _schoolResolveRequestId: 0,
+    _weatherResolveRequestId: 0,
+    _schoolResolveState: { status: 'idle', message: '' },
+    _weatherResolveState: { status: 'idle', message: '' },
+    _resolvedSchoolSignature: '',
+    _resolvedWeatherSignature: '',
+    _debouncedSchoolResolution: null,
+    _debouncedWeatherResolution: null,
 
     async init() {
       console.log('[LivelySam] 🚀 초기화 시작...');
@@ -31,6 +39,7 @@
 
       // 3. Lively 연동
       LS.Lively.init();
+      this._initEnvironment();
 
       // 4. Gridstack 레이아웃 초기화
       this._initGrid();
@@ -52,17 +61,286 @@
         if (['grade', 'classNum', 'atptCode', 'schoolCode'].includes(key) || key === '_bulk') {
           this._refreshData();
         }
+        this._handleConfigChange(key, value);
       });
+
+      this._queueSchoolResolution();
+      this._queueWeatherResolution();
+      this._refreshLivelySetupNotice();
 
       // 9. 주기적 데이터 갱신 (30분)
       setInterval(() => this._refreshData(), 30 * 60 * 1000);
 
       // 10. 첫 실행 체크
       if (!LS.Config.get('atptCode')) {
-        setTimeout(() => this._openSettings(), 500);
+        if (LS.Lively.isLively) {
+          this._refreshLivelySetupNotice();
+        } else {
+          setTimeout(() => this._openSettings(), 500);
+        }
       }
 
       console.log('[LivelySam] ✅ 초기화 완료!');
+    },
+
+    _initEnvironment() {
+      document.body.classList.toggle('lively-mode', LS.Lively.isLively);
+      document.body.classList.toggle('browser-mode', !LS.Lively.isLively);
+
+      this._debouncedSchoolResolution = LS.Helpers.debounce(() => {
+        this._resolveSchoolFromConfig();
+      }, 700);
+
+      this._debouncedWeatherResolution = LS.Helpers.debounce(() => {
+        this._resolveWeatherFromConfig();
+      }, 700);
+    },
+
+    _bulkIncludes(obj, keys) {
+      if (!obj || typeof obj !== 'object') return false;
+      return keys.some(key => Object.prototype.hasOwnProperty.call(obj, key));
+    },
+
+    _queueSchoolResolution() {
+      this._debouncedSchoolResolution?.();
+    },
+
+    _queueWeatherResolution() {
+      this._debouncedWeatherResolution?.();
+    },
+
+    _normalizeSchoolName(name) {
+      return String(name || '').replace(/\s+/g, '').toLowerCase();
+    },
+
+    _pickBestSchoolMatch(results, schoolName) {
+      const normalizedName = this._normalizeSchoolName(schoolName);
+      const exactMatches = results.filter(item => this._normalizeSchoolName(item.name) === normalizedName);
+      const currentCode = LS.Config.get('schoolCode');
+      const pool = exactMatches.length > 0 ? exactMatches : results;
+      const selected = pool.find(item => item.schoolCode === currentCode) || pool[0];
+
+      return {
+        school: selected,
+        ambiguousCount: pool.length > 1 ? pool.length : 0
+      };
+    },
+
+    _handleConfigChange(key, value) {
+      const shouldResolveSchool = key === '_bulk'
+        ? this._bulkIncludes(value, ['schoolName', 'neisApiKey']) &&
+          !this._bulkIncludes(value, ['schoolCode', 'atptCode'])
+        : ['schoolName', 'neisApiKey'].includes(key);
+
+      const shouldResolveWeather = key === '_bulk'
+        ? this._bulkIncludes(value, ['weatherApiKey', 'schoolAddress']) &&
+          !this._bulkIncludes(value, ['weatherLat', 'weatherLon'])
+        : ['weatherApiKey', 'schoolAddress'].includes(key);
+
+      if (shouldResolveSchool) {
+        this._resolvedSchoolSignature = '';
+        this._queueSchoolResolution();
+      }
+
+      if (shouldResolveWeather) {
+        this._resolvedWeatherSignature = '';
+        this._queueWeatherResolution();
+      }
+
+      this._refreshLivelySetupNotice();
+    },
+
+    async _resolveSchoolFromConfig() {
+      const schoolName = (LS.Config.get('schoolName') || '').trim();
+      const neisApiKey = (LS.Config.get('neisApiKey') || '').trim();
+      const currentAtptCode = LS.Config.get('atptCode') || '';
+      const currentSchoolCode = LS.Config.get('schoolCode') || '';
+      const currentSignature = `${this._normalizeSchoolName(schoolName)}|${currentAtptCode}|${currentSchoolCode}|${neisApiKey}`;
+
+      if (!schoolName || !neisApiKey) {
+        this._schoolResolveState = { status: 'idle', message: '' };
+        this._refreshLivelySetupNotice();
+        return;
+      }
+
+      if (currentAtptCode && currentSchoolCode && currentSignature === this._resolvedSchoolSignature) {
+        return;
+      }
+
+      const requestId = ++this._schoolResolveRequestId;
+      this._schoolResolveState = { status: 'loading', message: '학교 정보를 확인하는 중입니다.' };
+      this._refreshLivelySetupNotice();
+      LS.NeisAPI.setApiKey(neisApiKey);
+
+      try {
+        const results = await LS.NeisAPI.searchSchool(schoolName);
+        if (requestId !== this._schoolResolveRequestId) return;
+
+        if (!results.length) {
+          this._schoolResolveState = {
+            status: 'error',
+            message: '학교를 찾지 못했습니다. 학교명을 조금 더 정확하게 입력해주세요.'
+          };
+          this._refreshLivelySetupNotice();
+          return;
+        }
+
+        const { school, ambiguousCount } = this._pickBestSchoolMatch(results, schoolName);
+        const nextConfig = {
+          schoolName: school.name,
+          atptCode: school.atptCode,
+          schoolCode: school.schoolCode,
+          schoolAddress: school.address
+        };
+        const changed = nextConfig.schoolName !== LS.Config.get('schoolName') ||
+          nextConfig.atptCode !== currentAtptCode ||
+          nextConfig.schoolCode !== currentSchoolCode ||
+          nextConfig.schoolAddress !== LS.Config.get('schoolAddress');
+
+        this._resolvedSchoolSignature = `${this._normalizeSchoolName(nextConfig.schoolName)}|${nextConfig.atptCode}|${nextConfig.schoolCode}|${neisApiKey}`;
+        this._schoolResolveState = ambiguousCount > 1
+          ? {
+              status: 'warning',
+              message: `같은 이름의 학교 ${ambiguousCount}개 중 첫 번째 결과(${school.region})를 적용했습니다.`
+            }
+          : {
+              status: 'ready',
+              message: `${school.region} ${school.name}와 연결되었습니다.`
+            };
+
+        if (changed) {
+          LS.Config.setMultiple(nextConfig);
+        } else {
+          this._refreshLivelySetupNotice();
+        }
+      } catch (e) {
+        console.error('[LivelySam] 학교 자동 설정 실패:', e);
+        if (requestId !== this._schoolResolveRequestId) return;
+        this._schoolResolveState = {
+          status: 'error',
+          message: '학교 정보를 가져오지 못했습니다. NEIS API 키를 확인해주세요.'
+        };
+        this._refreshLivelySetupNotice();
+      }
+    },
+
+    async _resolveWeatherFromConfig() {
+      const weatherApiKey = (LS.Config.get('weatherApiKey') || '').trim();
+      const schoolAddress = (LS.Config.get('schoolAddress') || '').trim();
+      const currentLat = LS.Config.get('weatherLat');
+      const currentLon = LS.Config.get('weatherLon');
+      const currentSignature = `${weatherApiKey}|${schoolAddress}|${currentLat}|${currentLon}`;
+
+      if (!weatherApiKey || !schoolAddress) {
+        this._weatherResolveState = { status: 'idle', message: '' };
+        this._refreshLivelySetupNotice();
+        return;
+      }
+
+      if (currentLat !== null && currentLon !== null && currentSignature === this._resolvedWeatherSignature) {
+        return;
+      }
+
+      const requestId = ++this._weatherResolveRequestId;
+      this._weatherResolveState = { status: 'loading', message: '날씨 위치를 확인하는 중입니다.' };
+      this._refreshLivelySetupNotice();
+      LS.WeatherAPI.setApiKey(weatherApiKey);
+
+      try {
+        const location = await LS.WeatherAPI.geocode(schoolAddress);
+        if (requestId !== this._weatherResolveRequestId) return;
+
+        if (!location) {
+          this._weatherResolveState = {
+            status: 'error',
+            message: '학교 주소로 날씨 위치를 찾지 못했습니다. 날씨 API 키를 확인해주세요.'
+          };
+          this._refreshLivelySetupNotice();
+          return;
+        }
+
+        const changed = location.lat !== currentLat || location.lon !== currentLon;
+        this._resolvedWeatherSignature = `${weatherApiKey}|${schoolAddress}|${location.lat}|${location.lon}`;
+        this._weatherResolveState = {
+          status: 'ready',
+          message: `${location.name || '학교 주소'} 기준으로 날씨 위치를 설정했습니다.`
+        };
+
+        if (changed) {
+          LS.Config.setMultiple({ weatherLat: location.lat, weatherLon: location.lon });
+        } else {
+          this._refreshLivelySetupNotice();
+        }
+      } catch (e) {
+        console.error('[LivelySam] 날씨 위치 자동 설정 실패:', e);
+        if (requestId !== this._weatherResolveRequestId) return;
+        this._weatherResolveState = {
+          status: 'error',
+          message: '날씨 위치를 가져오지 못했습니다. OpenWeatherMap API 키를 확인해주세요.'
+        };
+        this._refreshLivelySetupNotice();
+      }
+    },
+
+    _refreshLivelySetupNotice() {
+      const noticeEl = document.getElementById('lively-setup-notice');
+      const textEl = document.getElementById('lively-setup-text');
+      if (!noticeEl || !textEl) return;
+
+      if (!LS.Lively.isLively) {
+        noticeEl.hidden = true;
+        return;
+      }
+
+      const schoolName = (LS.Config.get('schoolName') || '').trim();
+      const neisApiKey = (LS.Config.get('neisApiKey') || '').trim();
+      const hasSchoolCode = Boolean(LS.Config.get('atptCode') && LS.Config.get('schoolCode'));
+      const weatherApiKey = (LS.Config.get('weatherApiKey') || '').trim();
+      const hasWeatherLocation = LS.Config.get('weatherLat') !== null && LS.Config.get('weatherLon') !== null;
+      const lines = ['설정은 Lively의 Customize 패널에서 변경하세요.'];
+      let tone = 'info';
+
+      if (!neisApiKey) {
+        tone = 'error';
+        lines.push('NEIS API 키를 입력하면 학교 데이터를 불러올 수 있습니다.');
+      } else if (!schoolName) {
+        tone = 'error';
+        lines.push('학교명을 입력하면 학교 코드가 자동으로 연결됩니다.');
+      } else if (!hasSchoolCode) {
+        tone = this._schoolResolveState.status === 'error' ? 'error' : 'info';
+        lines.push(this._schoolResolveState.message || '학교 정보를 찾는 중입니다.');
+      } else if (this._schoolResolveState.status === 'warning') {
+        tone = 'warning';
+        lines.push(this._schoolResolveState.message);
+      } else {
+        lines.push(`${LS.Config.get('schoolName')} 연결이 완료되었습니다.`);
+      }
+
+      if (weatherApiKey) {
+        if (hasWeatherLocation) {
+          lines.push('날씨 위치 설정이 완료되었습니다.');
+        } else {
+          if (tone === 'info' && this._weatherResolveState.status === 'error') {
+            tone = 'warning';
+          }
+          lines.push(this._weatherResolveState.message || '날씨 위치를 찾는 중입니다.');
+        }
+      }
+
+      const shouldShow = !hasSchoolCode ||
+        this._schoolResolveState.status === 'loading' ||
+        this._schoolResolveState.status === 'error' ||
+        this._schoolResolveState.status === 'warning' ||
+        (Boolean(weatherApiKey) && !hasWeatherLocation);
+
+      if (!shouldShow) {
+        noticeEl.hidden = true;
+        return;
+      }
+
+      noticeEl.hidden = false;
+      noticeEl.className = `lively-setup-notice is-${tone}`;
+      textEl.innerHTML = lines.map(line => `<div>${LS.Helpers.escapeHtml(line)}</div>`).join('');
     },
 
     _initGrid() {
@@ -427,20 +705,42 @@
           item.addEventListener('click', () => {
             const idx = parseInt(item.dataset.index);
             const school = results[idx];
+            const neisApiKey = document.getElementById('neis-key-input')?.value?.trim() || '';
+            const weatherApiKey = document.getElementById('weather-key-input')?.value?.trim() || '';
             LS.Config.setMultiple({
               schoolName: school.name,
               atptCode: school.atptCode,
               schoolCode: school.schoolCode,
               schoolAddress: school.address
             });
+            this._resolvedSchoolSignature =
+              `${this._normalizeSchoolName(school.name)}|${school.atptCode}|${school.schoolCode}|${neisApiKey}`;
+            this._schoolResolveState = {
+              status: 'ready',
+              message: `${school.region} ${school.name}와 연결되었습니다.`
+            };
 
             // 날씨 좌표 설정
-            if (school.address) {
+            if (school.address && weatherApiKey) {
+              LS.WeatherAPI.setApiKey(weatherApiKey);
               LS.WeatherAPI.geocode(school.address).then(loc => {
                 if (loc) {
                   LS.Config.setMultiple({ weatherLat: loc.lat, weatherLon: loc.lon });
+                  this._resolvedWeatherSignature = `${weatherApiKey}|${school.address}|${loc.lat}|${loc.lon}`;
+                  this._weatherResolveState = {
+                    status: 'ready',
+                    message: `${loc.name || '학교 주소'} 기준으로 날씨 위치를 설정했습니다.`
+                  };
+                } else {
+                  this._weatherResolveState = {
+                    status: 'error',
+                    message: '학교 주소로 날씨 위치를 찾지 못했습니다.'
+                  };
                 }
+                this._refreshLivelySetupNotice();
               });
+            } else {
+              this._weatherResolveState = { status: 'idle', message: '' };
             }
 
             // UI 갱신
@@ -452,8 +752,7 @@
             resultBox.innerHTML = '';
             input.value = school.name;
 
-            // 데이터 즉시 로드
-            this._refreshData();
+            this._refreshLivelySetupNotice();
           });
         });
       } catch (e) {

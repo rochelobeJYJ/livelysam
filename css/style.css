@@ -91,6 +91,54 @@ body {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
 }
 
+body.lively-mode #settings-btn {
+  display: none;
+}
+
+.lively-setup-notice {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.14);
+  z-index: 998;
+  pointer-events: none;
+}
+
+.lively-setup-notice.is-info {
+  border-color: rgba(77, 171, 247, 0.35);
+}
+
+.lively-setup-notice.is-warning {
+  border-color: rgba(252, 196, 25, 0.45);
+}
+
+.lively-setup-notice.is-error {
+  border-color: rgba(245, 101, 101, 0.4);
+}
+
+.lively-setup-title {
+  font-size: 0.92em;
+  font-weight: 700;
+  color: var(--theme-accent);
+  margin-bottom: 6px;
+}
+
+.lively-setup-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8em;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 /* ── Gridstack 오버라이드 ── */
 .grid-stack {
   min-height: 100vh;
@@ -1549,4 +1597,3 @@ textarea.prompt-input { resize: vertical; min-height: 80px; }
 .prompt-cancel:hover { background: rgba(0,0,0,0.1); }
 .prompt-confirm { background: var(--theme-primary); color: white; }
 .prompt-confirm:hover { background: var(--theme-accent); }
-

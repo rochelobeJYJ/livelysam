@@ -7,10 +7,10 @@
     isLively: false,
 
     init() {
-      // Lively 환경 감지
-      this.isLively = typeof livelyPropertyListener !== 'undefined' ||
-        window.location.protocol === 'file:' ||
-        navigator.userAgent.includes('Lively');
+      // Lively WebView는 사용자 에이전트에 Lively 문자열을 포함한다.
+      this.isLively = /lively/i.test(navigator.userAgent);
+      document.body.classList.toggle('lively-mode', this.isLively);
+      document.body.classList.toggle('browser-mode', !this.isLively);
     }
   };
 
