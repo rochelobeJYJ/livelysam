@@ -43,7 +43,7 @@
         this._currentMonth = now.getMonth() + 1;
         this.loadSchedule().then(() => this.render());
       });
-      document.getElementById('cal-add-event')?.addEventListener('click', () => this._showAddEventModal());
+      document.getElementById('cal-add-event')?.addEventListener('click', () => this._openEventModal());
     },
 
     _navigate(dir) {
@@ -205,7 +205,31 @@
     },
 
     _onDateClick(dateStr) {
-      this._showAddEventModal(dateStr);
+      this._openEventModal(dateStr);
+    },
+
+    async _openEventModal(prefillDate) {
+      const date = prefillDate || LS.Helpers.formatDate(new Date(), 'YYYY-MM-DD');
+      const result = await LS.Helpers.promptModal('일정 추가', [
+        { id: 'name', type: 'text', label: `${date} 일정명`, placeholder: '예: 학년 회의' }
+      ], {
+        confirmText: '추가'
+      });
+
+      const name = result?.name?.trim();
+      if (!name) return;
+
+      const event = {
+        id: LS.Helpers.generateId(),
+        date,
+        name,
+        createdAt: new Date().toISOString()
+      };
+
+      this._customEvents.push(event);
+      LS.Storage.set('customScheduleEvents', this._customEvents);
+      this.render();
+      LS.Helpers.showToast('일정을 추가했습니다.', 'success');
     },
 
     _showAddEventModal(prefillDate) {

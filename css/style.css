@@ -51,6 +51,16 @@ body {
   background: var(--theme-bg-tint);
 }
 
+body.modal-open .app-container {
+  pointer-events: none;
+}
+
+body.modal-open #settings-modal,
+body.modal-open #prompt-modal,
+body.modal-open .ls-toast-wrap {
+  pointer-events: auto;
+}
+
 /* ── 스크롤바 커스텀 ── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -89,10 +99,6 @@ body {
 #settings-btn:hover {
   transform: rotate(90deg) scale(1.1);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-}
-
-body.lively-mode #settings-btn {
-  display: none;
 }
 
 .lively-setup-notice {
@@ -1095,18 +1101,32 @@ body.lively-mode #settings-btn {
 }
 
 .bm-item {
+  width: 88px;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bm-link {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
   border-radius: 10px;
   text-decoration: none;
   color: var(--text-primary);
   transition: background var(--transition-fast), transform var(--transition-fast);
   min-width: 60px;
+  cursor: pointer;
 }
-.bm-item:hover {
+.bm-link:hover {
   background: rgba(0, 0, 0, 0.04);
   transform: translateY(-2px);
 }
@@ -1119,6 +1139,30 @@ body.lively-mode #settings-btn {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.bm-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.bm-action-btn {
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.65em;
+  font-family: var(--font-family);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.bm-action-btn:hover {
+  background: var(--theme-primary);
+  color: white;
 }
 
 /* ================================================================
@@ -1149,9 +1193,9 @@ body.lively-mode #settings-btn {
 
 .settings-container {
   position: relative;
-  width: 720px;
-  max-width: 90%;
-  max-height: 85vh;
+  width: min(720px, calc(100vw - 32px));
+  height: min(85vh, 860px);
+  min-height: 0;
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(20px);
   border-radius: 20px;
@@ -1193,6 +1237,7 @@ body.lively-mode #settings-btn {
   display: flex;
   padding: 0 24px;
   gap: 4px;
+  flex-wrap: wrap;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 .settings-tab-btn {
@@ -1216,11 +1261,25 @@ body.lively-mode #settings-btn {
 .settings-body {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
   padding: 20px 24px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .settings-panel { display: none; }
 .settings-panel.active { display: block; }
+
+.settings-runtime-tip {
+  margin: 0 24px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(77, 171, 247, 0.1);
+  color: var(--text-secondary);
+  font-size: 0.78em;
+  line-height: 1.5;
+}
 
 .setting-group {
   margin-bottom: 20px;
@@ -1268,6 +1327,16 @@ body.lively-mode #settings-btn {
   outline: none;
   background: white;
   cursor: pointer;
+}
+
+.setting-input,
+.setting-select,
+.prompt-input,
+textarea,
+input,
+select {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .setting-checkbox {
@@ -1578,8 +1647,16 @@ body.lively-mode #settings-btn {
   background: var(--widget-bg); width: 320px;
   border-radius: var(--widget-radius); box-shadow: var(--widget-shadow);
   padding: 20px; display: flex; flex-direction: column; gap: 12px;
+  max-width: calc(100vw - 32px);
+  max-height: min(80vh, 680px);
+  overflow-y: auto;
 }
 .prompt-modal-title { font-size: 1.1em; font-weight: 700; color: var(--theme-accent); margin-bottom: 8px;}
+.prompt-message {
+  font-size: 0.85em;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
 .prompt-input-row { display: flex; flex-direction: column; gap: 4px; }
 .prompt-label { font-size: 0.85em; color: var(--text-secondary); font-weight: 600; }
 .prompt-input {
@@ -1597,3 +1674,32 @@ textarea.prompt-input { resize: vertical; min-height: 80px; }
 .prompt-cancel:hover { background: rgba(0,0,0,0.1); }
 .prompt-confirm { background: var(--theme-primary); color: white; }
 .prompt-confirm:hover { background: var(--theme-accent); }
+
+.ls-toast-wrap {
+  position: fixed;
+  right: 16px;
+  bottom: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 11000;
+  pointer-events: none;
+}
+
+.ls-toast {
+  min-width: 240px;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.14);
+  color: var(--text-primary);
+  font-size: 0.82em;
+  line-height: 1.5;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.ls-toast.is-success { border-color: rgba(46, 204, 113, 0.35); }
+.ls-toast.is-error { border-color: rgba(245, 101, 101, 0.35); }
+.ls-toast.is-warning { border-color: rgba(252, 196, 25, 0.4); }

@@ -221,6 +221,16 @@
           message: '학교 정보를 가져오지 못했습니다. NEIS API 키를 확인해주세요.'
         };
         this._refreshLivelySetupNotice();
+        return;
+        LS.Helpers.showToast(`내보내기 실패: ${e.message}`, 'error', 3200);
+        return;
+        console.error('[LivelySam] 학교 자동 설정 실패:', e);
+        if (requestId !== this._schoolResolveRequestId) return;
+        this._schoolResolveState = {
+          status: 'error',
+          message: '학교 정보를 가져오지 못했습니다. NEIS API 키를 확인해주세요.'
+        };
+        this._refreshLivelySetupNotice();
       }
     },
 
@@ -549,48 +559,90 @@
 
     /* ── 설정 모달 ── */
     _initSettingsModal() {
-      // 설정 버튼
       document.getElementById('settings-btn')?.addEventListener('click', () => this._openSettings());
       document.getElementById('settings-close')?.addEventListener('click', () => this._closeSettings());
+      document.getElementById('settings-cancel')?.addEventListener('click', () => this._closeSettings());
       document.getElementById('settings-overlay')?.addEventListener('click', () => this._closeSettings());
 
-      // 탭 전환
-      document.querySelectorAll('.settings-tab-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active'));
-          document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
-          e.target.classList.add('active');
-          document.getElementById('settings-' + e.target.dataset.tab)?.classList.add('active');
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && document.getElementById('settings-modal')?.classList.contains('active')) {
+          this._closeSettings();
+        }
+      });
+
+      document.querySelectorAll('.settings-tab-btn').forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+          const target = event.currentTarget;
+          document.querySelectorAll('.settings-tab-btn').forEach((item) => item.classList.remove('active'));
+          document.querySelectorAll('.settings-panel').forEach((panel) => panel.classList.remove('active'));
+          target.classList.add('active');
+          document.getElementById('settings-' + target.dataset.tab)?.classList.add('active');
+          document.querySelector('.settings-body')?.scrollTo({ top: 0, behavior: 'smooth' });
         });
       });
 
-      // 학교 검색
       document.getElementById('school-search-btn')?.addEventListener('click', () => this._searchSchool());
-      document.getElementById('school-name-input')?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') this._searchSchool();
+      document.getElementById('school-name-input')?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') this._searchSchool();
       });
 
-      // 설정 저장
       document.getElementById('settings-save')?.addEventListener('click', () => this._saveSettings());
-
-      // 레이아웃 초기화
       document.getElementById('reset-layout-btn')?.addEventListener('click', () => this.resetLayout());
-
-      // 데이터 관리
       document.getElementById('export-btn')?.addEventListener('click', () => this._exportData());
       document.getElementById('import-btn')?.addEventListener('click', () => this._importData());
 
-      // 설정 모달 값 채우기
+      this._bindSettingsBodyScroll();
       this._populateSettingsForm();
     },
 
     _openSettings() {
+      document.body.classList.add('modal-open', 'settings-open');
       document.getElementById('settings-modal')?.classList.add('active');
       this._populateSettingsForm();
+      document.querySelector('.settings-body')?.scrollTo({ top: 0, behavior: 'auto' });
     },
 
     _closeSettings() {
+      document.body.classList.remove('settings-open');
+      if (!document.getElementById('prompt-modal')?.classList.contains('active')) {
+        document.body.classList.remove('modal-open');
+      }
       document.getElementById('settings-modal')?.classList.remove('active');
+    },
+
+    _bindSettingsBodyScroll() {
+      const body = document.querySelector('.settings-body');
+      if (!body || body.dataset.scrollBound === 'true') return;
+
+      body.dataset.scrollBound = 'true';
+      body.addEventListener('wheel', (event) => {
+        const delta = event.deltaY;
+        if (Math.abs(delta) < 1) return;
+
+        const maxScroll = body.scrollHeight - body.clientHeight;
+        if (maxScroll <= 0) return;
+
+        const prevTop = body.scrollTop;
+        body.scrollTop += delta;
+        if (body.scrollTop !== prevTop) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }, { passive: false });
+    },
+
+    _updateSettingsRuntimeTip() {
+      const tipEl = document.getElementById('settings-runtime-tip');
+      if (!tipEl) return;
+
+      if (!LS.Lively.isLively) {
+        tipEl.hidden = true;
+        tipEl.textContent = '';
+        return;
+      }
+
+      tipEl.hidden = false;
+      tipEl.textContent = 'Lively에서 텍스트 입력이 안 되면 Lively Settings > Wallpaper > Interaction > Wallpaper Input > Keyboard를 켜주세요. 데이터 백업/복원은 파일 대신 모달에서 JSON 복사/붙여넣기로 동작합니다.';
     },
 
     _populateSettingsForm() {
@@ -649,6 +701,8 @@
         }
       }
 
+      this._updateSettingsRuntimeTip();
+
       // 교시 시간표 미리보기
       this._renderPeriodPreview();
     },
@@ -676,9 +730,17 @@
       if (!input || !resultBox) return;
 
       const name = input.value.trim();
+      if (!name) {
+        LS.Helpers.showToast('학교명을 입력해주세요.', 'warning');
+        return;
+      }
       if (!name) { alert('학교명을 입력해주세요.'); return; }
 
       const apiKey = document.getElementById('neis-key-input')?.value?.trim();
+      if (!apiKey) {
+        LS.Helpers.showToast('NEIS API 키를 먼저 입력해주세요.', 'warning');
+        return;
+      }
       if (!apiKey) { alert('NEIS API 키를 먼저 입력해주세요.'); return; }
 
       LS.NeisAPI.setApiKey(apiKey);
@@ -801,17 +863,77 @@
     },
 
     async _exportData() {
+      const alert = (message) => {
+        const text = String(message || '').replace(/^[^\p{L}\p{N}]+/u, '');
+        const tone = /실패|error/i.test(String(message || '')) ? 'error' : 'success';
+        LS.Helpers.showToast(text, tone, 3200);
+      };
+
       try {
         const data = await LS.Storage.exportAll();
+        if (LS.Lively.isLively) {
+          await LS.Helpers.promptModal('데이터 백업', [
+            {
+              id: 'json',
+              type: 'textarea',
+              label: '백업 JSON',
+              value: JSON.stringify(data, null, 2),
+              readonly: true,
+              rows: 14
+            }
+          ], {
+            message: 'Lively에서는 파일 다운로드 대신 JSON 복사 방식이 더 안정적입니다.',
+            confirmText: '닫기',
+            showCancel: false
+          });
+          LS.Helpers.showToast('백업 JSON을 열었습니다.', 'success');
+          return;
+        }
         const filename = `LivelySam_backup_${LS.Helpers.formatDate(new Date(), 'YYYY-MM-DD')}.json`;
         LS.Storage.downloadJSON(data, filename);
+        LS.Helpers.showToast('데이터를 내보냈습니다.', 'success');
+        return;
         alert('✅ 데이터가 내보내졌습니다.');
       } catch (e) {
         alert('❌ 내보내기 실패: ' + e.message);
       }
     },
 
-    _importData() {
+    async _importData() {
+      const alert = (message) => {
+        const text = String(message || '').replace(/^[^\p{L}\p{N}]+/u, '');
+        const tone = /실패|error/i.test(String(message || '')) ? 'error' : 'success';
+        LS.Helpers.showToast(text, tone, 3200);
+      };
+
+      if (LS.Lively.isLively) {
+        const result = await LS.Helpers.promptModal('데이터 가져오기', [
+          {
+            id: 'json',
+            type: 'textarea',
+            label: '백업 JSON 붙여넣기',
+            placeholder: '{ ... }',
+            rows: 14
+          }
+        ], {
+          message: '백업 JSON 전체를 붙여넣으면 현재 데이터 위에 복원합니다.',
+          confirmText: '가져오기'
+        });
+
+        if (!result?.json?.trim()) return;
+
+        try {
+          await LS.Storage.importAll(JSON.parse(result.json));
+          LS.Helpers.showToast('데이터를 가져왔습니다. 레이아웃을 새로고침합니다.', 'success', 3200);
+          location.reload();
+        } catch (err) {
+          LS.Helpers.showToast(`가져오기 실패: ${err.message}`, 'error', 3200);
+          return;
+          LS.Helpers.showToast(`가져오기 실패: ${err.message}`, 'error', 3200);
+        }
+        return;
+      }
+
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.json';
@@ -822,6 +944,9 @@
           const text = await file.text();
           const data = JSON.parse(text);
           await LS.Storage.importAll(data);
+          LS.Helpers.showToast('데이터를 가져왔습니다. 페이지를 새로고침합니다.', 'success', 3200);
+          location.reload();
+          return;
           alert('✅ 데이터가 가져와졌습니다. 페이지를 새로고침합니다.');
           location.reload();
         } catch (err) {

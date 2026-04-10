@@ -24,7 +24,7 @@
       document.getElementById('timer-start')?.addEventListener('click', () => this.toggle());
       document.getElementById('timer-reset')?.addEventListener('click', () => this.reset());
       document.getElementById('timer-mode-btn')?.addEventListener('click', () => this.switchMode());
-      document.getElementById('timer-set')?.addEventListener('click', () => this.setTimer());
+      document.getElementById('timer-set')?.addEventListener('click', () => this.openTimerSetup());
     },
 
     toggle() {
@@ -37,7 +37,7 @@
 
     start() {
       if (this._mode === 'timer' && this._seconds <= 0) {
-        this.setTimer();
+        this.openTimerSetup();
         return;
       }
       this._running = true;
@@ -63,6 +63,22 @@
         this._totalSeconds = 0;
       }
       this._updateDisplay();
+    },
+
+    async openTimerSetup() {
+      const result = await LS.Helpers.promptModal('타이머 설정', [
+        { id: 'minutes', type: 'number', label: '분 단위 시간', value: '50', min: 1, max: 999, step: 1 }
+      ], {
+        confirmText: '설정'
+      });
+
+      const minutes = parseInt(result?.minutes, 10);
+      if (!minutes || Number.isNaN(minutes) || minutes <= 0) return;
+
+      this._seconds = minutes * 60;
+      this._totalSeconds = minutes * 60;
+      this._updateDisplay();
+      LS.Helpers.showToast('타이머 시간을 설정했습니다.', 'success');
     },
 
     setTimer() {

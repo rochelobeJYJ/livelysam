@@ -16,6 +16,9 @@
 
   /* ── Lively 속성 변경 리스너 (전역 함수) ── */
   window.livelyPropertyListener = function (name, val) {
+    LS.Lively.isLively = true;
+    document.body.classList.add('lively-mode');
+    document.body.classList.remove('browser-mode');
     console.log(`[Lively] 속성 변경: ${name} = ${val}`);
 
     const config = LS.Config;

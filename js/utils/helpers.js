@@ -283,7 +283,7 @@
     },
 
     /* ── 공통 입력 모달 (Promise) ── */
-    promptModal(title, fields) {
+    promptModal(title, fields = [], options = {}) {
       return new Promise((resolve) => {
         const overlay = document.getElementById('prompt-modal');
         const titleEl = document.getElementById('prompt-modal-title');
@@ -291,17 +291,29 @@
         const btnConfirm = document.getElementById('prompt-modal-confirm');
         const btnCancel = document.getElementById('prompt-modal-cancel');
 
-        if (!overlay || !bodyEl) { resolve(null); return; }
+        if (!overlay || !bodyEl || !titleEl || !btnConfirm || !btnCancel) {
+          resolve(null);
+          return;
+        }
 
         titleEl.textContent = title;
         bodyEl.innerHTML = '';
-        
-        const inputs = {};
+        btnConfirm.textContent = options.confirmText || '확인';
+        btnCancel.textContent = options.cancelText || '취소';
+        btnCancel.style.display = options.showCancel === false ? 'none' : '';
 
-        fields.forEach(f => {
+        if (options.message) {
+          const messageEl = document.createElement('div');
+          messageEl.className = 'prompt-message';
+          messageEl.textContent = options.message;
+          bodyEl.appendChild(messageEl);
+        }
+
+        const inputs = {};
+        fields.forEach((f) => {
           const row = document.createElement('div');
           row.className = 'prompt-input-row';
-          
+
           if (f.label) {
             const label = document.createElement('label');
             label.className = 'prompt-label';
@@ -312,21 +324,28 @@
           let el;
           if (f.type === 'textarea') {
             el = document.createElement('textarea');
-            if (f.value) el.value = f.value;
+            if (f.rows) el.rows = f.rows;
           } else if (f.type === 'select') {
             el = document.createElement('select');
-            f.options.forEach(opt => {
-              const o = document.createElement('option');
-              o.value = opt.value; o.textContent = opt.text;
-              if (String(f.value) === String(opt.value)) o.selected = true;
-              el.appendChild(o);
+            (f.options || []).forEach((opt) => {
+              const optionEl = document.createElement('option');
+              optionEl.value = opt.value;
+              optionEl.textContent = opt.text;
+              if (String(f.value) === String(opt.value)) optionEl.selected = true;
+              el.appendChild(optionEl);
             });
           } else {
             el = document.createElement('input');
             el.type = f.type || 'text';
-            if (f.value) el.value = f.value;
-            if (f.placeholder) el.placeholder = f.placeholder;
           }
+
+          if (f.value !== undefined && f.value !== null) el.value = f.value;
+          if (f.placeholder) el.placeholder = f.placeholder;
+          if (f.min !== undefined) el.min = f.min;
+          if (f.max !== undefined) el.max = f.max;
+          if (f.step !== undefined) el.step = f.step;
+          if (f.readonly) el.readOnly = true;
+
           el.className = 'prompt-input';
           el.id = 'prompt-input-' + f.id;
           row.appendChild(el);
@@ -334,25 +353,113 @@
           inputs[f.id] = el;
         });
 
-        const closeAll = () => {
+        let settled = false;
+
+        const cleanup = () => {
           overlay.classList.remove('active');
+          const settingsActive = document.getElementById('settings-modal')?.classList.contains('active');
+          document.body.classList.remove('prompt-open');
+          document.body.classList.toggle('settings-open', Boolean(settingsActive));
+          document.body.classList.toggle('modal-open', Boolean(settingsActive));
+          overlay.removeEventListener('click', handleOverlayClick);
+          document.removeEventListener('keydown', handleKeydown);
           btnConfirm.onclick = null;
           btnCancel.onclick = null;
+          btnCancel.style.display = '';
         };
 
-        btnCancel.onclick = () => { closeAll(); resolve(null); };
+        const finish = (value) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(value);
+        };
+
+        const handleOverlayClick = (event) => {
+          if (event.target === overlay && options.showCancel !== false) {
+            finish(null);
+          }
+        };
+
+        const handleKeydown = (event) => {
+          if (!overlay.classList.contains('active')) return;
+          if (event.key === 'Escape' && options.showCancel !== false) {
+            event.preventDefault();
+            finish(null);
+            return;
+          }
+
+          if (event.key === 'Enter' && fields.length <= 1) {
+            const activeEl = document.activeElement;
+            if (activeEl?.tagName !== 'TEXTAREA') {
+              event.preventDefault();
+              btnConfirm.click();
+            }
+          }
+        };
+
+        btnCancel.onclick = () => finish(null);
         btnConfirm.onclick = () => {
           const result = {};
-          fields.forEach(f => { result[f.id] = inputs[f.id].value; });
-          closeAll();
-          resolve(result);
+          fields.forEach((f) => {
+            result[f.id] = inputs[f.id]?.value ?? '';
+          });
+          finish(result);
         };
 
+        overlay.addEventListener('click', handleOverlayClick);
+        document.addEventListener('keydown', handleKeydown);
+        document.body.classList.add('modal-open', 'prompt-open');
         overlay.classList.add('active');
-        if (fields.length > 0) {
-          inputs[fields[0].id].focus();
+
+        const firstField = fields[0] ? inputs[fields[0].id] : null;
+        if (firstField) {
+          firstField.focus();
+          if (typeof firstField.select === 'function' && !firstField.readOnly) {
+            firstField.select();
+          }
+        } else {
+          btnConfirm.focus();
         }
       });
+    },
+
+    async confirmModal(title, message, options = {}) {
+      const result = await this.promptModal(title, [], {
+        message,
+        confirmText: options.confirmText || '확인',
+        cancelText: options.cancelText || '취소'
+      });
+      return result !== null;
+    },
+
+    alertModal(title, message, options = {}) {
+      return this.promptModal(title, [], {
+        message,
+        confirmText: options.confirmText || '확인',
+        showCancel: false
+      });
+    },
+
+    showToast(message, tone = 'info', duration = 2600) {
+      let wrap = document.querySelector('.ls-toast-wrap');
+      if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.className = 'ls-toast-wrap';
+        document.body.appendChild(wrap);
+      }
+
+      const toast = document.createElement('div');
+      toast.className = `ls-toast is-${tone}`;
+      toast.textContent = message;
+      wrap.appendChild(toast);
+
+      window.setTimeout(() => {
+        toast.remove();
+        if (!wrap.children.length) {
+          wrap.remove();
+        }
+      }, duration);
     }
   };
 })();
