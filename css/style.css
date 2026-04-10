@@ -1279,11 +1279,11 @@ body.modal-open .ls-toast-wrap {
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 .settings-tab-btn {
-  padding: 10px 16px;
+  padding: 10px 14px;
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 0.85em;
+  font-size: 0.82em;
   font-family: var(--font-family);
   color: var(--text-tertiary);
   border-bottom: 2px solid transparent;
@@ -1300,7 +1300,7 @@ body.modal-open .ls-toast-wrap {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-  padding: 20px 64px 20px 24px;
+  padding: 20px 24px;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;

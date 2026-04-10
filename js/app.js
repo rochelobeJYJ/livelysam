@@ -652,7 +652,7 @@
       Object.assign(btn.style, {
         position: 'fixed',
         right: '18px',
-        bottom: '18px',
+        bottom: '92px',
         width: '54px',
         height: '54px',
         display: 'flex',
@@ -709,9 +709,11 @@
       const body = document.querySelector('.settings-body');
       const upBtn = document.getElementById('settings-scroll-up');
       const downBtn = document.getElementById('settings-scroll-down');
-      if (!body || !upBtn || !downBtn) return;
+      const controls = document.querySelector('.settings-scroll-controls');
+      if (!body || !upBtn || !downBtn || !controls) return;
 
       const maxScroll = Math.max(0, body.scrollHeight - body.clientHeight);
+      controls.hidden = maxScroll <= 4;
       upBtn.disabled = body.scrollTop <= 4;
       downBtn.disabled = body.scrollTop >= maxScroll - 4;
     },
