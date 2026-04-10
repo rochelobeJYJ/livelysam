@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LivelySam (라이블리쌤) - 교사용 대시보드</title>
+  <title>LivelySam (라이블리쌤) - 교사용 대시보드 월페이퍼</title>
   <meta name="description" content="한국 교사를 위한 올인원 대시보드 배경화면. 시계, 시간표, 급식, 날씨, 캘린더 등 교사에게 필요한 모든 정보를 한 화면에.">
   <link rel="icon" href="data:,">
 
@@ -24,9 +24,9 @@
     <!-- 설정 버튼 -->
     <button id="settings-btn" title="설정 열기" style="display:flex">⚙️</button>
 
-    <!-- Lively 안내 -->
+    <!-- 런타임 안내 -->
     <div id="lively-setup-notice" class="lively-setup-notice" hidden>
-      <div class="lively-setup-title">Lively 설정 안내</div>
+      <div class="lively-setup-title">월페이퍼 설정 안내</div>
       <div id="lively-setup-text" class="lively-setup-text"></div>
     </div>
   </div>
@@ -346,6 +346,7 @@
 
   <!-- Lively 연동 -->
   <script src="js/lively.js?v=20260410-settingsfix6"></script>
+  <script src="js/wallpaper-engine.js?v=20260410-we1"></script>
 
   <!-- 위젯 -->
   <script src="js/widgets/clock.js?v=20260410-settingsfix6"></script>
@@ -360,6 +361,6 @@
   <script src="js/widgets/bookmarks.js?v=20260410-settingsfix6"></script>
 
   <!-- 메인 앱 (마지막 로드) -->
-  <script src="js/app.js?v=20260410-settingsfix6"></script>
+  <script src="js/app.js?v=20260410-we1"></script>
 </body>
 </html>

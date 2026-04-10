@@ -39,8 +39,9 @@
       LS.Config.init();
       LS.Config.applyTheme();
 
-      // 3. Lively 연동
+      // 3. 런타임 연동
       LS.Lively.init();
+      LS.WallpaperEngine?.init?.();
       this._initEnvironment();
 
       // 4. Gridstack 레이아웃 초기화
@@ -65,6 +66,7 @@
         }
         this._handleConfigChange(key, value);
       });
+      LS.WallpaperEngine?.markReady?.();
 
       this._queueSchoolResolution();
       this._queueWeatherResolution();
@@ -75,7 +77,7 @@
 
       // 10. 첫 실행 체크
       if (!LS.Config.get('atptCode')) {
-        if (LS.Lively.isLively) {
+        if (this._isHostedWallpaper()) {
           this._refreshLivelySetupNotice();
         } else {
           setTimeout(() => this._openSettings(), 500);
@@ -86,8 +88,7 @@
     },
 
     _initEnvironment() {
-      document.body.classList.toggle('lively-mode', LS.Lively.isLively);
-      document.body.classList.toggle('browser-mode', !LS.Lively.isLively);
+      this._syncEnvironmentClasses();
 
       this._debouncedSchoolResolution = LS.Helpers.debounce(() => {
         this._resolveSchoolFromConfig();
@@ -102,8 +103,29 @@
         this._viewportMetricsBound = true;
         this._viewportMetricsUpdater = LS.Helpers.debounce(() => this._updateViewportMetrics(), 80);
         window.addEventListener('resize', this._viewportMetricsUpdater, { passive: true });
-        window.addEventListener('livelysam:runtimeChanged', () => this._updateViewportMetrics());
+        window.addEventListener('livelysam:runtimeChanged', () => {
+          this._syncEnvironmentClasses();
+          this._updateViewportMetrics();
+          this._refreshLivelySetupNotice();
+        });
       }
+    },
+
+    _syncEnvironmentClasses() {
+      const isWallpaperEngine = Boolean(LS.WallpaperEngine?.isWallpaperEngine);
+      document.body.classList.toggle('lively-mode', LS.Lively.isLively);
+      document.body.classList.toggle('wallpaper-engine-mode', isWallpaperEngine);
+      document.body.classList.toggle('browser-mode', !LS.Lively.isLively && !isWallpaperEngine);
+    },
+
+    _isHostedWallpaper() {
+      return Boolean(LS.Lively.isLively || LS.WallpaperEngine?.isWallpaperEngine);
+    },
+
+    _getHostedWallpaperName() {
+      if (LS.WallpaperEngine?.isWallpaperEngine) return 'Wallpaper Engine';
+      if (LS.Lively.isLively) return 'Lively';
+      return '';
     },
 
     _updateViewportMetrics() {
@@ -313,7 +335,7 @@
       const textEl = document.getElementById('lively-setup-text');
       if (!noticeEl || !textEl) return;
 
-      if (!LS.Lively.isLively) {
+      if (!this._isHostedWallpaper()) {
         noticeEl.hidden = true;
         return;
       }
@@ -323,7 +345,10 @@
       const hasSchoolCode = Boolean(LS.Config.get('atptCode') && LS.Config.get('schoolCode'));
       const weatherApiKey = (LS.Config.get('weatherApiKey') || '').trim();
       const hasWeatherLocation = LS.Config.get('weatherLat') !== null && LS.Config.get('weatherLon') !== null;
-      const lines = ['설정은 Lively의 Customize 패널에서 변경하세요.'];
+      const hostName = this._getHostedWallpaperName();
+      const lines = hostName === 'Wallpaper Engine'
+        ? ['설정은 Wallpaper Engine의 User Properties 또는 우측 하단 설정 버튼에서 변경할 수 있습니다.']
+        : ['설정은 Lively의 Customize 패널에서 변경하세요.'];
       let tone = 'info';
 
       if (!neisApiKey) {
@@ -701,14 +726,18 @@
       const tipEl = document.getElementById('settings-runtime-tip');
       if (!tipEl) return;
 
-      if (!LS.Lively.isLively) {
+      if (!this._isHostedWallpaper()) {
         tipEl.hidden = true;
         tipEl.textContent = '';
         return;
       }
 
       tipEl.hidden = false;
-      tipEl.textContent = 'Lively에서 텍스트 입력이 안 되면 Lively Settings > Wallpaper > Interaction > Wallpaper Input > Keyboard를 켜주세요. 데이터 백업/복원은 파일 대신 모달에서 JSON 복사/붙여넣기로 동작합니다.';
+      if (LS.WallpaperEngine?.isWallpaperEngine) {
+        tipEl.textContent = 'Wallpaper Engine에서는 Editor의 User Properties를 추가로 연결할 수 있습니다. 내부 백업/복원은 JSON 복사 방식이 가장 안전합니다.';
+      } else {
+        tipEl.textContent = 'Lively에서 텍스트 입력이 안 되면 Lively Settings > Wallpaper > Interaction > Wallpaper Input > Keyboard를 켜주세요. 데이터 백업/복원은 파일 대신 모달에서 JSON 복사/붙여넣기로 동작합니다.';
+      }
     },
 
     _populateSettingsForm() {
@@ -929,7 +958,7 @@
     async _exportData() {
       try {
         const data = await LS.Storage.exportAll();
-        if (LS.Lively.isLively) {
+        if (this._isHostedWallpaper()) {
           await LS.Helpers.promptModal('데이터 백업', [
             {
               id: 'json',
@@ -940,7 +969,7 @@
               rows: 14
             }
           ], {
-            message: 'Lively에서는 파일 다운로드 대신 JSON 복사 방식이 더 안정적입니다.',
+            message: `${this._getHostedWallpaperName() || '월페이퍼 런타임'}에서는 파일 다운로드 대신 JSON 복사 방식이 더 안정적입니다.`,
             confirmText: '닫기',
             showCancel: false
           });
@@ -957,7 +986,7 @@
     },
 
     async _importData() {
-      if (LS.Lively.isLively) {
+      if (this._isHostedWallpaper()) {
         const result = await LS.Helpers.promptModal('데이터 가져오기', [
           {
             id: 'json',
