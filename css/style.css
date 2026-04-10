@@ -1172,92 +1172,40 @@ body.modal-open .ls-toast-wrap {
    ================================================================ */
 #settings-modal {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  top: 16px;
+  left: auto;
+  right: 16px;
+  bottom: calc(16px + var(--ls-desktop-bottom-inset));
+  width: min(520px, calc(100vw - 32px));
   z-index: 10000;
   display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 16px 16px calc(16px + var(--ls-desktop-bottom-inset));
-  box-sizing: border-box;
+  pointer-events: auto;
 }
-#settings-modal.active { display: flex; }
-
-#settings-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
+#settings-modal.active { display: block; }
 
 .settings-container {
-  position: relative;
-  width: min(760px, calc(100vw - 32px));
-  height: min(860px, calc(100vh - var(--ls-desktop-bottom-inset) - 32px));
-  max-height: min(860px, calc(100vh - var(--ls-desktop-bottom-inset) - 32px));
+  width: 100%;
+  height: 100%;
   min-height: 0;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(20px);
-  border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.995);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  z-index: 1;
-}
-
-.settings-scroll-controls {
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 3;
-  pointer-events: none;
-}
-
-.settings-scroll-btn {
-  width: 38px;
-  height: 38px;
-  border: none;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
-  color: var(--text-primary);
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-  pointer-events: auto;
-  transition: transform var(--transition-fast), background var(--transition-fast);
-}
-
-.settings-scroll-btn:hover {
-  background: white;
-  transform: translateY(-1px);
-}
-
-.settings-scroll-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-  transform: none;
 }
 
 .settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 24px;
+  padding: 16px 18px 12px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: #fff;
 }
 .settings-header h2 {
-  font-size: 1.15em;
+  font-size: 1.05em;
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -1278,45 +1226,55 @@ body.modal-open .ls-toast-wrap {
 
 .settings-tabs {
   display: flex;
-  padding: 0 24px;
-  gap: 2px;
-  flex-wrap: wrap;
+  padding: 12px 16px 8px;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: #fff;
 }
 .settings-tab-btn {
-  padding: 10px 12px;
-  border: none;
-  background: transparent;
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  background: #f8fafc;
   cursor: pointer;
-  font-size: 0.8em;
+  font-size: 0.78em;
   font-family: var(--font-family);
   color: var(--text-tertiary);
-  border-bottom: 2px solid transparent;
+  white-space: nowrap;
   transition: all var(--transition-fast);
 }
-.settings-tab-btn:hover { color: var(--text-primary); }
+.settings-tab-btn:hover {
+  color: var(--text-primary);
+  background: #f1f5f9;
+}
 .settings-tab-btn.active {
-  color: var(--theme-accent);
-  border-bottom-color: var(--theme-accent);
+  color: #fff;
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
   font-weight: 600;
 }
 
 .settings-body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
-  padding: 18px 22px;
+  padding: 16px 18px;
   overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
+  scrollbar-gutter: stable;
+  background: #fff;
 }
+.settings-body::-webkit-scrollbar { width: 10px; }
+.settings-body::-webkit-scrollbar-thumb { background: rgba(34, 139, 230, 0.28); }
 
 .settings-panel { display: none; }
 .settings-panel.active { display: block; }
 
 .settings-runtime-tip {
-  margin: 0 24px;
-  padding: 10px 12px;
+  margin: 12px 16px 0;
+  padding: 9px 11px;
   border-radius: 10px;
   background: rgba(77, 171, 247, 0.1);
   color: var(--text-secondary);
@@ -1337,7 +1295,8 @@ body.modal-open .ls-toast-wrap {
 }
 
 .setting-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   margin-bottom: 10px;
@@ -1345,11 +1304,10 @@ body.modal-open .ls-toast-wrap {
 .setting-label {
   font-size: 0.85em;
   color: var(--text-secondary);
-  min-width: 110px;
-  flex-shrink: 0;
+  min-width: 0;
 }
 .setting-input {
-  flex: 1;
+  width: 100%;
   padding: 8px 12px;
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 8px;
@@ -1361,7 +1319,7 @@ body.modal-open .ls-toast-wrap {
 .setting-input:focus { border-color: var(--theme-primary); }
 
 .setting-select {
-  flex: 1;
+  width: 100%;
   padding: 8px 12px;
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 8px;
@@ -1386,6 +1344,7 @@ select {
   display: flex;
   align-items: center;
   gap: 8px;
+  grid-column: 1 / -1;
 }
 .setting-checkbox input[type="checkbox"] {
   width: 18px;
@@ -1394,7 +1353,7 @@ select {
 }
 
 .setting-slider-wrap {
-  flex: 1;
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1415,6 +1374,10 @@ select {
   display: flex;
   gap: 8px;
   margin-bottom: 10px;
+}
+#school-search-results {
+  max-height: 160px;
+  overflow-y: auto;
 }
 #school-search-btn {
   padding: 8px 16px;
@@ -1473,8 +1436,9 @@ select {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  padding: 16px 24px;
+  padding: 14px 18px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: #fff;
 }
 .settings-footer-btn {
   padding: 10px 24px;
@@ -1538,6 +1502,27 @@ select {
 }
 
 @media (max-width: 760px) {
+  #settings-modal {
+    top: 8px;
+    right: 8px;
+    left: 8px;
+    bottom: calc(8px + var(--ls-desktop-bottom-inset));
+    width: auto;
+  }
+
+  .settings-tabs {
+    padding: 10px 12px 8px;
+  }
+
+  .settings-body {
+    padding: 14px 12px;
+  }
+
+  .setting-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
   .period-preview-list {
     grid-template-columns: 1fr;
   }

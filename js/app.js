@@ -575,11 +575,11 @@
 
     /* ── 설정 모달 ── */
     _initSettingsModal() {
+      this._mountSettingsModal();
       const settingsBtn = this._ensureSettingsButton();
       settingsBtn.onclick = () => this._openSettings();
       document.getElementById('settings-close')?.addEventListener('click', () => this._closeSettings());
       document.getElementById('settings-cancel')?.addEventListener('click', () => this._closeSettings());
-      document.getElementById('settings-overlay')?.addEventListener('click', () => this._closeSettings());
 
       document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && document.getElementById('settings-modal')?.classList.contains('active')) {
@@ -589,15 +589,7 @@
 
       document.querySelectorAll('.settings-tab-btn').forEach((btn) => {
         btn.addEventListener('click', (event) => {
-          const target = event.currentTarget;
-          document.querySelectorAll('.settings-tab-btn').forEach((item) => item.classList.remove('active'));
-          document.querySelectorAll('.settings-panel').forEach((panel) => panel.classList.remove('active'));
-          target.classList.add('active');
-          document.getElementById('settings-' + target.dataset.tab)?.classList.add('active');
-          window.requestAnimationFrame(() => {
-            document.querySelector('.settings-body')?.scrollTo({ top: 0, behavior: 'auto' });
-            this._updateSettingsScrollButtons();
-          });
+          this._setActiveSettingsTab(event.currentTarget.dataset.tab);
         });
       });
 
@@ -611,19 +603,38 @@
       document.getElementById('export-btn')?.addEventListener('click', () => this._exportData());
       document.getElementById('import-btn')?.addEventListener('click', () => this._importData());
 
-      this._ensureSettingsScrollControls();
-      this._bindSettingsBodyScroll();
       this._populateSettingsForm();
+    },
+
+    _mountSettingsModal() {
+      const modal = document.getElementById('settings-modal');
+      if (modal && modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+      }
+    },
+
+    _setActiveSettingsTab(tabName) {
+      if (!tabName) return;
+      document.querySelectorAll('.settings-tab-btn').forEach((item) => {
+        item.classList.toggle('active', item.dataset.tab === tabName);
+      });
+      document.querySelectorAll('.settings-panel').forEach((panel) => {
+        panel.classList.toggle('active', panel.id === `settings-${tabName}`);
+      });
+      document.querySelector('.settings-body')?.scrollTo({ top: 0, behavior: 'auto' });
     },
 
     _openSettings() {
       this._updateViewportMetrics();
+      this._mountSettingsModal();
       document.body.classList.add('modal-open', 'settings-open');
       document.getElementById('settings-modal')?.classList.add('active');
       this._setSettingsButtonVisible(false);
       this._populateSettingsForm();
+      if (!document.querySelector('.settings-tab-btn.active')) {
+        this._setActiveSettingsTab('api');
+      }
       document.querySelector('.settings-body')?.scrollTo({ top: 0, behavior: 'auto' });
-      this._updateSettingsScrollButtons();
     },
 
     _closeSettings() {
@@ -633,36 +644,6 @@
       }
       document.getElementById('settings-modal')?.classList.remove('active');
       this._setSettingsButtonVisible(true);
-    },
-
-    _bindSettingsBodyScroll() {
-      const body = document.querySelector('.settings-body');
-      const container = document.querySelector('.settings-container');
-      if (!body || !container || body.dataset.scrollBound === 'true') return;
-
-      body.dataset.scrollBound = 'true';
-
-      const handleWheel = (event) => {
-        if (!document.getElementById('settings-modal')?.classList.contains('active')) return;
-        if (event.target.closest('.settings-scroll-btn')) return;
-
-        const delta = event.deltaY;
-        if (Math.abs(delta) < 1) return;
-
-        const maxScroll = body.scrollHeight - body.clientHeight;
-        if (maxScroll <= 0) return;
-
-        const nextTop = Math.max(0, Math.min(maxScroll, body.scrollTop + delta));
-        if (nextTop === body.scrollTop) return;
-
-        body.scrollTop = nextTop;
-        this._updateSettingsScrollButtons();
-        event.preventDefault();
-        event.stopPropagation();
-      };
-
-      container.addEventListener('wheel', handleWheel, { passive: false, capture: true });
-      body.addEventListener('scroll', () => this._updateSettingsScrollButtons(), { passive: true });
     },
 
     _ensureSettingsButton() {
@@ -712,41 +693,8 @@
       btn.style.pointerEvents = visible ? 'auto' : 'none';
     },
 
-    _ensureSettingsScrollControls() {
-      const container = document.querySelector('.settings-container');
-      if (!container || container.querySelector('.settings-scroll-controls')) return;
-
-      const controls = document.createElement('div');
-      controls.className = 'settings-scroll-controls';
-      controls.innerHTML = `
-        <button type="button" id="settings-scroll-up" class="settings-scroll-btn" aria-label="위로 스크롤">▲</button>
-        <button type="button" id="settings-scroll-down" class="settings-scroll-btn" aria-label="아래로 스크롤">▼</button>
-      `;
-      container.appendChild(controls);
-
-      document.getElementById('settings-scroll-up')?.addEventListener('click', () => this._scrollSettingsBody(-220));
-      document.getElementById('settings-scroll-down')?.addEventListener('click', () => this._scrollSettingsBody(220));
-    },
-
-    _scrollSettingsBody(delta) {
-      const body = document.querySelector('.settings-body');
-      if (!body) return;
-      const maxScroll = Math.max(0, body.scrollHeight - body.clientHeight);
-      body.scrollTop = Math.max(0, Math.min(maxScroll, body.scrollTop + delta));
-      this._updateSettingsScrollButtons();
-    },
-
     _updateSettingsScrollButtons() {
-      const body = document.querySelector('.settings-body');
-      const upBtn = document.getElementById('settings-scroll-up');
-      const downBtn = document.getElementById('settings-scroll-down');
-      const controls = document.querySelector('.settings-scroll-controls');
-      if (!body || !upBtn || !downBtn || !controls) return;
-
-      const maxScroll = Math.max(0, body.scrollHeight - body.clientHeight);
-      controls.hidden = maxScroll <= 4;
-      upBtn.disabled = body.scrollTop <= 4;
-      downBtn.disabled = body.scrollTop >= maxScroll - 4;
+      return;
     },
 
     _updateSettingsRuntimeTip() {
@@ -823,7 +771,6 @@
 
       // 교시 시간표 미리보기
       this._renderPeriodPreview();
-      this._updateSettingsScrollButtons();
     },
 
     _renderPeriodPreview() {

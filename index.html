@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@7.3.0/dist/gridstack.min.css">
 
   <!-- 앱 스타일 -->
-  <link rel="stylesheet" href="css/style.css?v=20260410-settingsfix5">
+  <link rel="stylesheet" href="css/style.css?v=20260410-settingsfix6">
 </head>
 <body>
   <div class="app-container">
@@ -35,7 +35,6 @@
        설정 모달
        ══════════════════════════════════════════════════════════════ -->
   <div id="settings-modal">
-    <div id="settings-overlay"></div>
     <div class="settings-container">
       <!-- 헤더 -->
       <div class="settings-header">
@@ -45,7 +44,8 @@
 
       <!-- 탭 버튼 -->
       <div class="settings-tabs">
-        <button class="settings-tab-btn active" data-tab="school">🏫 학교</button>
+        <button class="settings-tab-btn active" data-tab="api">🔑 API</button>
+        <button class="settings-tab-btn" data-tab="school">🏫 학교</button>
         <button class="settings-tab-btn" data-tab="classroom">👥 학급</button>
         <button class="settings-tab-btn" data-tab="day">⏰ 일과</button>
         <button class="settings-tab-btn" data-tab="periods">📋 교시</button>
@@ -58,8 +58,7 @@
 
       <div class="settings-body">
 
-        <!-- 학교 설정 탭 -->
-        <div id="settings-school" class="settings-panel active">
+        <div id="settings-api" class="settings-panel active">
           <div class="setting-group">
             <div class="setting-group-title">🔑 API 키 설정</div>
 
@@ -80,7 +79,10 @@
               📖 <a href="https://openweathermap.org/api" target="_blank">openweathermap.org</a>에서 무료 계정 생성 후 API Keys에서 확인하세요.
             </div>
           </div>
+        </div>
 
+        <!-- 학교 설정 탭 -->
+        <div id="settings-school" class="settings-panel">
           <div class="setting-group">
             <div class="setting-group-title">🏫 학교 검색</div>
             <div class="school-search-row">
@@ -331,33 +333,33 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
   <!-- 유틸리티 (의존성 없음) -->
-  <script src="js/utils/helpers.js?v=20260410-settingsfix5"></script>
-  <script src="js/utils/holidays.js?v=20260410-settingsfix5"></script>
-  <script src="js/utils/storage.js?v=20260410-settingsfix5"></script>
+  <script src="js/utils/helpers.js?v=20260410-settingsfix6"></script>
+  <script src="js/utils/holidays.js?v=20260410-settingsfix6"></script>
+  <script src="js/utils/storage.js?v=20260410-settingsfix6"></script>
 
   <!-- API 모듈 -->
-  <script src="js/api/neis.js?v=20260410-settingsfix5"></script>
-  <script src="js/api/openweather.js?v=20260410-settingsfix5"></script>
+  <script src="js/api/neis.js?v=20260410-settingsfix6"></script>
+  <script src="js/api/openweather.js?v=20260410-settingsfix6"></script>
 
   <!-- 설정 관리 -->
-  <script src="js/config.js?v=20260410-settingsfix5"></script>
+  <script src="js/config.js?v=20260410-settingsfix6"></script>
 
   <!-- Lively 연동 -->
-  <script src="js/lively.js?v=20260410-settingsfix5"></script>
+  <script src="js/lively.js?v=20260410-settingsfix6"></script>
 
   <!-- 위젯 -->
-  <script src="js/widgets/clock.js?v=20260410-settingsfix5"></script>
-  <script src="js/widgets/timetable.js?v=20260410-settingsfix5"></script>
-  <script src="js/widgets/meal.js?v=20260410-settingsfix5"></script>
-  <script src="js/widgets/weather.js?v=20260410-settingsfix5"></script>
-  <script src="js/widgets/calendar.js?v=20260410-settingsfix5"></script>
-  <script src="js/widgets/memo.js?v=20260410-settingsfix5"></script>
-  <script src="js/widgets/todo.js?v=20260410-settingsfix5"></script>
-  <script src="js/widgets/timer.js?v=20260410-settingsfix5"></script>
-  <script src="js/widgets/dday.js?v=20260410-settingsfix5"></script>
-  <script src="js/widgets/bookmarks.js?v=20260410-settingsfix5"></script>
+  <script src="js/widgets/clock.js?v=20260410-settingsfix6"></script>
+  <script src="js/widgets/timetable.js?v=20260410-settingsfix6"></script>
+  <script src="js/widgets/meal.js?v=20260410-settingsfix6"></script>
+  <script src="js/widgets/weather.js?v=20260410-settingsfix6"></script>
+  <script src="js/widgets/calendar.js?v=20260410-settingsfix6"></script>
+  <script src="js/widgets/memo.js?v=20260410-settingsfix6"></script>
+  <script src="js/widgets/todo.js?v=20260410-settingsfix6"></script>
+  <script src="js/widgets/timer.js?v=20260410-settingsfix6"></script>
+  <script src="js/widgets/dday.js?v=20260410-settingsfix6"></script>
+  <script src="js/widgets/bookmarks.js?v=20260410-settingsfix6"></script>
 
   <!-- 메인 앱 (마지막 로드) -->
-  <script src="js/app.js?v=20260410-settingsfix5"></script>
+  <script src="js/app.js?v=20260410-settingsfix6"></script>
 </body>
 </html>
