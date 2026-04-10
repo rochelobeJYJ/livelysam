@@ -2,10 +2,10 @@
 setlocal
 set ROOT=%~dp0
 
-if not exist "%ROOT%venv\Scripts\python.exe" (
-  echo python.exe not found in venv\Scripts
+if not exist "%ROOT%tools\local_wallpaper_host.ps1" (
+  echo local_wallpaper_host.ps1 not found
   exit /b 1
 )
 
-"%ROOT%venv\Scripts\python.exe" "%ROOT%tools\desktop_wallpaper_host.py" stop
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%tools\local_wallpaper_host.ps1" stop -Root "%ROOT%"
 exit /b %errorlevel%

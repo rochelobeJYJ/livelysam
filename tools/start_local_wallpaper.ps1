@@ -6,9 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $rootPath = [System.IO.Path]::GetFullPath($Root)
-$pythonPath = Join-Path $rootPath "venv\Scripts\python.exe"
-$pythonwPath = Join-Path $rootPath "venv\Scripts\pythonw.exe"
-$hostScript = Join-Path $rootPath "tools\desktop_wallpaper_host.py"
+$hostScript = Join-Path $rootPath "tools\local_wallpaper_host.ps1"
 $runtimeDir = Join-Path $rootPath "runtime\desktop-host"
 $stateFile = Join-Path $runtimeDir "state.json"
 $resultFile = Join-Path $runtimeDir "last-result.json"
@@ -38,31 +36,34 @@ function Test-PidRunning {
     return $null -ne (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)
 }
 
-if (-not (Test-Path -LiteralPath $pythonPath)) {
-    Write-Host "[LivelySam] python.exe not found in venv\Scripts" -ForegroundColor Red
+if (-not (Test-Path -LiteralPath $hostScript)) {
+    Write-Host "[LivelySam] local_wallpaper_host.ps1 not found" -ForegroundColor Red
     exit 1
 }
 
-$hostPythonPath = $pythonPath
-if (Test-Path -LiteralPath $pythonwPath) {
-    $hostPythonPath = $pythonwPath
-}
-
 $existingState = Read-JsonFile -Path $stateFile
-if ($existingState -and (Test-PidRunning -Pid ([int]$existingState.host_pid))) {
+if ($existingState -and (Test-PidRunning -ProcessId ([int]$existingState.host_pid))) {
     Write-Host "[LivelySam] already running." -ForegroundColor Yellow
-    Write-Host "stop_local_wallpaper.cmd 로 먼저 종료한 뒤 다시 실행하세요."
+    Write-Host "Stop it with stop_local_wallpaper.cmd and run it again."
     Write-Host ""
-    & $pythonPath $hostScript status
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $hostScript status -Root $rootPath
     exit 0
 }
 
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue
 
-Start-Process -FilePath $hostPythonPath -ArgumentList @($hostScript, "start") -WindowStyle Minimized
+Start-Process -FilePath "powershell.exe" -ArgumentList @(
+    "-NoProfile",
+    "-STA",
+    "-ExecutionPolicy", "Bypass",
+    "-WindowStyle", "Hidden",
+    "-File", $hostScript,
+    "start",
+    "-Root", $rootPath
+) -WindowStyle Hidden
 
-$deadline = (Get-Date).AddSeconds(20)
+$deadline = (Get-Date).AddSeconds(25)
 $attached = $false
 $failureMessage = $null
 
@@ -89,13 +90,13 @@ while ((Get-Date) -lt $deadline) {
 
 if ($attached) {
     $state = Read-JsonFile -Path $stateFile
-    Write-Host "[LivelySam] 배경화면 실행 완료" -ForegroundColor Green
-    Write-Host "중지: stop_local_wallpaper.cmd"
+    Write-Host "[LivelySam] wallpaper host started" -ForegroundColor Green
+    Write-Host "Stop: stop_local_wallpaper.cmd"
     if ($state.url) {
-        Write-Host "주소: $($state.url)"
+        Write-Host "URL: $($state.url)"
     }
-    if ($state.browser_path) {
-        Write-Host "브라우저: $($state.browser_path)"
+    if ($state.renderer) {
+        Write-Host "Renderer: $($state.renderer)"
     }
     exit 0
 }
@@ -105,11 +106,11 @@ if (-not $failureMessage) {
     if ($result -and $result.error) {
         $failureMessage = $result.error
     } else {
-        $failureMessage = "Timed out waiting for the wallpaper window to attach."
+        $failureMessage = "Timed out waiting for the wallpaper host to attach."
     }
 }
 
-Write-Host "[LivelySam] 배경화면 시작 실패" -ForegroundColor Red
-Write-Host "오류: $failureMessage"
-Write-Host "로그: $logFile"
+Write-Host "[LivelySam] wallpaper host failed to start" -ForegroundColor Red
+Write-Host "Error: $failureMessage"
+Write-Host "Log: $logFile"
 exit 1

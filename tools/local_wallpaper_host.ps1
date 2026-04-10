@@ -1,0 +1,504 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("start", "stop", "status")]
+    [string]$Command,
+
+    [string]$Root = (Join-Path $PSScriptRoot "..")
+)
+
+$ErrorActionPreference = "Stop"
+
+$rootPath = [System.IO.Path]::GetFullPath($Root)
+$runtimeDir = Join-Path $rootPath "runtime\desktop-host"
+$stateFile = Join-Path $runtimeDir "state.json"
+$resultFile = Join-Path $runtimeDir "last-result.json"
+$stopFile = Join-Path $runtimeDir "stop.flag"
+$logFile = Join-Path $runtimeDir "host.log"
+$webViewProfileDir = Join-Path $runtimeDir "webview2-profile"
+$pythonPath = Join-Path $rootPath "venv\Scripts\python.exe"
+
+function Ensure-RuntimeDir {
+    New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+}
+
+function Log-Message {
+    param(
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+
+    Ensure-RuntimeDir
+    $line = "{0} [{1}] {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss,fff"), $Level, $Message
+    Add-Content -LiteralPath $logFile -Value $line -Encoding UTF8
+}
+
+function Write-JsonFile {
+    param(
+        [string]$Path,
+        [object]$Value
+    )
+
+    Ensure-RuntimeDir
+    $Value | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
+function Read-JsonFile {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    try {
+        return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Write-Result {
+    param([object]$Value)
+    Write-JsonFile -Path $resultFile -Value $Value
+}
+
+function Clear-State {
+    Remove-Item -LiteralPath $stateFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $stopFile -Force -ErrorAction SilentlyContinue
+}
+
+function Test-PidRunning {
+    param([int]$ProcessId)
+
+    if ($ProcessId -le 0) {
+        return $false
+    }
+
+    return $null -ne (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)
+}
+
+function Stop-ProcessIfRunning {
+    param([int]$ProcessId)
+
+    if (Test-PidRunning -ProcessId $ProcessId) {
+        Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-FreePort {
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    try {
+        return $listener.LocalEndpoint.Port
+    } finally {
+        $listener.Stop()
+    }
+}
+
+function Wait-ForServer {
+    param(
+        [string]$Url,
+        [int]$TimeoutSeconds = 15
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $request = [System.Net.WebRequest]::Create($Url)
+            $request.Timeout = 1500
+            $response = $request.GetResponse()
+            $response.Close()
+            return
+        } catch {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+
+    throw "Timed out waiting for local server."
+}
+
+function Get-WebView2Directory {
+    $envDir = $env:LIVELYSAM_WEBVIEW2_DIR
+    $candidates = @()
+
+    if ($envDir) {
+        $candidates += $envDir
+    }
+
+    $candidates += @(
+        "C:\Program Files (x86)\Hnc\Office 2024\HncUtils\Service",
+        "C:\Program Files\Microsoft Office\root\Office16"
+    )
+
+    foreach ($candidate in $candidates) {
+        if (-not $candidate) {
+            continue
+        }
+
+        $coreDll = Join-Path $candidate "Microsoft.Web.WebView2.Core.dll"
+        $wpfDll = Join-Path $candidate "Microsoft.Web.WebView2.Wpf.dll"
+        $loaderDll = Join-Path $candidate "WebView2Loader.dll"
+
+        if ((Test-Path -LiteralPath $coreDll) -and (Test-Path -LiteralPath $wpfDll) -and (Test-Path -LiteralPath $loaderDll)) {
+            return $candidate
+        }
+    }
+
+    $searchRoots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }
+    foreach ($root in $searchRoots) {
+        $dll = Get-ChildItem -Path $root -Recurse -Filter "Microsoft.Web.WebView2.Wpf.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($dll) {
+            $candidate = Split-Path -Path $dll.FullName -Parent
+            $coreDll = Join-Path $candidate "Microsoft.Web.WebView2.Core.dll"
+            $loaderDll = Join-Path $candidate "WebView2Loader.dll"
+            if ((Test-Path -LiteralPath $coreDll) -and (Test-Path -LiteralPath $loaderDll)) {
+                return $candidate
+            }
+        }
+    }
+
+    throw "WebView2 WPF assemblies not found. Set LIVELYSAM_WEBVIEW2_DIR if necessary."
+}
+
+function Ensure-WebView2Assemblies {
+    param([string]$WebView2Dir)
+
+    $env:PATH = "$WebView2Dir;$env:PATH"
+    Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+    [System.Reflection.Assembly]::LoadFrom((Join-Path $WebView2Dir "Microsoft.Web.WebView2.Core.dll")) | Out-Null
+    [System.Reflection.Assembly]::LoadFrom((Join-Path $WebView2Dir "Microsoft.Web.WebView2.Wpf.dll")) | Out-Null
+}
+
+function Ensure-NativeDesktopInterop {
+    if ("LivelySamDesktopNative" -as [type]) {
+        return
+    }
+
+    Add-Type -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+public static class LivelySamDesktopNative
+{
+    private const uint SMTO_NORMAL = 0x0000;
+    private const uint SPI_GETWORKAREA = 0x0030;
+    private const int GWL_STYLE = -16;
+    private const int GWL_EXSTYLE = -20;
+    private const long WS_CAPTION = 0x00C00000L;
+    private const long WS_THICKFRAME = 0x00040000L;
+    private const long WS_SYSMENU = 0x00080000L;
+    private const long WS_MINIMIZEBOX = 0x00020000L;
+    private const long WS_MAXIMIZEBOX = 0x00010000L;
+    private const long WS_POPUP = unchecked((int)0x80000000);
+    private const long WS_CHILD = 0x40000000L;
+    private const long WS_VISIBLE = 0x10000000L;
+    private const long WS_EX_APPWINDOW = 0x00040000L;
+    private const long WS_EX_TOOLWINDOW = 0x00000080L;
+    private const long WS_EX_NOACTIVATE = 0x08000000L;
+    private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_SHOWWINDOW = 0x0040;
+    private const uint SWP_FRAMECHANGED = 0x0020;
+    private static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindowEx(IntPtr parentHandle, IntPtr childAfter, string className, string windowTitle);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out UIntPtr result);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SystemParametersInfo(uint action, uint param, out RECT rect, uint winIni);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    public static RECT GetWorkArea()
+    {
+        RECT rect;
+        if (!SystemParametersInfo(SPI_GETWORKAREA, 0, out rect, 0))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        return rect;
+    }
+
+    public static IntPtr PrepareWorkerW()
+    {
+        IntPtr progman = FindWindow("Progman", null);
+        if (progman == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("Progman window not found.");
+        }
+
+        UIntPtr result;
+        SendMessageTimeout(progman, 0x052C, IntPtr.Zero, IntPtr.Zero, SMTO_NORMAL, 1000, out result);
+
+        IntPtr workerw = IntPtr.Zero;
+        EnumWindows((hwnd, lParam) =>
+        {
+            IntPtr shellView = FindWindowEx(hwnd, IntPtr.Zero, "SHELLDLL_DefView", null);
+            if (shellView != IntPtr.Zero)
+            {
+                IntPtr siblingWorker = FindWindowEx(IntPtr.Zero, hwnd, "WorkerW", null);
+                if (siblingWorker != IntPtr.Zero)
+                {
+                    workerw = siblingWorker;
+                    return false;
+                }
+            }
+
+            return true;
+        }, IntPtr.Zero);
+
+        return workerw != IntPtr.Zero ? workerw : progman;
+    }
+
+    public static void AttachWindow(IntPtr hwnd, IntPtr parent, int left, int top, int width, int height)
+    {
+        long style = GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
+        style = (style & ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_POPUP)) | WS_CHILD | WS_VISIBLE;
+        SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(style));
+
+        long exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+        exStyle = (exStyle & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(exStyle));
+
+        SetParent(hwnd, parent);
+
+        if (!SetWindowPos(hwnd, HWND_BOTTOM, left, top, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        ShowWindow(hwnd, 5);
+    }
+}
+"@
+}
+
+function Start-Host {
+    $existingState = Read-JsonFile -Path $stateFile
+    if ($existingState -and (Test-PidRunning -ProcessId ([int]$existingState.host_pid))) {
+        throw "Wallpaper host is already running."
+    }
+
+    if (-not (Test-Path -LiteralPath $pythonPath)) {
+        throw "python.exe not found in venv\Scripts."
+    }
+
+    Ensure-RuntimeDir
+    Remove-Item -LiteralPath $stopFile -Force -ErrorAction SilentlyContinue
+    Write-Result @{
+        status = "starting"
+        attached = $false
+        message = "Starting local wallpaper host."
+        updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+    }
+
+    $webView2Dir = Get-WebView2Directory
+    Ensure-WebView2Assemblies -WebView2Dir $webView2Dir
+    Ensure-NativeDesktopInterop
+
+    $port = Get-FreePort
+    $url = "http://127.0.0.1:$port/index.html?runtime=desktophost"
+    $serverArgs = @("-m", "http.server", "$port", "--bind", "127.0.0.1", "--directory", $rootPath)
+    $serverProcess = Start-Process -FilePath $pythonPath -ArgumentList $serverArgs -WindowStyle Hidden -PassThru
+    Log-Message "Server process started: pid=$($serverProcess.Id) port=$port"
+
+    try {
+        Wait-ForServer -Url $url
+        Log-Message "Local server ready at $url"
+
+        $workArea = [LivelySamDesktopNative]::GetWorkArea()
+        $width = $workArea.Right - $workArea.Left
+        $height = $workArea.Bottom - $workArea.Top
+        $desktopParent = [LivelySamDesktopNative]::PrepareWorkerW()
+
+        $grid = New-Object System.Windows.Controls.Grid
+        $webView = New-Object Microsoft.Web.WebView2.Wpf.WebView2
+        $webView.DefaultBackgroundColor = [System.Drawing.Color]::Black
+        $creationProperties = New-Object Microsoft.Web.WebView2.Wpf.CoreWebView2CreationProperties
+        $creationProperties.UserDataFolder = $webViewProfileDir
+        $webView.CreationProperties = $creationProperties
+        $grid.Children.Add($webView) | Out-Null
+
+        $sourceParameters = New-Object System.Windows.Interop.HwndSourceParameters("LivelySam Desktop Host")
+        $sourceParameters.PositionX = $workArea.Left
+        $sourceParameters.PositionY = $workArea.Top
+        $sourceParameters.Width = $width
+        $sourceParameters.Height = $height
+        $sourceParameters.ParentWindow = $desktopParent
+        $sourceParameters.WindowStyle = 0x50000000
+        $sourceParameters.ExtendedWindowStyle = 0x08000080
+        $source = New-Object System.Windows.Interop.HwndSource($sourceParameters)
+        $source.RootVisual = $grid
+
+        $script:hostState = @{
+            host_pid = $PID
+            server_pid = $serverProcess.Id
+            port = $port
+            url = $url
+            renderer = "WebView2"
+            webview2_dir = $webView2Dir
+            attached = $false
+            last_error = $null
+        }
+        Write-JsonFile -Path $stateFile -Value $script:hostState
+
+        $stopTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $stopTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+        $stopTimer.add_Tick({
+            if (Test-Path -LiteralPath $stopFile) {
+                $stopTimer.Stop()
+                $source.Dispose()
+                [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvokeShutdown([System.Windows.Threading.DispatcherPriority]::Background) | Out-Null
+            }
+        })
+
+        $hwnd = $source.Handle
+        $script:hostState.attached = $true
+        $script:hostState.window_handle = ("0x{0:X}" -f $hwnd.ToInt64())
+        $script:hostState.desktop_parent = ("0x{0:X}" -f $desktopParent.ToInt64())
+        Write-JsonFile -Path $stateFile -Value $script:hostState
+        Write-Result @{
+            status = "running"
+            attached = $true
+            message = "Local wallpaper host attached successfully."
+            updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+            url = $url
+            renderer = "WebView2"
+            window_handle = $script:hostState.window_handle
+            desktop_parent = $script:hostState.desktop_parent
+        }
+        Log-Message "Created child host window $($script:hostState.window_handle) on desktop parent $($script:hostState.desktop_parent)"
+        $webView.Source = $url
+        $stopTimer.Start()
+
+        $webView.add_NavigationCompleted({
+            Log-Message "WebView navigation completed."
+        })
+
+        [System.Windows.Threading.Dispatcher]::Run()
+    } catch {
+        $message = $_.Exception.Message
+        Log-Message "Host startup failed: $message" "ERROR"
+        Write-Result @{
+            status = "failed"
+            attached = $false
+            message = "Local wallpaper host failed to start."
+            error = $message
+            updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+        }
+        throw
+    } finally {
+        Log-Message "Stopping local wallpaper host."
+        Stop-ProcessIfRunning -ProcessId $serverProcess.Id
+        Clear-State
+        Write-Result @{
+            status = "stopped"
+            attached = $false
+            message = "Local wallpaper host stopped."
+            updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+        }
+    }
+}
+
+function Stop-Host {
+    $state = Read-JsonFile -Path $stateFile
+    if (-not $state) {
+        Write-Result @{
+            status = "stopped"
+            attached = $false
+            message = "No running local wallpaper host was found."
+            updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+        }
+        Write-Output "No running local wallpaper host was found."
+        return
+    }
+
+    Ensure-RuntimeDir
+    Set-Content -LiteralPath $stopFile -Value "stop" -Encoding UTF8
+
+    $hostPid = [int]$state.host_pid
+    $serverPid = [int]$state.server_pid
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $deadline) {
+        if (-not (Test-PidRunning -ProcessId $hostPid)) {
+            break
+        }
+        Start-Sleep -Milliseconds 250
+    }
+
+    Stop-ProcessIfRunning -ProcessId $hostPid
+    Stop-ProcessIfRunning -ProcessId $serverPid
+    Clear-State
+
+    Write-Result @{
+        status = "stopped"
+        attached = $false
+        message = "Local wallpaper host stopped."
+        updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+    }
+    Write-Output "Local wallpaper host stopped."
+}
+
+function Show-Status {
+    $state = Read-JsonFile -Path $stateFile
+    if ($state) {
+        $status = [ordered]@{}
+        foreach ($property in $state.PSObject.Properties) {
+            $status[$property.Name] = $property.Value
+        }
+        $status["host_running"] = Test-PidRunning -ProcessId ([int]$state.host_pid)
+        $status["server_running"] = Test-PidRunning -ProcessId ([int]$state.server_pid)
+        $status | ConvertTo-Json -Depth 8
+        return
+    }
+
+    $result = Read-JsonFile -Path $resultFile
+    if ($result) {
+        [ordered]@{
+            running = $false
+            last_result = $result
+        } | ConvertTo-Json -Depth 8
+        return
+    }
+
+    Write-Output "Local wallpaper host is not running."
+}
+
+switch ($Command) {
+    "start" { Start-Host; break }
+    "stop" { Stop-Host; break }
+    "status" { Show-Status; break }
+}
