@@ -549,7 +549,8 @@
 
     /* ── 설정 모달 ── */
     _initSettingsModal() {
-      document.getElementById('settings-btn')?.addEventListener('click', () => this._openSettings());
+      const settingsBtn = this._ensureSettingsButton();
+      settingsBtn.onclick = () => this._openSettings();
       document.getElementById('settings-close')?.addEventListener('click', () => this._closeSettings());
       document.getElementById('settings-cancel')?.addEventListener('click', () => this._closeSettings());
       document.getElementById('settings-overlay')?.addEventListener('click', () => this._closeSettings());
@@ -581,6 +582,7 @@
       document.getElementById('export-btn')?.addEventListener('click', () => this._exportData());
       document.getElementById('import-btn')?.addEventListener('click', () => this._importData());
 
+      this._ensureSettingsScrollControls();
       this._bindSettingsBodyScroll();
       this._populateSettingsForm();
     },
@@ -588,8 +590,10 @@
     _openSettings() {
       document.body.classList.add('modal-open', 'settings-open');
       document.getElementById('settings-modal')?.classList.add('active');
+      this._setSettingsButtonVisible(false);
       this._populateSettingsForm();
       document.querySelector('.settings-body')?.scrollTo({ top: 0, behavior: 'auto' });
+      this._updateSettingsScrollButtons();
     },
 
     _closeSettings() {
@@ -598,27 +602,118 @@
         document.body.classList.remove('modal-open');
       }
       document.getElementById('settings-modal')?.classList.remove('active');
+      this._setSettingsButtonVisible(true);
     },
 
     _bindSettingsBodyScroll() {
       const body = document.querySelector('.settings-body');
-      if (!body || body.dataset.scrollBound === 'true') return;
+      const container = document.querySelector('.settings-container');
+      if (!body || !container || body.dataset.scrollBound === 'true') return;
 
       body.dataset.scrollBound = 'true';
-      body.addEventListener('wheel', (event) => {
+
+      const handleWheel = (event) => {
+        if (!document.getElementById('settings-modal')?.classList.contains('active')) return;
+        if (event.target.closest('.settings-scroll-btn')) return;
+
         const delta = event.deltaY;
         if (Math.abs(delta) < 1) return;
 
         const maxScroll = body.scrollHeight - body.clientHeight;
         if (maxScroll <= 0) return;
 
-        const prevTop = body.scrollTop;
-        body.scrollTop += delta;
-        if (body.scrollTop !== prevTop) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-      }, { passive: false });
+        const nextTop = Math.max(0, Math.min(maxScroll, body.scrollTop + delta));
+        if (nextTop === body.scrollTop) return;
+
+        body.scrollTop = nextTop;
+        this._updateSettingsScrollButtons();
+        event.preventDefault();
+        event.stopPropagation();
+      };
+
+      container.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+      body.addEventListener('scroll', () => this._updateSettingsScrollButtons(), { passive: true });
+    },
+
+    _ensureSettingsButton() {
+      let btn = document.getElementById('settings-btn');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'settings-btn';
+        document.body.appendChild(btn);
+      } else if (btn.parentElement !== document.body) {
+        document.body.appendChild(btn);
+      }
+
+      btn.type = 'button';
+      btn.title = '설정 열기';
+      btn.setAttribute('aria-label', '설정 열기');
+      btn.textContent = '⚙️';
+      Object.assign(btn.style, {
+        position: 'fixed',
+        right: '18px',
+        bottom: '18px',
+        width: '54px',
+        height: '54px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        border: 'none',
+        borderRadius: '999px',
+        background: 'rgba(255, 255, 255, 0.96)',
+        color: '#1a1a2e',
+        fontSize: '24px',
+        lineHeight: '1',
+        cursor: 'pointer',
+        zIndex: '9999',
+        boxShadow: '0 16px 34px rgba(0, 0, 0, 0.18)',
+        opacity: '1',
+        visibility: 'visible',
+        pointerEvents: 'auto'
+      });
+      btn.hidden = false;
+      return btn;
+    },
+
+    _setSettingsButtonVisible(visible) {
+      const btn = this._ensureSettingsButton();
+      btn.style.opacity = visible ? '1' : '0';
+      btn.style.visibility = visible ? 'visible' : 'hidden';
+      btn.style.pointerEvents = visible ? 'auto' : 'none';
+    },
+
+    _ensureSettingsScrollControls() {
+      const container = document.querySelector('.settings-container');
+      if (!container || container.querySelector('.settings-scroll-controls')) return;
+
+      const controls = document.createElement('div');
+      controls.className = 'settings-scroll-controls';
+      controls.innerHTML = `
+        <button type="button" id="settings-scroll-up" class="settings-scroll-btn" aria-label="위로 스크롤">▲</button>
+        <button type="button" id="settings-scroll-down" class="settings-scroll-btn" aria-label="아래로 스크롤">▼</button>
+      `;
+      container.appendChild(controls);
+
+      document.getElementById('settings-scroll-up')?.addEventListener('click', () => this._scrollSettingsBody(-220));
+      document.getElementById('settings-scroll-down')?.addEventListener('click', () => this._scrollSettingsBody(220));
+    },
+
+    _scrollSettingsBody(delta) {
+      const body = document.querySelector('.settings-body');
+      if (!body) return;
+      body.scrollBy({ top: delta, behavior: 'smooth' });
+      window.setTimeout(() => this._updateSettingsScrollButtons(), 180);
+    },
+
+    _updateSettingsScrollButtons() {
+      const body = document.querySelector('.settings-body');
+      const upBtn = document.getElementById('settings-scroll-up');
+      const downBtn = document.getElementById('settings-scroll-down');
+      if (!body || !upBtn || !downBtn) return;
+
+      const maxScroll = Math.max(0, body.scrollHeight - body.clientHeight);
+      upBtn.disabled = body.scrollTop <= 4;
+      downBtn.disabled = body.scrollTop >= maxScroll - 4;
     },
 
     _updateSettingsRuntimeTip() {
@@ -695,6 +790,7 @@
 
       // 교시 시간표 미리보기
       this._renderPeriodPreview();
+      this._updateSettingsScrollButtons();
     },
 
     _renderPeriodPreview() {

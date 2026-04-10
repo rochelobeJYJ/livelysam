@@ -1206,6 +1206,44 @@ body.modal-open .ls-toast-wrap {
   z-index: 1;
 }
 
+.settings-scroll-controls {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.settings-scroll-btn {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.settings-scroll-btn:hover {
+  background: white;
+  transform: translateY(-1px);
+}
+
+.settings-scroll-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
 .settings-header {
   display: flex;
   align-items: center;
@@ -1262,7 +1300,7 @@ body.modal-open .ls-toast-wrap {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-  padding: 20px 24px;
+  padding: 20px 64px 20px 24px;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
