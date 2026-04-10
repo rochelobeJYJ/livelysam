@@ -116,8 +116,8 @@ function Wait-ForServer {
     throw "Timed out waiting for local server."
 }
 
-function Get-WebView2Directory {
-    $envDir = $env:LIVELYSAM_WEBVIEW2_DIR
+function Get-WebView2ManagedDirectory {
+    $envDir = $env:LIVELYSAM_WEBVIEW2_MANAGED_DIR
     $candidates = @()
 
     if ($envDir) {
@@ -125,8 +125,7 @@ function Get-WebView2Directory {
     }
 
     $candidates += @(
-        "C:\Program Files (x86)\Hnc\Office 2024\HncUtils\Service",
-        "C:\Program Files\Microsoft Office\root\Office16"
+        "C:\Program Files (x86)\Hnc\Office 2024\HncUtils\Service"
     )
 
     foreach ($candidate in $candidates) {
@@ -136,9 +135,7 @@ function Get-WebView2Directory {
 
         $coreDll = Join-Path $candidate "Microsoft.Web.WebView2.Core.dll"
         $wpfDll = Join-Path $candidate "Microsoft.Web.WebView2.Wpf.dll"
-        $loaderDll = Join-Path $candidate "WebView2Loader.dll"
-
-        if ((Test-Path -LiteralPath $coreDll) -and (Test-Path -LiteralPath $wpfDll) -and (Test-Path -LiteralPath $loaderDll)) {
+        if ((Test-Path -LiteralPath $coreDll) -and (Test-Path -LiteralPath $wpfDll)) {
             return $candidate
         }
     }
@@ -149,23 +146,66 @@ function Get-WebView2Directory {
         if ($dll) {
             $candidate = Split-Path -Path $dll.FullName -Parent
             $coreDll = Join-Path $candidate "Microsoft.Web.WebView2.Core.dll"
-            $loaderDll = Join-Path $candidate "WebView2Loader.dll"
-            if ((Test-Path -LiteralPath $coreDll) -and (Test-Path -LiteralPath $loaderDll)) {
+            if (Test-Path -LiteralPath $coreDll) {
                 return $candidate
             }
         }
     }
 
-    throw "WebView2 WPF assemblies not found. Set LIVELYSAM_WEBVIEW2_DIR if necessary."
+    throw "WebView2 managed assemblies not found. Set LIVELYSAM_WEBVIEW2_MANAGED_DIR if necessary."
+}
+
+function Get-WebView2LoaderDirectory {
+    $envDir = $env:LIVELYSAM_WEBVIEW2_LOADER_DIR
+    $candidates = @()
+
+    if ($envDir) {
+        $candidates += $envDir
+    }
+
+    if ([IntPtr]::Size -eq 8) {
+        $candidates += @(
+            "C:\Program Files\Microsoft Office\root\Office16",
+            "C:\Program Files\Microsoft OneDrive\26.040.0301.0001"
+        )
+    } else {
+        $candidates += @(
+            "C:\Program Files (x86)\Hnc\Office 2024\HncUtils\Service"
+        )
+    }
+
+    foreach ($candidate in $candidates) {
+        if (-not $candidate) {
+            continue
+        }
+
+        $loaderDll = Join-Path $candidate "WebView2Loader.dll"
+        if (Test-Path -LiteralPath $loaderDll) {
+            return $candidate
+        }
+    }
+
+    $searchRoots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }
+    foreach ($root in $searchRoots) {
+        $dll = Get-ChildItem -Path $root -Recurse -Filter "WebView2Loader.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($dll) {
+            return (Split-Path -Path $dll.FullName -Parent)
+        }
+    }
+
+    throw "WebView2Loader.dll not found. Set LIVELYSAM_WEBVIEW2_LOADER_DIR if necessary."
 }
 
 function Ensure-WebView2Assemblies {
-    param([string]$WebView2Dir)
+    param(
+        [string]$ManagedDir,
+        [string]$LoaderDir
+    )
 
-    $env:PATH = "$WebView2Dir;$env:PATH"
+    $env:PATH = "$LoaderDir;$env:PATH"
     Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
-    [System.Reflection.Assembly]::LoadFrom((Join-Path $WebView2Dir "Microsoft.Web.WebView2.Core.dll")) | Out-Null
-    [System.Reflection.Assembly]::LoadFrom((Join-Path $WebView2Dir "Microsoft.Web.WebView2.Wpf.dll")) | Out-Null
+    [System.Reflection.Assembly]::LoadFrom((Join-Path $ManagedDir "Microsoft.Web.WebView2.Core.dll")) | Out-Null
+    [System.Reflection.Assembly]::LoadFrom((Join-Path $ManagedDir "Microsoft.Web.WebView2.Wpf.dll")) | Out-Null
 }
 
 function Ensure-NativeDesktopInterop {
@@ -325,9 +365,9 @@ function Start-Host {
         updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
     }
 
-    $webView2Dir = Get-WebView2Directory
-    Ensure-WebView2Assemblies -WebView2Dir $webView2Dir
-    Ensure-NativeDesktopInterop
+    $webView2ManagedDir = Get-WebView2ManagedDirectory
+    $webView2LoaderDir = Get-WebView2LoaderDirectory
+    Ensure-WebView2Assemblies -ManagedDir $webView2ManagedDir -LoaderDir $webView2LoaderDir
 
     $port = Get-FreePort
     $url = "http://127.0.0.1:$port/index.html?runtime=desktophost"
@@ -339,10 +379,23 @@ function Start-Host {
         Wait-ForServer -Url $url
         Log-Message "Local server ready at $url"
 
-        $workArea = [LivelySamDesktopNative]::GetWorkArea()
-        $width = $workArea.Right - $workArea.Left
-        $height = $workArea.Bottom - $workArea.Top
-        $desktopParent = [LivelySamDesktopNative]::PrepareWorkerW()
+        $workArea = [System.Windows.SystemParameters]::WorkArea
+        $initialWidth = 800
+        $initialHeight = 600
+        New-Item -ItemType Directory -Path $webViewProfileDir -Force | Out-Null
+
+        $window = New-Object System.Windows.Window
+        $window.Title = "LivelySam Desktop Host"
+        $window.WindowStyle = [System.Windows.WindowStyle]::None
+        $window.ResizeMode = [System.Windows.ResizeMode]::NoResize
+        $window.ShowInTaskbar = $false
+        $window.Topmost = $false
+        $window.AllowsTransparency = $false
+        $window.Background = [System.Windows.Media.Brushes]::Black
+        $window.Left = $workArea.Left + 64
+        $window.Top = $workArea.Top + 64
+        $window.Width = $initialWidth
+        $window.Height = $initialHeight
 
         $grid = New-Object System.Windows.Controls.Grid
         $webView = New-Object Microsoft.Web.WebView2.Wpf.WebView2
@@ -351,17 +404,7 @@ function Start-Host {
         $creationProperties.UserDataFolder = $webViewProfileDir
         $webView.CreationProperties = $creationProperties
         $grid.Children.Add($webView) | Out-Null
-
-        $sourceParameters = New-Object System.Windows.Interop.HwndSourceParameters("LivelySam Desktop Host")
-        $sourceParameters.PositionX = $workArea.Left
-        $sourceParameters.PositionY = $workArea.Top
-        $sourceParameters.Width = $width
-        $sourceParameters.Height = $height
-        $sourceParameters.ParentWindow = $desktopParent
-        $sourceParameters.WindowStyle = 0x50000000
-        $sourceParameters.ExtendedWindowStyle = 0x08000080
-        $source = New-Object System.Windows.Interop.HwndSource($sourceParameters)
-        $source.RootVisual = $grid
+        $window.Content = $grid
 
         $script:hostState = @{
             host_pid = $PID
@@ -369,46 +412,106 @@ function Start-Host {
             port = $port
             url = $url
             renderer = "WebView2"
-            webview2_dir = $webView2Dir
+            webview2_managed_dir = $webView2ManagedDir
+            webview2_loader_dir = $webView2LoaderDir
+            webview2_profile_dir = $webViewProfileDir
             attached = $false
             last_error = $null
         }
         Write-JsonFile -Path $stateFile -Value $script:hostState
+        $script:desktopAttached = $false
 
         $stopTimer = New-Object System.Windows.Threading.DispatcherTimer
         $stopTimer.Interval = [TimeSpan]::FromMilliseconds(500)
         $stopTimer.add_Tick({
             if (Test-Path -LiteralPath $stopFile) {
                 $stopTimer.Stop()
-                $source.Dispose()
-                [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvokeShutdown([System.Windows.Threading.DispatcherPriority]::Background) | Out-Null
+                $window.Close()
             }
         })
 
-        $hwnd = $source.Handle
-        $script:hostState.attached = $true
-        $script:hostState.window_handle = ("0x{0:X}" -f $hwnd.ToInt64())
-        $script:hostState.desktop_parent = ("0x{0:X}" -f $desktopParent.ToInt64())
-        Write-JsonFile -Path $stateFile -Value $script:hostState
-        Write-Result @{
-            status = "running"
-            attached = $true
-            message = "Local wallpaper host attached successfully."
-            updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-            url = $url
-            renderer = "WebView2"
-            window_handle = $script:hostState.window_handle
-            desktop_parent = $script:hostState.desktop_parent
-        }
-        Log-Message "Created child host window $($script:hostState.window_handle) on desktop parent $($script:hostState.desktop_parent)"
-        $webView.Source = $url
-        $stopTimer.Start()
-
-        $webView.add_NavigationCompleted({
-            Log-Message "WebView navigation completed."
+        $webView.add_CoreWebView2InitializationCompleted({
+            param($sender, $args)
+            if ($args.IsSuccess) {
+                Log-Message "WebView2 initialization completed."
+                $sender.CoreWebView2.Navigate($url)
+            } else {
+                $exceptionText = if ($args.InitializationException) { $args.InitializationException.ToString() } else { "Unknown WebView2 initialization error." }
+                Log-Message "WebView2 initialization failed: $exceptionText" "ERROR"
+                $script:hostState.last_error = $exceptionText
+                Write-JsonFile -Path $stateFile -Value $script:hostState
+                Write-Result @{
+                    status = "failed"
+                    attached = $false
+                    message = "WebView2 initialization failed."
+                    error = $exceptionText
+                    updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+                }
+            }
         })
 
-        [System.Windows.Threading.Dispatcher]::Run()
+        $webView.add_Loaded({
+            Log-Message "WebView control loaded."
+        })
+
+        $webView.add_NavigationCompleted({
+            param($sender, $args)
+            Log-Message ("WebView navigation completed. success={0}" -f $args.IsSuccess)
+            if ($args.IsSuccess -and -not $script:desktopAttached) {
+                Ensure-NativeDesktopInterop
+                $nativeWorkArea = [LivelySamDesktopNative]::GetWorkArea()
+                $desktopParent = [LivelySamDesktopNative]::PrepareWorkerW()
+                $interop = New-Object System.Windows.Interop.WindowInteropHelper($window)
+                $hwnd = $interop.Handle
+                [LivelySamDesktopNative]::AttachWindow($hwnd, $desktopParent, $nativeWorkArea.Left, $nativeWorkArea.Top, ($nativeWorkArea.Right - $nativeWorkArea.Left), ($nativeWorkArea.Bottom - $nativeWorkArea.Top))
+                $script:desktopAttached = $true
+                $script:hostState.attached = $true
+                $script:hostState.window_handle = ("0x{0:X}" -f $hwnd.ToInt64())
+                $script:hostState.desktop_parent = ("0x{0:X}" -f $desktopParent.ToInt64())
+                Write-JsonFile -Path $stateFile -Value $script:hostState
+                Write-Result @{
+                    status = "running"
+                    attached = $true
+                    message = "Local wallpaper host attached successfully."
+                    updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+                    url = $url
+                    renderer = "WebView2"
+                    window_handle = $script:hostState.window_handle
+                    desktop_parent = $script:hostState.desktop_parent
+                }
+                Log-Message "Attached host window $($script:hostState.window_handle) to desktop parent $($script:hostState.desktop_parent)"
+                $stopTimer.Start()
+            }
+        })
+
+        $window.Add_Loaded({
+            Log-Message "Host window loaded."
+            try {
+                Log-Message "Calling EnsureCoreWebView2Async."
+                $null = $webView.EnsureCoreWebView2Async()
+            } catch {
+                $message = $_.Exception.Message
+                Log-Message "WebView2 async start failed: $message" "ERROR"
+                $script:hostState.last_error = $message
+                Write-JsonFile -Path $stateFile -Value $script:hostState
+                Write-Result @{
+                    status = "failed"
+                    attached = $false
+                    message = "WebView2 async start failed."
+                    error = $message
+                    updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+                }
+            }
+        })
+
+        $window.Add_Closed({
+            $stopTimer.Stop()
+            [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvokeShutdown([System.Windows.Threading.DispatcherPriority]::Background) | Out-Null
+        })
+
+        $app = New-Object System.Windows.Application
+        $app.ShutdownMode = [System.Windows.ShutdownMode]::OnMainWindowClose
+        $app.Run($window) | Out-Null
     } catch {
         $message = $_.Exception.Message
         Log-Message "Host startup failed: $message" "ERROR"
@@ -498,7 +601,7 @@ function Show-Status {
 }
 
 switch ($Command) {
-    "start" { Start-Host; break }
+    "start" { throw "Use start_local_wallpaper.cmd or tools/start_local_wallpaper.ps1 to launch the wallpaper host."; break }
     "stop" { Stop-Host; break }
     "status" { Show-Status; break }
 }
