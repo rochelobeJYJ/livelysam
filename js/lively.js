@@ -19,6 +19,9 @@
     LS.Lively.isLively = true;
     document.body.classList.add('lively-mode');
     document.body.classList.remove('browser-mode');
+    window.dispatchEvent(new CustomEvent('livelysam:runtimeChanged', {
+      detail: { isLively: true }
+    }));
     console.log(`[Lively] 속성 변경: ${name} = ${val}`);
 
     const config = LS.Config;

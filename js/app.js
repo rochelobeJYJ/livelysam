@@ -26,6 +26,8 @@
     _resolvedWeatherSignature: '',
     _debouncedSchoolResolution: null,
     _debouncedWeatherResolution: null,
+    _viewportMetricsBound: false,
+    _viewportMetricsUpdater: null,
 
     async init() {
       console.log('[LivelySam] 🚀 초기화 시작...');
@@ -94,6 +96,30 @@
       this._debouncedWeatherResolution = LS.Helpers.debounce(() => {
         this._resolveWeatherFromConfig();
       }, 700);
+
+      this._updateViewportMetrics();
+      if (!this._viewportMetricsBound) {
+        this._viewportMetricsBound = true;
+        this._viewportMetricsUpdater = LS.Helpers.debounce(() => this._updateViewportMetrics(), 80);
+        window.addEventListener('resize', this._viewportMetricsUpdater, { passive: true });
+        window.addEventListener('livelysam:runtimeChanged', () => this._updateViewportMetrics());
+      }
+    },
+
+    _updateViewportMetrics() {
+      const root = document.documentElement;
+      const innerHeight = window.innerHeight || root.clientHeight || 0;
+      let bottomInset = 0;
+
+      if (LS.Lively.isLively) {
+        const screenHeight = window.screen?.height || innerHeight;
+        const availHeight = window.screen?.availHeight || innerHeight;
+        bottomInset = Math.max(0, innerHeight - availHeight, screenHeight - availHeight);
+        bottomInset = Math.min(bottomInset, 120);
+      }
+
+      root.style.setProperty('--ls-desktop-bottom-inset', `${bottomInset}px`);
+      root.style.setProperty('--ls-viewport-height', `${Math.max(320, innerHeight - bottomInset)}px`);
     },
 
     _bulkIncludes(obj, keys) {
@@ -568,7 +594,10 @@
           document.querySelectorAll('.settings-panel').forEach((panel) => panel.classList.remove('active'));
           target.classList.add('active');
           document.getElementById('settings-' + target.dataset.tab)?.classList.add('active');
-          document.querySelector('.settings-body')?.scrollTo({ top: 0, behavior: 'smooth' });
+          window.requestAnimationFrame(() => {
+            document.querySelector('.settings-body')?.scrollTo({ top: 0, behavior: 'auto' });
+            this._updateSettingsScrollButtons();
+          });
         });
       });
 
@@ -588,6 +617,7 @@
     },
 
     _openSettings() {
+      this._updateViewportMetrics();
       document.body.classList.add('modal-open', 'settings-open');
       document.getElementById('settings-modal')?.classList.add('active');
       this._setSettingsButtonVisible(false);
@@ -652,7 +682,7 @@
       Object.assign(btn.style, {
         position: 'fixed',
         right: '18px',
-        bottom: '92px',
+        bottom: 'calc(24px + var(--ls-desktop-bottom-inset, 0px))',
         width: '54px',
         height: '54px',
         display: 'flex',
@@ -701,8 +731,9 @@
     _scrollSettingsBody(delta) {
       const body = document.querySelector('.settings-body');
       if (!body) return;
-      body.scrollBy({ top: delta, behavior: 'smooth' });
-      window.setTimeout(() => this._updateSettingsScrollButtons(), 180);
+      const maxScroll = Math.max(0, body.scrollHeight - body.clientHeight);
+      body.scrollTop = Math.max(0, Math.min(maxScroll, body.scrollTop + delta));
+      this._updateSettingsScrollButtons();
     },
 
     _updateSettingsScrollButtons() {

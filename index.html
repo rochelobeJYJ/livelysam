@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@7.3.0/dist/gridstack.min.css">
 
   <!-- 앱 스타일 -->
-  <link rel="stylesheet" href="css/style.css?v=20260410-settingsfix4">
+  <link rel="stylesheet" href="css/style.css?v=20260410-settingsfix5">
 </head>
 <body>
   <div class="app-container">
@@ -46,8 +46,9 @@
       <!-- 탭 버튼 -->
       <div class="settings-tabs">
         <button class="settings-tab-btn active" data-tab="school">🏫 학교</button>
-        <button class="settings-tab-btn" data-tab="schedule">⏰ 시간표</button>
-        <button class="settings-tab-btn" data-tab="afterschool">📚 방과후</button>
+        <button class="settings-tab-btn" data-tab="classroom">👥 학급</button>
+        <button class="settings-tab-btn" data-tab="day">⏰ 일과</button>
+        <button class="settings-tab-btn" data-tab="periods">📋 교시</button>
         <button class="settings-tab-btn" data-tab="display">🎨 화면</button>
         <button class="settings-tab-btn" data-tab="data">💾 데이터</button>
       </div>
@@ -89,7 +90,9 @@
             <div id="school-info-display">학교를 검색해주세요</div>
             <div id="school-search-results"></div>
           </div>
+        </div>
 
+        <div id="settings-classroom" class="settings-panel">
           <div class="setting-group">
             <div class="setting-group-title">📚 학년/반</div>
             <div class="setting-row">
@@ -104,11 +107,12 @@
               <label class="setting-label">반</label>
               <input type="text" id="class-input" class="setting-input" value="1" placeholder="반 번호">
             </div>
+            <div class="api-help">학년/반을 바꾸면 시간표, 급식, 교실 기준 정보가 함께 갱신됩니다.</div>
           </div>
         </div>
 
-        <!-- 시간표 설정 탭 -->
-        <div id="settings-schedule" class="settings-panel">
+        <!-- 일과 설정 탭 -->
+        <div id="settings-day" class="settings-panel">
           <div class="setting-group">
             <div class="setting-group-title">📋 시간표 모드</div>
             <div class="setting-row">
@@ -143,6 +147,12 @@
               <label class="setting-label">쉬는 시간 (분)</label>
               <input type="number" id="break-min-input" class="setting-input" value="10" min="5" max="20" step="5">
             </div>
+          </div>
+        </div>
+
+        <div id="settings-periods" class="settings-panel">
+          <div class="setting-group">
+            <div class="setting-group-title">🍽️ 점심과 교시 수</div>
             <div class="setting-row">
               <label class="setting-label">점심 시간 (분)</label>
               <input type="number" id="lunch-min-input" class="setting-input" value="60" min="40" max="80" step="5">
@@ -164,13 +174,6 @@
             </div>
           </div>
 
-          <div class="setting-group">
-            <div class="setting-group-title">📋 교시 시간표 미리보기</div>
-            <div id="period-preview"></div>
-          </div>
-        </div>
-
-        <div id="settings-afterschool" class="settings-panel">
           <div class="setting-group">
             <div class="setting-group-title">📚 방과후 수업</div>
             <div class="setting-row">
@@ -196,6 +199,11 @@
               방과후가 필요한 요일만 숫자로 입력하세요.
               <br>월=1, 화=2, 수=3, 목=4, 금=5
             </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-group-title">📋 교시 시간표 미리보기</div>
+            <div id="period-preview"></div>
           </div>
         </div>
 
@@ -254,7 +262,10 @@
               </div>
             </div>
           </div>
+        </div>
 
+        <!-- 데이터 관리 탭 -->
+        <div id="settings-data" class="settings-panel">
           <div class="setting-group">
             <div class="setting-group-title">📐 레이아웃</div>
             <div class="data-btn-group">
@@ -262,10 +273,7 @@
             </div>
             <div class="api-help">위젯을 드래그하여 위치를 변경하고, 모서리를 잡아 크기를 조절할 수 있습니다.</div>
           </div>
-        </div>
 
-        <!-- 데이터 관리 탭 -->
-        <div id="settings-data" class="settings-panel">
           <div class="setting-group">
             <div class="setting-group-title">💾 데이터 백업</div>
             <p style="font-size: 0.8em; color: var(--text-tertiary); margin-bottom: 12px;">
@@ -323,33 +331,33 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
   <!-- 유틸리티 (의존성 없음) -->
-  <script src="js/utils/helpers.js?v=20260410-settingsfix4"></script>
-  <script src="js/utils/holidays.js?v=20260410-settingsfix4"></script>
-  <script src="js/utils/storage.js?v=20260410-settingsfix4"></script>
+  <script src="js/utils/helpers.js?v=20260410-settingsfix5"></script>
+  <script src="js/utils/holidays.js?v=20260410-settingsfix5"></script>
+  <script src="js/utils/storage.js?v=20260410-settingsfix5"></script>
 
   <!-- API 모듈 -->
-  <script src="js/api/neis.js?v=20260410-settingsfix4"></script>
-  <script src="js/api/openweather.js?v=20260410-settingsfix4"></script>
+  <script src="js/api/neis.js?v=20260410-settingsfix5"></script>
+  <script src="js/api/openweather.js?v=20260410-settingsfix5"></script>
 
   <!-- 설정 관리 -->
-  <script src="js/config.js?v=20260410-settingsfix4"></script>
+  <script src="js/config.js?v=20260410-settingsfix5"></script>
 
   <!-- Lively 연동 -->
-  <script src="js/lively.js?v=20260410-settingsfix4"></script>
+  <script src="js/lively.js?v=20260410-settingsfix5"></script>
 
   <!-- 위젯 -->
-  <script src="js/widgets/clock.js?v=20260410-settingsfix4"></script>
-  <script src="js/widgets/timetable.js?v=20260410-settingsfix4"></script>
-  <script src="js/widgets/meal.js?v=20260410-settingsfix4"></script>
-  <script src="js/widgets/weather.js?v=20260410-settingsfix4"></script>
-  <script src="js/widgets/calendar.js?v=20260410-settingsfix4"></script>
-  <script src="js/widgets/memo.js?v=20260410-settingsfix4"></script>
-  <script src="js/widgets/todo.js?v=20260410-settingsfix4"></script>
-  <script src="js/widgets/timer.js?v=20260410-settingsfix4"></script>
-  <script src="js/widgets/dday.js?v=20260410-settingsfix4"></script>
-  <script src="js/widgets/bookmarks.js?v=20260410-settingsfix4"></script>
+  <script src="js/widgets/clock.js?v=20260410-settingsfix5"></script>
+  <script src="js/widgets/timetable.js?v=20260410-settingsfix5"></script>
+  <script src="js/widgets/meal.js?v=20260410-settingsfix5"></script>
+  <script src="js/widgets/weather.js?v=20260410-settingsfix5"></script>
+  <script src="js/widgets/calendar.js?v=20260410-settingsfix5"></script>
+  <script src="js/widgets/memo.js?v=20260410-settingsfix5"></script>
+  <script src="js/widgets/todo.js?v=20260410-settingsfix5"></script>
+  <script src="js/widgets/timer.js?v=20260410-settingsfix5"></script>
+  <script src="js/widgets/dday.js?v=20260410-settingsfix5"></script>
+  <script src="js/widgets/bookmarks.js?v=20260410-settingsfix5"></script>
 
   <!-- 메인 앱 (마지막 로드) -->
-  <script src="js/app.js?v=20260410-settingsfix4"></script>
+  <script src="js/app.js?v=20260410-settingsfix5"></script>
 </body>
 </html>
