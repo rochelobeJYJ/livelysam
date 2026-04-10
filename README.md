@@ -2,7 +2,7 @@
 
 > **한국 교사를 위한 올인원 데스크톱 대시보드 배경화면**
 >
-> 무료로 가져오기 쉬운 `ScreenPlay` 기준으로 정리 중인 실시간 교사 컨트롤센터
+> 외부 유료 앱 없이 로컬 실행기로 직접 바탕화면에 붙일 수 있는 실시간 교사 컨트롤센터
 
 ---
 
@@ -23,41 +23,47 @@
 
 ---
 
-## 🚀 무료 추천 경로: ScreenPlay
+## 🚀 무료 추천 경로: 전용 로컬 실행기
 
-### 1단계: ScreenPlay 설치
-- Steam에서 `ScreenPlay` 설치
-- 무료이며 오픈소스입니다.
-- HTML5 wallpaper를 공식 지원합니다.
+### 1단계: 바로 실행
 
-### 2단계: import용 폴더 만들기
-PowerShell에서 아래 명령을 실행하면 불필요한 파일을 뺀 import 폴더가 생성됩니다.
+시작:
+
+```bat
+start_local_wallpaper.cmd
+```
+
+중지:
+
+```bat
+stop_local_wallpaper.cmd
+```
+
+### 2단계: 상태 확인
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\build-screenplay-package.ps1
+venv\Scripts\python.exe .\tools\desktop_wallpaper_host.py status
 ```
 
-생성 경로:
+### 3단계: 동작 방식
 
-```text
-dist\screenplay\LivelySam\
-```
+- 로컬 HTTP 서버로 현재 프로젝트를 서빙
+- Chrome 앱 창을 띄움
+- 그 창을 Windows 데스크톱 레이어(`WorkerW`)에 붙여서 배경처럼 보이게 처리
+- 자세한 구조는 [LOCAL_WALLPAPER_HOST.md](./LOCAL_WALLPAPER_HOST.md)를 보세요.
 
-### 3단계: ScreenPlay로 가져오기
-1. ScreenPlay 실행
-2. 새 wallpaper를 추가하는 메뉴 열기
-3. `dist\screenplay\LivelySam\index.html` 파일 또는 폴더를 선택
-4. wallpaper 적용
+---
 
-### 4단계: 설정 연결
-- 기본적으로는 월페이퍼 안의 우측 하단 설정 버튼을 쓰면 됩니다.
-- 자세한 준비와 근거는 [SCREENPLAY_SETUP.md](./SCREENPLAY_SETUP.md)를 보세요.
+## 🧪 무료 외부 대안
+
+- ScreenPlay 경로도 남겨뒀습니다.
+- 필요하면 [SCREENPLAY_SETUP.md](./SCREENPLAY_SETUP.md)를 참고할 수 있습니다.
 
 ---
 
 ## 🧪 유료 대안
 
-- Wallpaper Engine도 지원 경로를 남겨뒀지만 유료입니다.
+- Wallpaper Engine 지원 경로도 남겨뒀습니다.
 - 필요하면 [WALLPAPER_ENGINE_SETUP.md](./WALLPAPER_ENGINE_SETUP.md)를 참고할 수 있습니다.
 
 ---

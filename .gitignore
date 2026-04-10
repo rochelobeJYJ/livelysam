@@ -16,6 +16,7 @@ Thumbs.db
 *.log
 node_modules/
 dist/
+runtime/
 
 # Local Python experiments
 main.py
