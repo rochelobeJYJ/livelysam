@@ -2,7 +2,7 @@
 
 > **한국 교사를 위한 올인원 데스크톱 대시보드 배경화면**
 >
-> Wallpaper Engine 기준으로 정리 중인 실시간 교사 컨트롤센터
+> 무료로 가져오기 쉬운 `ScreenPlay` 기준으로 정리 중인 실시간 교사 컨트롤센터
 
 ---
 
@@ -23,46 +23,48 @@
 
 ---
 
-## 🚀 Wallpaper Engine 설치 방법
+## 🚀 무료 추천 경로: ScreenPlay
 
-### 1단계: Wallpaper Engine 설치
-- [Wallpaper Engine 공식 사이트](https://www.wallpaperengine.io/en)
-- 또는 Steam에서 `Wallpaper Engine` 설치
+### 1단계: ScreenPlay 설치
+- Steam에서 `ScreenPlay` 설치
+- 무료이며 오픈소스입니다.
+- HTML5 wallpaper를 공식 지원합니다.
 
 ### 2단계: import용 폴더 만들기
 PowerShell에서 아래 명령을 실행하면 불필요한 파일을 뺀 import 폴더가 생성됩니다.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\build-wallpaper-engine-package.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\build-screenplay-package.ps1
 ```
 
 생성 경로:
 
 ```text
-dist\wallpaper-engine\LivelySam\
+dist\screenplay\LivelySam\
 ```
 
-### 3단계: Wallpaper Engine Editor로 가져오기
-1. Wallpaper Engine 실행
-2. `Create Wallpaper` 클릭
-3. `dist\wallpaper-engine\LivelySam\index.html` 파일을 드래그 앤 드롭
-4. Editor가 프로젝트를 복사하고 `project.json`을 자동 생성
+### 3단계: ScreenPlay로 가져오기
+1. ScreenPlay 실행
+2. 새 wallpaper를 추가하는 메뉴 열기
+3. `dist\screenplay\LivelySam\index.html` 파일 또는 폴더를 선택
+4. wallpaper 적용
 
 ### 4단계: 설정 연결
-- 기본적으로는 월페이퍼 안의 우측 하단 설정 버튼을 써도 됩니다.
-- Wallpaper Engine의 `User Properties`도 연결할 수 있습니다.
-- 자세한 키 목록과 추천 범위는 [WALLPAPER_ENGINE_SETUP.md](./WALLPAPER_ENGINE_SETUP.md)를 보세요.
+- 기본적으로는 월페이퍼 안의 우측 하단 설정 버튼을 쓰면 됩니다.
+- 자세한 준비와 근거는 [SCREENPLAY_SETUP.md](./SCREENPLAY_SETUP.md)를 보세요.
 
-### 5단계: 디버깅
-- Wallpaper Engine `Settings > General > CEF devtools port` 활성화
-- 브라우저에서 `localhost:설정한포트` 접속
-- 자세한 내용: [Wallpaper Engine Web Wallpaper Debugging](https://docs.wallpaperengine.io/en/web/debug/debug.html)
+---
+
+## 🧪 유료 대안
+
+- Wallpaper Engine도 지원 경로를 남겨뒀지만 유료입니다.
+- 필요하면 [WALLPAPER_ENGINE_SETUP.md](./WALLPAPER_ENGINE_SETUP.md)를 참고할 수 있습니다.
 
 ---
 
 ## 🧪 기존 Lively 방식
 
-기존 Lively 가져오기 파일도 남아 있지만, 현재는 Wallpaper Engine 경로를 우선 추천합니다.
+기존 Lively 가져오기 파일도 남아 있지만, 현재는 `ScreenPlay` 경로를 먼저 추천합니다.
 
 ---
 
