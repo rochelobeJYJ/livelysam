@@ -143,8 +143,6 @@
     async _deleteMemo(id) {
       const confirmed = await LS.Helpers.confirmModal('메모 삭제', '이 메모를 삭제할까요?');
       if (!confirmed) return;
-      const confirm = () => true;
-      if (!confirm('이 메모를 삭제하시겠습니까?')) return;
       this._memos = this._memos.filter(m => m.id !== id);
       try {
         await LS.Storage.dbDelete('memos', id);

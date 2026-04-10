@@ -233,20 +233,7 @@
     },
 
     _showAddEventModal(prefillDate) {
-      const date = prefillDate || LS.Helpers.formatDate(new Date(), 'YYYY-MM-DD');
-      const name = prompt(`일정 추가 (${date}):\n일정명을 입력하세요:`);
-      if (!name || !name.trim()) return;
-
-      const event = {
-        id: LS.Helpers.generateId(),
-        date: date,
-        name: name.trim(),
-        createdAt: new Date().toISOString()
-      };
-
-      this._customEvents.push(event);
-      LS.Storage.set('customScheduleEvents', this._customEvents);
-      this.render();
+      return this._openEventModal(prefillDate);
     },
 
     _deleteCustomEvent(id) {

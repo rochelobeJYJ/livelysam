@@ -82,13 +82,7 @@
     },
 
     setTimer() {
-      const input = prompt('타이머 시간 (분):', '50');
-      if (!input) return;
-      const mins = parseInt(input);
-      if (isNaN(mins) || mins <= 0) return;
-      this._seconds = mins * 60;
-      this._totalSeconds = mins * 60;
-      this._updateDisplay();
+      return this.openTimerSetup();
     },
 
     switchMode() {

@@ -221,16 +221,6 @@
           message: '학교 정보를 가져오지 못했습니다. NEIS API 키를 확인해주세요.'
         };
         this._refreshLivelySetupNotice();
-        return;
-        LS.Helpers.showToast(`내보내기 실패: ${e.message}`, 'error', 3200);
-        return;
-        console.error('[LivelySam] 학교 자동 설정 실패:', e);
-        if (requestId !== this._schoolResolveRequestId) return;
-        this._schoolResolveState = {
-          status: 'error',
-          message: '학교 정보를 가져오지 못했습니다. NEIS API 키를 확인해주세요.'
-        };
-        this._refreshLivelySetupNotice();
       }
     },
 
@@ -734,14 +724,12 @@
         LS.Helpers.showToast('학교명을 입력해주세요.', 'warning');
         return;
       }
-      if (!name) { alert('학교명을 입력해주세요.'); return; }
 
       const apiKey = document.getElementById('neis-key-input')?.value?.trim();
       if (!apiKey) {
         LS.Helpers.showToast('NEIS API 키를 먼저 입력해주세요.', 'warning');
         return;
       }
-      if (!apiKey) { alert('NEIS API 키를 먼저 입력해주세요.'); return; }
 
       LS.NeisAPI.setApiKey(apiKey);
       resultBox.innerHTML = '<div class="search-loading">🔍 검색 중...</div>';
@@ -863,12 +851,6 @@
     },
 
     async _exportData() {
-      const alert = (message) => {
-        const text = String(message || '').replace(/^[^\p{L}\p{N}]+/u, '');
-        const tone = /실패|error/i.test(String(message || '')) ? 'error' : 'success';
-        LS.Helpers.showToast(text, tone, 3200);
-      };
-
       try {
         const data = await LS.Storage.exportAll();
         if (LS.Lively.isLively) {
@@ -889,23 +871,16 @@
           LS.Helpers.showToast('백업 JSON을 열었습니다.', 'success');
           return;
         }
+
         const filename = `LivelySam_backup_${LS.Helpers.formatDate(new Date(), 'YYYY-MM-DD')}.json`;
         LS.Storage.downloadJSON(data, filename);
         LS.Helpers.showToast('데이터를 내보냈습니다.', 'success');
-        return;
-        alert('✅ 데이터가 내보내졌습니다.');
       } catch (e) {
-        alert('❌ 내보내기 실패: ' + e.message);
+        LS.Helpers.showToast(`내보내기 실패: ${e.message}`, 'error', 3200);
       }
     },
 
     async _importData() {
-      const alert = (message) => {
-        const text = String(message || '').replace(/^[^\p{L}\p{N}]+/u, '');
-        const tone = /실패|error/i.test(String(message || '')) ? 'error' : 'success';
-        LS.Helpers.showToast(text, tone, 3200);
-      };
-
       if (LS.Lively.isLively) {
         const result = await LS.Helpers.promptModal('데이터 가져오기', [
           {
@@ -928,8 +903,6 @@
           location.reload();
         } catch (err) {
           LS.Helpers.showToast(`가져오기 실패: ${err.message}`, 'error', 3200);
-          return;
-          LS.Helpers.showToast(`가져오기 실패: ${err.message}`, 'error', 3200);
         }
         return;
       }
@@ -946,11 +919,8 @@
           await LS.Storage.importAll(data);
           LS.Helpers.showToast('데이터를 가져왔습니다. 페이지를 새로고침합니다.', 'success', 3200);
           location.reload();
-          return;
-          alert('✅ 데이터가 가져와졌습니다. 페이지를 새로고침합니다.');
-          location.reload();
         } catch (err) {
-          alert('❌ 가져오기 실패: ' + err.message);
+          LS.Helpers.showToast(`가져오기 실패: ${err.message}`, 'error', 3200);
         }
       };
       input.click();

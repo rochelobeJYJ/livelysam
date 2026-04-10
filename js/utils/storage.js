@@ -102,7 +102,6 @@
         try {
           request = indexedDB.open(DB_NAME, DB_VERSION);
         } catch (error) {
-          console.error('[Storage] IndexedDB init threw synchronously:', error);
           enableFallback('indexedDB.open() threw.', error);
           resolve(null);
           initPromise = null;
@@ -139,11 +138,6 @@
 
         request.onblocked = () => {
           const error = request.error || new Error('IndexedDB open was blocked.');
-          console.error('[Storage] IndexedDB init blocked:', {
-            name: error.name || 'UnknownError',
-            message: error.message || '',
-            error
-          });
           enableFallback('open request was blocked.', error);
           resolve(null);
           initPromise = null;
@@ -151,11 +145,6 @@
 
         request.onerror = () => {
           const error = request.error || new Error('IndexedDB open failed.');
-          console.error('[Storage] IndexedDB initialization failed:', {
-            name: error.name || 'UnknownError',
-            message: error.message || '',
-            error
-          });
           enableFallback('open request failed.', error);
           resolve(null);
           initPromise = null;
