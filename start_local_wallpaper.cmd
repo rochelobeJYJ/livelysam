@@ -1,11 +1,13 @@
 @echo off
 setlocal
-set ROOT=%~dp0
+set "ROOT=%~dp0"
+set "ROOT_ARG=%~dp0."
 
-if not exist "%ROOT%venv\Scripts\pythonw.exe" (
-  echo pythonw.exe not found in venv\Scripts
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%tools\start_local_wallpaper.ps1" -Root "%ROOT_ARG%"
+if errorlevel 1 (
+  echo.
+  pause
   exit /b 1
 )
-
-start "" "%ROOT%venv\Scripts\pythonw.exe" "%ROOT%tools\desktop_wallpaper_host.py" start
+powershell -NoProfile -Command "Start-Sleep -Seconds 5"
 exit /b 0

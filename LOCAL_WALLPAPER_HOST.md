@@ -29,6 +29,8 @@
 start_local_wallpaper.cmd
 ```
 
+실행 후 콘솔 창에 성공 또는 실패 메시지가 출력됩니다.
+
 중지:
 
 ```bat

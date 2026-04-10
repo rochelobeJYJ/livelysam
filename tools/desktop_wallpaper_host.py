@@ -23,6 +23,7 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 RUNTIME_DIR = APP_ROOT / "runtime" / "desktop-host"
 PROFILE_DIR = RUNTIME_DIR / "chrome-profile"
 STATE_FILE = RUNTIME_DIR / "state.json"
+RESULT_FILE = RUNTIME_DIR / "last-result.json"
 STOP_FILE = RUNTIME_DIR / "stop.flag"
 LOG_FILE = RUNTIME_DIR / "host.log"
 APP_TITLE = "LivelySam Desktop Host"
@@ -49,6 +50,8 @@ SWP_FRAMECHANGED = 0x0020
 HWND_BOTTOM = ctypes.c_void_p(1)
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 STILL_ACTIVE = 259
+TH32CS_SNAPPROCESS = 0x00000002
+INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 
 class RECT(ctypes.Structure):
@@ -57,6 +60,21 @@ class RECT(ctypes.Structure):
         ("top", ctypes.c_long),
         ("right", ctypes.c_long),
         ("bottom", ctypes.c_long),
+    ]
+
+
+class PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("th32DefaultHeapID", ULONG_PTR),
+        ("th32ModuleID", wintypes.DWORD),
+        ("cntThreads", wintypes.DWORD),
+        ("th32ParentProcessID", wintypes.DWORD),
+        ("pcPriClassBase", ctypes.c_long),
+        ("dwFlags", wintypes.DWORD),
+        ("szExeFile", wintypes.WCHAR * 260),
     ]
 
 
@@ -112,6 +130,12 @@ kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 kernel32.OpenProcess.restype = wintypes.HANDLE
 kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
 kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+kernel32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+kernel32.Process32FirstW.restype = wintypes.BOOL
+kernel32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+kernel32.Process32NextW.restype = wintypes.BOOL
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 kernel32.CloseHandle.restype = wintypes.BOOL
 
@@ -172,11 +196,25 @@ def write_state(payload: dict) -> None:
     STATE_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def write_result(payload: dict) -> None:
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    RESULT_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def read_state() -> Optional[dict]:
     if not STATE_FILE.exists():
         return None
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def read_result() -> Optional[dict]:
+    if not RESULT_FILE.exists():
+        return None
+    try:
+        return json.loads(RESULT_FILE.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
 
@@ -236,35 +274,67 @@ def launch_browser(browser_path: Path, url: str, bounds: tuple[int, int, int, in
     return subprocess.Popen(args)
 
 
-def find_main_window_for_pid(pid: int) -> Optional[int]:
+def get_process_tree(root_pid: int) -> set[int]:
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if snapshot == INVALID_HANDLE_VALUE:
+        return {root_pid}
+
+    parent_map: dict[int, list[int]] = {}
+    entry = PROCESSENTRY32W()
+    entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+
+    try:
+        ok = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
+        while ok:
+            parent_map.setdefault(int(entry.th32ParentProcessID), []).append(int(entry.th32ProcessID))
+            ok = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+    process_ids = {root_pid}
+    queue = [root_pid]
+    while queue:
+        current = queue.pop(0)
+        for child_pid in parent_map.get(current, []):
+            if child_pid not in process_ids:
+                process_ids.add(child_pid)
+                queue.append(child_pid)
+    return process_ids
+
+
+def find_main_window_for_pids(process_ids: set[int]) -> Optional[tuple[int, int]]:
     matches: list[tuple[int, str]] = []
 
     @EnumWindowsProc
     def callback(hwnd, _lparam):
         proc_id = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(proc_id))
-        if proc_id.value != pid or not user32.IsWindowVisible(hwnd):
+        if int(proc_id.value) not in process_ids or not user32.IsWindowVisible(hwnd):
             return True
         length = user32.GetWindowTextLengthW(hwnd)
         buffer = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, buffer, length + 1)
-        matches.append((hwnd, buffer.value))
+        matches.append((hwnd, buffer.value, int(proc_id.value)))
         return True
 
     user32.EnumWindows(callback, 0)
     if not matches:
         return None
 
-    titled = [hwnd for hwnd, title in matches if title.strip()]
-    return titled[0] if titled else matches[0][0]
+    titled = [(hwnd, pid) for hwnd, title, pid in matches if title.strip()]
+    if titled:
+        return titled[0]
+    hwnd, _title, pid = matches[0]
+    return hwnd, pid
 
 
-def wait_for_window(pid: int, timeout_seconds: float = 20.0) -> int:
+def wait_for_window(pid: int, timeout_seconds: float = 20.0) -> tuple[int, int]:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
-        hwnd = find_main_window_for_pid(pid)
-        if hwnd:
-            return hwnd
+        process_ids = get_process_tree(pid)
+        window_info = find_main_window_for_pids(process_ids)
+        if window_info:
+            return window_info
         time.sleep(0.1)
     raise TimeoutError("Timed out waiting for browser window.")
 
@@ -337,6 +407,12 @@ def ensure_not_running() -> None:
 def start_host() -> None:
     ensure_not_running()
     STOP_FILE.unlink(missing_ok=True)
+    write_result({
+        "status": "starting",
+        "attached": False,
+        "message": "Starting desktop wallpaper host.",
+        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    })
 
     browser_path = find_browser_path()
     bounds = get_primary_work_area()
@@ -350,6 +426,8 @@ def start_host() -> None:
         "port": port,
         "url": url,
         "browser_path": str(browser_path),
+        "attached": False,
+        "last_error": None,
     }
     write_state(state)
 
@@ -357,13 +435,51 @@ def start_host() -> None:
     logging.info("Browser launched: pid=%s path=%s", process.pid, browser_path)
 
     try:
-        hwnd = wait_for_window(process.pid)
+        hwnd, window_pid = wait_for_window(process.pid)
         parent_hwnd = prepare_workerw()
         attach_to_desktop(hwnd, parent_hwnd, bounds)
+        state.update({
+            "attached": True,
+            "window_handle": f"0x{hwnd:X}",
+            "window_pid": window_pid,
+            "desktop_parent": f"0x{parent_hwnd:X}",
+        })
+        write_state(state)
+        write_result({
+            "status": "running",
+            "attached": True,
+            "message": "Desktop wallpaper host attached successfully.",
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "url": url,
+            "browser_path": str(browser_path),
+            "window_handle": f"0x{hwnd:X}",
+            "window_pid": window_pid,
+            "desktop_parent": f"0x{parent_hwnd:X}",
+        })
         logging.info("Attached browser window 0x%X to desktop parent 0x%X", hwnd, parent_hwnd)
 
         while process.poll() is None and not STOP_FILE.exists():
             time.sleep(0.5)
+        write_result({
+            "status": "stopped",
+            "attached": False,
+            "message": "Desktop wallpaper host stopped.",
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+    except Exception as exc:
+        state.update({
+            "last_error": f"{type(exc).__name__}: {exc}",
+        })
+        write_state(state)
+        write_result({
+            "status": "failed",
+            "attached": False,
+            "message": "Desktop wallpaper host failed to start.",
+            "error": f"{type(exc).__name__}: {exc}",
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+        logging.exception("Desktop wallpaper host startup failed.")
+        raise
     finally:
         logging.info("Stopping desktop wallpaper host.")
         server.shutdown()
@@ -381,6 +497,12 @@ def stop_host() -> None:
     state = read_state()
     if not state:
         print("No running desktop wallpaper host was found.")
+        write_result({
+            "status": "stopped",
+            "attached": False,
+            "message": "No running desktop wallpaper host was found.",
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        })
         return
 
     STOP_FILE.write_text("stop", encoding="utf-8")
@@ -398,22 +520,36 @@ def stop_host() -> None:
         terminate_pid(host_pid)
 
     clear_state()
+    write_result({
+        "status": "stopped",
+        "attached": False,
+        "message": "Desktop wallpaper host stopped.",
+        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    })
     print("Desktop wallpaper host stopped.")
 
 
 def show_status() -> None:
     state = read_state()
-    if not state:
-        print("Desktop wallpaper host is not running.")
+    if state:
+        host_pid = int(state.get("host_pid", 0) or 0)
+        browser_pid = int(state.get("browser_pid", 0) or 0)
+        print(json.dumps({
+            **state,
+            "host_running": is_pid_running(host_pid),
+            "browser_running": is_pid_running(browser_pid),
+        }, indent=2))
         return
 
-    host_pid = int(state.get("host_pid", 0) or 0)
-    browser_pid = int(state.get("browser_pid", 0) or 0)
-    print(json.dumps({
-        **state,
-        "host_running": is_pid_running(host_pid),
-        "browser_running": is_pid_running(browser_pid),
-    }, indent=2))
+    result = read_result()
+    if result:
+        print(json.dumps({
+            "running": False,
+            "last_result": result,
+        }, indent=2))
+        return
+
+    print("Desktop wallpaper host is not running.")
 
 
 def main() -> int:
