@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Parcel Stack</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --sky-top: #f4ecd8;
+      --sky-bottom: #d5e1ea;
+      --shell-edge: rgba(70, 63, 54, 0.14);
+      --panel: rgba(248, 244, 236, 0.88);
+      --panel-strong: rgba(249, 246, 239, 0.94);
+      --panel-line: rgba(72, 63, 49, 0.11);
+      --ink: #2f363b;
+      --muted: #66717a;
+      --olive: #617054;
+      --terracotta: #bd6f52;
+      --cardboard: #c89a63;
+      --sand: #efe3cf;
+      --shadow: 0 24px 60px rgba(35, 36, 37, 0.18);
+      --radius: 30px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      touch-action: none;
+      font-family: "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top, rgba(255, 255, 255, 0.72), transparent 34%),
+        linear-gradient(180deg, var(--sky-top), var(--sky-bottom));
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: min(2.6vw, 18px);
+    }
+
+    body.preview-mode {
+      padding: 0;
+      background: transparent;
+    }
+
+    .shell {
+      position: relative;
+      width: min(94vw, 460px);
+      aspect-ratio: 9 / 16;
+      max-height: 96vh;
+      overflow: hidden;
+      border-radius: calc(var(--radius) + 6px);
+      border: 1px solid var(--shell-edge);
+      box-shadow: var(--shadow);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.08)),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0));
+    }
+
+    body.preview-mode .shell {
+      width: 100%;
+      height: 100%;
+      max-height: none;
+      aspect-ratio: auto;
+      border-radius: 0;
+      border: 0;
+      box-shadow: none;
+      background: transparent;
+    }
+
+    #gameCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+    }
+
+    .hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-radius: 18px;
+      border: 1px solid var(--panel-line);
+      overflow: hidden;
+      background: rgba(246, 242, 234, 0.82);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 22px rgba(52, 48, 40, 0.08);
+      pointer-events: none;
+    }
+
+    .hud-cell {
+      min-height: 54px;
+      padding: 8px 10px 9px;
+      border-right: 1px solid rgba(72, 63, 49, 0.08);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .hud-cell:last-child {
+      border-right: 0;
+    }
+
+    .hud-label {
+      font-size: 0.56rem;
+      line-height: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .hud-value {
+      font-size: 0.96rem;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: var(--ink);
+      white-space: nowrap;
+    }
+
+    .hud-cell.score .hud-value {
+      color: var(--terracotta);
+    }
+
+    .hud-cell.stability .hud-value {
+      color: var(--olive);
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      padding: 18px;
+    }
+
+    .overlay[hidden] {
+      display: none;
+    }
+
+    .start-overlay {
+      align-items: flex-end;
+      justify-content: center;
+      background:
+        linear-gradient(180deg, rgba(245, 237, 221, 0), rgba(245, 237, 221, 0.08) 54%, rgba(245, 237, 221, 0.72) 100%);
+    }
+
+    .gameover-overlay {
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(circle at top, rgba(255, 255, 255, 0.48), transparent 32%),
+        linear-gradient(180deg, rgba(239, 230, 214, 0.32), rgba(239, 230, 214, 0.82));
+    }
+
+    .overlay-card {
+      width: min(100%, 366px);
+      border-radius: 26px;
+      border: 1px solid var(--panel-line);
+      background: var(--panel-strong);
+      box-shadow: 0 20px 50px rgba(52, 48, 40, 0.12);
+      backdrop-filter: blur(12px);
+    }
+
+    .start-card {
+      padding: 16px 16px 14px;
+    }
+
+    .gameover-card {
+      padding: 24px 20px 18px;
+      text-align: center;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      font-size: 0.72rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--terracotta);
+    }
+
+    .overlay-title {
+      margin: 0;
+      font-size: clamp(1.88rem, 5vw, 2.4rem);
+      line-height: 0.96;
+      letter-spacing: 0.02em;
+      color: #283037;
+    }
+
+    .overlay-subtitle {
+      margin: 10px 0 12px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+
+    .legend-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .legend-chip {
+      padding: 11px 12px 10px;
+      border-radius: 16px;
+      border: 1px solid rgba(72, 63, 49, 0.07);
+      background: rgba(255, 255, 255, 0.44);
+      color: var(--ink);
+      font-size: 0.84rem;
+      line-height: 1.36;
+    }
+
+    .legend-chip strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--olive);
+    }
+
+    .legend-chip.emphasis strong {
+      color: var(--terracotta);
+    }
+
+    .status-line,
+    .score-line {
+      margin: 0;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(72, 63, 49, 0.06);
+      background: rgba(255, 255, 255, 0.48);
+      color: var(--ink);
+      font-size: 0.92rem;
+      line-height: 1.45;
+      white-space: pre-line;
+    }
+
+    .status-line {
+      min-height: 52px;
+      margin-bottom: 10px;
+      color: var(--olive);
+    }
+
+    .score-line {
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+
+    .input-hint,
+    .footnote {
+      margin: 0;
+      font-size: 0.82rem;
+      line-height: 1.4;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .button-row button {
+      flex: 1;
+      min-height: 48px;
+      border: 0;
+      border-radius: 16px;
+      font: inherit;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.18s ease, opacity 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .button-row button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 24px rgba(60, 54, 43, 0.14);
+    }
+
+    .button-row button:disabled {
+      opacity: 0.58;
+      cursor: wait;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .primary-btn {
+      color: #ffffff;
+      background: linear-gradient(180deg, #70825f, #5d6d50);
+    }
+
+    .secondary-btn {
+      color: var(--ink);
+      background: rgba(66, 58, 46, 0.08);
+    }
+
+    body.preview-mode .hud,
+    body.preview-mode .overlay {
+      display: none !important;
+    }
+
+    @media (max-width: 420px) {
+      .hud {
+        top: 8px;
+        left: 8px;
+        right: 8px;
+      }
+
+      .hud-cell {
+        min-height: 48px;
+        padding: 7px 8px 8px;
+      }
+
+      .hud-label {
+        font-size: 0.5rem;
+      }
+
+      .hud-value {
+        font-size: 0.84rem;
+      }
+
+      .overlay {
+        padding: 12px;
+      }
+
+      .legend-row {
+        grid-template-columns: 1fr;
+      }
+
+      .button-row {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell" id="shell">
+    <canvas id="gameCanvas" width="900" height="1600"></canvas>
+
+    <div class="hud" id="hud">
+      <div class="hud-cell score">
+        <span class="hud-label">Score</span>
+        <span class="hud-value" id="scoreValue">0</span>
+      </div>
+      <div class="hud-cell">
+        <span class="hud-label">Best</span>
+        <span class="hud-value" id="bestValue">0</span>
+      </div>
+      <div class="hud-cell">
+        <span class="hud-label">Stack</span>
+        <span class="hud-value" id="stackValue">0</span>
+      </div>
+      <div class="hud-cell stability">
+        <span class="hud-label">Stability</span>
+        <span class="hud-value" id="stabilityValue">100%</span>
+      </div>
+    </div>
+
+    <div class="overlay start-overlay" id="startOverlay">
+      <div class="overlay-card start-card">
+        <p class="eyebrow">Quick Play</p>
+        <h1 class="overlay-title">Parcel Stack</h1>
+        <p class="overlay-subtitle">
+          좌우로 움직이는 상자를 탭해서 배송 카트 위에 쌓으세요.
+          중심이 벗어날수록 탑이 흔들리고, 무너지면 종료됩니다.
+        </p>
+        <div class="legend-row">
+          <div class="legend-chip">
+            <strong>Centered</strong>
+            정확히 올리면 흔들림이 적고
+            다음 박스를 놓기 쉬워집니다.
+          </div>
+          <div class="legend-chip emphasis">
+            <strong>Off Balance</strong>
+            옆으로 치우치면 안정도가 깎이고
+            다음 실수를 버티기 어려워집니다.
+          </div>
+        </div>
+        <p class="status-line" id="startStatus">기록 정보를 불러오는 중입니다.</p>
+        <p class="input-hint">탭, 클릭, 스페이스로 낙하</p>
+        <div class="button-row">
+          <button type="button" class="primary-btn" id="startButton">바로 시작</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay gameover-overlay" id="gameOverOverlay" hidden>
+      <div class="overlay-card gameover-card">
+        <p class="eyebrow">Shift End</p>
+        <h2 class="overlay-title">STACK DOWN</h2>
+        <p class="score-line" id="finalScoreLine">최종 점수 0</p>
+        <p class="status-line" id="gameOverStatus">기록을 정리하고 있습니다.</p>
+        <p class="footnote">명예의 전당에는 개인당 최고 점수 3개만 남습니다.</p>
+        <div class="button-row">
+          <button type="button" class="primary-btn" id="restartButton">다시 하기</button>
+          <button type="button" class="secondary-btn" id="lobbyButton">로비로 돌아가기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./parcelstack.js"></script>
+</body>
+</html>

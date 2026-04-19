@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Wing Tap (Classic)</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+
+    <style>
+	html {
+        height: 100%;
+    }
+        body {
+            background-color: #222;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            height: 100%;
+            width: 100%; 
+            margin: 0;
+            /* (수정) 1. 기본 한글 폰트 설정 */
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; 
+        }
+
+        /* (추가) 레트로 폰트 클래스 */
+        .font-retro {
+            font-family: 'Press Start 2P', cursive;
+        }
+
+
+
+        #game-container {
+            position: relative;
+            width: 800px; /* 캔버스 너비 */
+            height: 600px; /* 캔버스 높이 */
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+
+        canvas {
+            background-color: #000;
+            border: 2px solid #555;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            cursor: pointer; 
+            width: 100%;
+            height: 100%;
+            object-fit: contain; 
+            transition: border-color 1.0s linear;
+        }
+
+        /* --- 오버레이 스타일 --- */
+        .overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            font-weight: bold;
+            color: #FFF;
+            text-align: center;
+            font-family: inherit; 
+            background-color: rgba(0, 0, 0, 0.1); 
+            // backdrop-filter: blur(2px);
+        }
+        .overlay p {
+            /* (수정) 1. 한글 폰트 적용 */
+            font-family: 'Inter', sans-serif;
+            font-size: 1.5rem; /* 24px */
+            margin-top: 10px;
+            text-shadow: 0 0 5px #000;
+        }
+
+        #start-overlay { 
+            display: flex;
+            /* (수정) 캔버스 타이틀과 겹치지 않도록 아래로 */
+            justify-content: flex-end;
+            padding-bottom: 150px; 
+        }
+        #game-over-overlay { 
+            display: none;
+            /* (수정) 캔버스 '게임 오버'와 겹치지 않도록 아래로 */
+            justify-content: flex-end;
+            padding-bottom: 50px;
+        }
+
+        #global-highscore-display {
+            /* (수정) 1. 레트로 폰트 적용 */
+            font-family: 'Inter;
+            font-size: 0.7rem; 
+            color: #FFDF00; /* THRUST_YELLOW */
+            margin-top: 0; /* (수정) 여백 */
+            margin-bottom: 25px; /* (수정) 여백 */
+            font-weight: bold; 
+            text-shadow: 0 0 5px #000;
+            /* (추가) 5. 줄바꿈 대비 */
+            line-height: 1.6; 
+            white-space: pre-line;
+            padding: 0 10px;
+        }
+
+        /* (수정) 4. 버튼 스타일 변경 */
+        .restart-btn, .back-btn {
+            /* (수정) 1. 레트로 폰트 적용 */
+            font-family: 'Press Start 2P', cursive;
+            font-size: 1rem; /* 16px */
+            font-weight: normal;
+            color: #FFFFFF;
+            /* (수정) 4. 은은한 흰색 박스, 테두리 없음 */
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            padding: 16px 0; /* 세로 여백 */
+            width: 80%; 
+            max-width: 300px;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: none;
+            transition: all 0.2s ease;
+        }
+        .restart-btn {
+            margin-top: 0; /* (수정) 여백 */
+            margin-bottom: 0;
+        }
+        .back-btn {
+            margin-top: 15px; /* (수정) 여백 */
+            margin-bottom: 20px;
+        }
+        
+        .restart-btn:hover, .back-btn:hover {
+            /* (수정) 4. 호버 효과 */
+            background: rgba(255, 255, 255, 0.3);
+            color: #FFFFFF;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            transform: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        //<h1 id="game-title">Wing Tap 1</h1>
+
+        <div id="start-overlay" class="overlay">
+            <p>스페이스바 / 클릭 / 터치로 시작</p>
+        </div>
+        
+        <div id="game-over-overlay" class="overlay">
+            <p id="global-highscore-display"></p>
+            <button class="restart-btn">RESTART</button>
+            <button class="back-btn">LOBBY</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. 사용자 이름 및 서버 URL 설정 ---
+        const MINIGAME_ID = 'wing-tap-1';
+        const IS_PREVIEW_MODE = new URLSearchParams(window.location.search).get('preview') === '1';
+        function resolveGameNickname() {
+            try {
+                const parentNickname = window.parent && window.parent !== window && window.parent.LivelySam?.MinigamesHub?.getNickname?.();
+                if (parentNickname) return String(parentNickname).trim();
+            } catch {}
+            try {
+                const nickname = localStorage.getItem('minigameNickname');
+                if (nickname) return String(nickname).trim();
+            } catch {}
+            try {
+                const legacyNickname = localStorage.getItem('j_game_username');
+                if (legacyNickname) return String(legacyNickname).trim();
+            } catch {}
+            return 'Guest';
+        }
+        const gameUsername = resolveGameNickname();
+        console.log(gameUsername + "님이 윙탭 1을 시작합니다.");
+
+        const GAME_ID = "game1";
+
+        function returnToMinigameHub() {
+            try {
+                if (window.parent && window.parent !== window && window.parent.LivelySam?.MinigamesHub?.closeRunner) {
+                    window.parent.LivelySam.MinigamesHub.closeRunner();
+                    return;
+                }
+            } catch {}
+            window.location.href = 'index.html';
+        }
+
+        function getLeaderboardBridge() {
+            if (IS_PREVIEW_MODE) {
+                return null;
+            }
+            try {
+                if (window.parent && window.parent !== window && window.parent.LivelySam?.Leaderboard) {
+                    return window.parent.LivelySam.Leaderboard;
+                }
+            } catch {}
+            return window.LivelySam?.Leaderboard || null;
+        }
+
+        // --- 2. DOM 요소 참조 ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const WIDTH = canvas.width;
+        const HEIGHT = canvas.height;
+
+        const startOverlay = document.getElementById('start-overlay');
+        const gameOverOverlay = document.getElementById('game-over-overlay');
+        const globalHighscoreDisplay = document.getElementById('global-highscore-display');
+        const restartBtn = gameOverOverlay.querySelector('.restart-btn');
+        const lobbyBtn = gameOverOverlay.querySelector('.back-btn');
+
+        // --- 색상 ---
+        const WHITE = '#FFFFFF';
+        const BLACK = '#000000';
+        const SKY_BLUE_TOP = '#87CEFA';
+        const SKY_BLUE_BOTTOM = '#B0E2FF';
+        const SUNSET_TOP = '#ff7b7b';
+        const SUNSET_BOTTOM = '#feca57';
+        const NIGHT_SKY_TOP = '#000033';
+        const NIGHT_SKY_BOTTOM = '#000066';
+        const SUNRISE_TOP = '#a29bfe';
+        const SUNRISE_BOTTOM = '#fd79a8';
+        const DAY_TOP_RGB = hexToRgb(SKY_BLUE_TOP);
+        const DAY_BOTTOM_RGB = hexToRgb(SKY_BLUE_BOTTOM);
+        const SUNSET_TOP_RGB = hexToRgb(SUNSET_TOP);
+        const SUNSET_BOTTOM_RGB = hexToRgb(SUNSET_BOTTOM);
+        const NIGHT_TOP_RGB = hexToRgb(NIGHT_SKY_TOP);
+        const NIGHT_BOTTOM_RGB = hexToRgb(NIGHT_SKY_BOTTOM);
+        const SUNRISE_TOP_RGB = hexToRgb(SUNRISE_TOP);
+        const SUNRISE_BOTTOM_RGB = hexToRgb(SUNRISE_BOTTOM);
+        const GREEN_PIPE = '#228B22';
+        const GREEN_PIPE_DARK = '#2E712E';
+        const PLANE_RED = '#D91E18';
+        const PLANE_GREY = '#A9A9A9';
+        const THRUST_YELLOW = '#FFDF00';
+        const THRUST_ORANGE = '#FFA500';
+        const GAME_OVER_RED = '#FF4500';
+
+        // --- (수정) 1. 폰트 상수 ---
+        const FONT_RETRO_48 = "48px 'Press Start 2P', cursive"; 
+        const FONT_RETRO_70 = "70px 'Press Start 2P', cursive"; 
+        const FONT_KOREAN_48 = "bold 48px 'Inter', sans-serif";
+        const FONT_KOREAN_30 = "bold 30px 'Inter', sans-serif";
+	const FONT_INTER_70 = "bold 70px 'Inter', sans-serif";
+
+        // --- 물리/난이도 상수 ---
+        const GRAVITY = 0.5;
+        const THRUST = -8;
+        const BASE_GAME_SPEED = 3.5;
+        const MAX_GAME_SPEED = 12;
+        const BASE_GAP_HEIGHT = 360;
+        const MIN_GAP_HEIGHT = 160;
+        const BASE_SPAWN_RATE = 140;
+        const MIN_SPAWN_RATE = 90;
+        const PIPE_VERTICAL_PADDING = 60;
+
+        // --- 게임 변수 ---
+        let plane;
+        let obstacles;
+        let particles;
+        let clouds;
+        let score;
+        let obstacleTimer;
+        let gameOver;
+        let explosionDone;
+        let framesElapsed;
+        let gameStarted;
+        let highScore = 0;
+        let currentGameSpeed;
+        let currentGapHeight;
+        let currentSpawnRate;
+        let stars;
+        let scoreSubmitted;
+        let isSubmitting = false;
+
+        // --- 클래스 정의 (Plane, Particle, ObstaclePair, Cloud, Star) ---
+        class Plane {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.yVel = 0;
+                this.scale = 0.9;
+                this.width = 60 * this.scale;
+                this.height = 40 * this.scale;
+                this.tilt = 0;
+                this.bodyPoly = [[0, 10], [15, 0], [55, 5], [60, 20], [55, 35], [15, 40], [0, 30]];
+                this.tailPoly = [[0, 10], [0, 30], [-15, 35], [-15, 5]];
+            }
+            applyThrust() {
+                this.yVel = THRUST;
+            }
+            update() {
+                if (!gameOver) {
+                    this.yVel += GRAVITY;
+                    if (this.yVel > 15) this.yVel = 15;
+                    this.y += this.yVel;
+                    this.tilt = Math.min(25, Math.max(-45, -this.yVel * 3));
+                }
+            }
+            draw(ctx) {
+                const centerX = this.x + (this.width / this.scale / 2) - 10;
+                const centerY = this.y + (this.height / this.scale / 2);
+                ctx.save();
+                ctx.translate(centerX, centerY);
+                ctx.rotate(-this.tilt * Math.PI / 180);
+                ctx.scale(this.scale, this.scale);
+                ctx.fillStyle = PLANE_GREY;
+                ctx.beginPath();
+                ctx.moveTo(this.tailPoly[0][0], this.tailPoly[0][1]);
+                for (let i = 1; i < this.tailPoly.length; i++) {
+                    ctx.lineTo(this.tailPoly[i][0], this.tailPoly[i][1]);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = PLANE_RED;
+                ctx.beginPath();
+                ctx.moveTo(this.bodyPoly[0][0], this.bodyPoly[0][1]);
+                for (let i = 1; i < this.bodyPoly.length; i++) {
+                    ctx.lineTo(this.bodyPoly[i][0], this.bodyPoly[i][1]);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = WHITE;
+                ctx.beginPath();
+                ctx.arc(30, 0, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = BLACK;
+                ctx.beginPath();
+                ctx.arc(32, 0, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+            getRect() {
+                const paddingX = 5 * this.scale;
+                const paddingY = 3 * this.scale;
+                return {
+                    x: this.x + paddingX,
+                    y: this.y + paddingY,
+                    width: this.width - 2 * paddingX,
+                    height: this.height - 2 * paddingY
+                };
+            }
+        }
+        class Particle {
+            constructor(x, y, isThrust) {
+                this.x = x;
+                this.y = y;
+                if (isThrust) {
+                    this.vx = -currentGameSpeed - (Math.random() * 2 + 1);
+                    this.vy = Math.random() * 2 - 1;
+                    this.color = [THRUST_YELLOW, THRUST_ORANGE, WHITE][Math.floor(Math.random() * 3)];
+                    this.radius = Math.floor(Math.random() * 5) + 4;
+                } else { // 폭발
+                    this.vx = Math.random() * 20 - 10;
+                    this.vy = Math.random() * 20 - 10;
+                    this.color = [THRUST_ORANGE, PLANE_RED, BLACK][Math.floor(Math.random() * 3)];
+                    this.radius = Math.floor(Math.random() * 11) + 5;
+                }
+                this.life = 20;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                if (this.radius > 0) this.radius -= 0.5;
+                this.life -= 1;
+            }
+            draw(ctx) {
+                if (this.radius > 0) {
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+        class ObstaclePair {
+            constructor(x) {
+                this.x = x;
+                this.width = 90;
+                this.gapHeight = currentGapHeight;
+                const randomRange = HEIGHT - PIPE_VERTICAL_PADDING - this.gapHeight - PIPE_VERTICAL_PADDING;
+                const gapY = Math.floor(Math.random() * (randomRange + 1)) + PIPE_VERTICAL_PADDING;
+                this.topRect = { x: this.x, y: 0, width: this.width, height: gapY };
+                this.bottomRect = { x: this.x, y: gapY + this.gapHeight, width: this.width, height: HEIGHT };
+            }
+            update() {
+                this.x -= currentGameSpeed;
+                this.topRect.x = this.x;
+                this.bottomRect.x = this.x;
+            }
+            draw(ctx) {
+                ctx.fillStyle = GREEN_PIPE;
+                ctx.fillRect(this.topRect.x, this.topRect.y, this.topRect.width, this.topRect.height);
+                ctx.fillRect(this.bottomRect.x, this.bottomRect.y, this.bottomRect.width, this.bottomRect.height);
+                const topCap = { x: this.x - 5, y: this.topRect.height - 30, width: this.width + 10, height: 30 };
+                const bottomCap = { x: this.x - 5, y: this.bottomRect.y, width: this.width + 10, height: 30 };
+                ctx.fillStyle = GREEN_PIPE_DARK;
+                ctx.fillRect(topCap.x, topCap.y, topCap.width, topCap.height);
+                ctx.fillRect(bottomCap.x, bottomCap.y, bottomCap.width, bottomCap.height);
+            }
+        }
+        class Cloud {
+            constructor() {
+                this.x = Math.floor(Math.random() * WIDTH) + WIDTH;
+                this.y = Math.floor(Math.random() * (HEIGHT / 2 - 50)) + 50;
+                this.speed = Math.random() * 1 + 0.5;
+                this.radius = Math.floor(Math.random() * 31) + 20;
+                this.parts = [];
+                const numParts = Math.floor(Math.random() * 3) + 3;
+                for (let i = 0; i < numParts; i++) {
+                    const offsetX = Math.floor(Math.random() * (this.radius * 2 + 1)) - this.radius;
+                    const offsetY = Math.floor(Math.random() * (this.radius + 1)) - (this.radius / 2);
+                    const partRadius = Math.floor(Math.random() * (this.radius / 2 + 1)) + (this.radius / 2);
+                    this.parts.push({ offset: { x: offsetX, y: offsetY }, radius: partRadius });
+                }
+            }
+            update() {
+                this.x -= this.speed;
+                if (this.x < -this.radius * 2) {
+                    this.x = Math.floor(Math.random() * 51) + WIDTH;
+                    this.y = Math.floor(Math.random() * (HEIGHT / 2 - 50)) + 50;
+                }
+            }
+            draw(ctx, cloudOpacity) {
+                ctx.fillStyle = WHITE;
+                ctx.globalAlpha = cloudOpacity * 0.8;
+                for (const part of this.parts) {
+                    ctx.beginPath();
+                    ctx.arc(this.x + part.offset.x, this.y + part.offset.y, part.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1.0;
+            }
+        }
+        class Star {
+            constructor() {
+                this.x = Math.random() * WIDTH;
+                this.y = Math.random() * HEIGHT;
+                this.radius = Math.random() * 1.5;
+                this.speed = Math.random() * 0.2 + 0.1;
+            }
+            update() {
+                this.x -= this.speed;
+                if (this.x < 0) {
+                    this.x = WIDTH;
+                    this.y = Math.random() * HEIGHT;
+                }
+            }
+            draw(ctx) {
+                ctx.fillStyle = WHITE;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // --- 헬퍼 함수 ---
+        function hexToRgb(hex) {
+            let r = 0, g = 0, b = 0;
+            if (hex.length == 7) {
+                r = parseInt(hex.substring(1, 3), 16);
+                g = parseInt(hex.substring(3, 5), 16);
+                b = parseInt(hex.substring(5, 7), 16);
+            }
+            return [r, g, b];
+        }
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+        function lerpColor(c1, c2, t) {
+            const r = Math.round(lerp(c1[0], c2[0], t));
+            const g = Math.round(lerp(c1[1], c2[1], t));
+            const b = Math.round(lerp(c1[2], c2[2], t));
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+        function drawGradientSky(ctx, topColor, bottomColor) {
+            const gradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+            gradient.addColorStop(0, topColor);
+            gradient.addColorStop(1, bottomColor);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+        function drawTextWithShadow(ctx, text, font, color, x, y, textAlign = 'left', textBaseline = 'top') {
+            ctx.font = font;
+            ctx.fillStyle = color;
+            ctx.shadowColor = BLACK;
+            ctx.shadowOffsetX = 3;
+            ctx.shadowOffsetY = 3;
+            ctx.shadowBlur = 4;
+            ctx.textAlign = textAlign;
+            ctx.textBaseline = textBaseline;
+            ctx.fillText(text, x, y);
+            ctx.shadowColor = 'transparent';
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+            ctx.shadowBlur = 0;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+        }
+        function checkCollision(obj1, objOrRect2) {
+            const rect1 = obj1.getRect();
+            const rect2 = typeof objOrRect2.getRect === 'function' ? objOrRect2.getRect() : objOrRect2;
+            return (
+                rect1.x < rect2.x + rect2.width &&
+                rect1.x + rect1.width > rect2.x &&
+                rect1.y < rect2.y + rect2.height &&
+                rect1.y + rect1.height > rect2.y
+            );
+        }
+        
+        // --- (수정) 5. 서버 통신 함수 (분리) ---
+        
+        /**
+         * 점수 '전송'만 담당하는 함수
+         */
+        async function submitScore(finalScore) {
+            const leaderboard = getLeaderboardBridge();
+            if (!leaderboard?.submitScore) {
+                throw new Error('Firebase leaderboard bridge unavailable');
+            }
+
+            await leaderboard.submitScore({
+                gameId: MINIGAME_ID,
+                nickname: gameUsername,
+                score: finalScore
+            });
+        }
+
+        /**
+         * '역대 최고' 기록을 '조회'하고 '표시'하는 함수
+         */
+        async function fetchAndDisplayGlobalScore(pElement, prefixText = "") {
+            const leaderboard = getLeaderboardBridge();
+            if (!leaderboard?.getTopEntry) {
+                pElement.textContent = prefixText + '명예의 전당 연결을 사용할 수 없습니다.';
+                return;
+            }
+
+            try {
+                const topEntry = await leaderboard.getTopEntry({ gameId: MINIGAME_ID });
+                if (topEntry) {
+                    const rawName = topEntry.nickname || "Unknown";
+                    const maskedName = leaderboard.maskNickname
+                        ? leaderboard.maskNickname(rawName)
+                        : (rawName.substring(0, 2) + '*'.repeat(Math.max(0, rawName.length - 2)));
+
+                    pElement.textContent = prefixText + `역대 최고: ${topEntry.score || 0} (${maskedName})`;
+                } else {
+                    pElement.textContent = prefixText + '아직 등록된 기록이 없습니다.';
+                }
+            } catch (error) {
+                console.error("WT1 최고 점수 불러오기 실패:", error);
+                pElement.textContent = prefixText + '최고 점수 연결 오류';
+            }
+        }
+        
+        // (삭제) submitAndFetchScores, updateGlobalHighScore (새 함수로 대체됨)
+
+        // --- 메인 게임 로직 ---
+        function startGame() {
+            plane = new Plane(150, HEIGHT / 2);
+            obstacles = [];
+            particles = [];
+            clouds = [];
+            stars = [];
+            for (let i = 0; i < 5; i++) {
+                clouds.push(new Cloud());
+            }
+            for (let i = 0; i < 100; i++) {
+                stars.push(new Star());
+            }
+            score = 0;
+            obstacleTimer = 101;
+            gameOver = false;
+            explosionDone = false;
+            framesElapsed = 0;
+            scoreSubmitted = false;
+            gameStarted = false;
+            isSubmitting = false;
+            
+            highScore = parseInt(
+                localStorage.getItem('minigameLocalHighScore:wing-tap-1')
+                || localStorage.getItem('wingTap1LocalHighScore')
+            ) || 0;
+            
+            currentGameSpeed = BASE_GAME_SPEED;
+            currentGapHeight = BASE_GAP_HEIGHT;
+            currentSpawnRate = BASE_SPAWN_RATE;
+
+            startOverlay.style.display = 'flex';
+            gameOverOverlay.style.display = 'none';
+        }
+
+        // --- (수정) 5. 게임 오버 로직 (비동기) ---
+        async function triggerGameOver() {
+            if (gameOver) return;
+            gameOver = true;
+            
+            if (!explosionDone) {
+                const planeRect = plane.getRect();
+                for (let i = 0; i < 30; i++) {
+                    particles.push(new Particle(planeRect.x + planeRect.width / 2, planeRect.y + planeRect.height / 2, false));
+                }
+                explosionDone = true;
+            }
+            
+            gameOverOverlay.style.display = 'flex';
+            const finalScore = score;
+
+            if (finalScore > highScore) {
+                highScore = finalScore;
+                localStorage.setItem('minigameLocalHighScore:wing-tap-1', highScore.toString());
+            }
+            
+            const pElement = globalHighscoreDisplay;
+            let prefixText = "";
+
+            // 점수 전송 (300점 이상이고, 아직 전송 안했을 때)
+            if (finalScore >= 300 && !scoreSubmitted) {
+                isSubmitting = true; // 버튼 비활성화용
+                scoreSubmitted = true;
+                pElement.textContent = '300점+! 점수 전송 중...';
+
+                try {
+                    await submitScore(finalScore); // 전송이 끝날 때까지 대기
+                    prefixText = "전송 완료! ";
+                } catch (error) {
+                    console.error("WT1 점수 전송 중 오류:", error);
+                    prefixText = "전송 실패. ";
+                }
+            } else {
+                isSubmitting = false;
+                if (finalScore < 300) {
+                    prefixText = "300점 미만은 전송되지 않습니다.\n"; // 300점 미만일 땐 아무 메시지도 안 띄움
+                }
+            }
+
+            // (수정) 5. 점수 전송 여부와 관계없이 '역대 최고' 기록을 항상 조회
+            await fetchAndDisplayGlobalScore(pElement, prefixText);
+            isSubmitting = false; // 모든 로직이 끝났으므로 버튼 활성화
+        }
+
+        function gameLoop() {
+            // (수정) 루프가 중단되지 않도록 requestAnimationFrame을 맨 위에 배치
+            requestAnimationFrame(gameLoop);
+            
+            // --- 업데이트 로직 ---
+            if (gameStarted && !gameOver) {
+                // 게임 속도/난이도 조절
+                currentGameSpeed = Math.min(MAX_GAME_SPEED, BASE_GAME_SPEED + Math.floor(framesElapsed / 75) * 0.15);
+                currentGapHeight = Math.max(MIN_GAP_HEIGHT, BASE_GAP_HEIGHT - Math.floor(framesElapsed / 250) * 5);
+                currentSpawnRate = Math.max(MIN_SPAWN_RATE, BASE_SPAWN_RATE - Math.floor(framesElapsed / 280) * 5);
+            
+                plane.update();
+                
+                for (let i = obstacles.length - 1; i >= 0; i--) {
+                    obstacles[i].update();
+                    if (obstacles[i].x < -obstacles[i].width) {
+                        obstacles.splice(i, 1);
+                    }
+                }
+                
+                clouds.forEach(cloud => cloud.update());
+                stars.forEach(star => star.update());
+                
+                framesElapsed++;
+                score = Math.floor(framesElapsed / 10);
+
+                // 장애물 생성
+                obstacleTimer++;
+                if (obstacleTimer > currentSpawnRate) {
+                    obstacles.push(new ObstaclePair(WIDTH));
+                    obstacleTimer = 0;
+                }
+                
+                // 충돌 감지
+                if (plane.y < 0 || plane.y + plane.height > HEIGHT) {
+                    triggerGameOver();
+                }
+                for (const obs of obstacles) {
+                    if (checkCollision(plane, obs.topRect) || checkCollision(plane, obs.bottomRect)) {
+                        triggerGameOver();
+                        break;
+                    }
+                }
+            } else if (!gameStarted) {
+                // 게임 시작 전
+                clouds.forEach(cloud => cloud.update());
+                stars.forEach(star => star.update());
+            }
+
+            // 파티클 업데이트
+            if (gameStarted) {
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    particles[i].update();
+                    if (particles[i].life <= 0 || particles[i].radius <= 0) {
+                        particles.splice(i, 1);
+                    }
+                }
+            }
+
+            // --- 그리기 로직 ---
+            // (배경 그리기 로직: 변경 없음)
+            const cycleLengthInScore = 200;
+            const totalCycleLengthInScore = cycleLengthInScore * 2;
+            const currentCycleScore = (score || 0) % totalCycleLengthInScore;
+            const isTransitioningToNight = currentCycleScore < cycleLengthInScore;
+            const transitionProgress = (currentCycleScore % cycleLengthInScore) / cycleLengthInScore;
+            let skyTopColor, skyBottomColor;
+            let cloudOpacity;
+            if (isTransitioningToNight) {
+                cloudOpacity = 1.0 - transitionProgress;
+            } else {
+                cloudOpacity = transitionProgress;
+            }
+            cloudOpacity = Math.max(0, Math.min(1, cloudOpacity));
+            if (isTransitioningToNight) {
+                if (transitionProgress < 0.5) {
+                    const halfProgress = transitionProgress * 2;
+                    skyTopColor = lerpColor(DAY_TOP_RGB, SUNSET_TOP_RGB, halfProgress);
+                    skyBottomColor = lerpColor(DAY_BOTTOM_RGB, SUNSET_BOTTOM_RGB, halfProgress);
+                } else {
+                    const halfProgress = (transitionProgress - 0.5) * 2;
+                    skyTopColor = lerpColor(SUNSET_TOP_RGB, NIGHT_TOP_RGB, halfProgress);
+                    skyBottomColor = lerpColor(SUNSET_BOTTOM_RGB, NIGHT_BOTTOM_RGB, halfProgress);
+                }
+            } else {
+                if (transitionProgress < 0.5) {
+                    const halfProgress = transitionProgress * 2;
+                    skyTopColor = lerpColor(NIGHT_TOP_RGB, SUNRISE_TOP_RGB, halfProgress);
+                    skyBottomColor = lerpColor(NIGHT_BOTTOM_RGB, SUNRISE_BOTTOM_RGB, halfProgress);
+                } else {
+                    const halfProgress = (transitionProgress - 0.5) * 2;
+                    skyTopColor = lerpColor(SUNRISE_TOP_RGB, DAY_TOP_RGB, halfProgress);
+                    skyBottomColor = lerpColor(SUNRISE_BOTTOM_RGB, DAY_BOTTOM_RGB, halfProgress);
+                }
+            }
+            drawGradientSky(ctx, skyTopColor, skyBottomColor);
+            const isDark = (isTransitioningToNight && transitionProgress > 0.2) ||
+                         (!isTransitioningToNight && transitionProgress < 0.8);
+            canvas.style.borderColor = isDark ? NIGHT_SKY_TOP : '#555';
+            const isNight = (isTransitioningToNight && transitionProgress > 0.7) ||
+                          (!isTransitioningToNight && transitionProgress < 0.3);
+            if (isNight) {
+                stars.forEach(star => star.draw(ctx));
+            }
+            clouds.forEach(cloud => cloud.draw(ctx, cloudOpacity));
+
+            // (수정) 캔버스에 텍스트 그리기
+            if (!gameStarted) {
+                // (수정) 비행기 먼저 그리기 (오류 방지)
+                if (plane) plane.draw(ctx);
+                // (수정) 2. 타이틀 변경 및 1. 폰트 적용
+                drawTextWithShadow(ctx, "Wing Tap 1", FONT_RETRO_48, WHITE, WIDTH / 2, HEIGHT / 2 - 50, 'center', 'middle');
+            
+            } else if (!gameOver) {
+                // 인게임
+                obstacles.forEach(obs => obs.draw(ctx));
+                // (수정) 3. '최고' -> '내 기록' 및 1. 폰트 적용
+                drawTextWithShadow(ctx, `내 기록: ${highScore}`, FONT_KOREAN_30, WHITE, WIDTH - 20, 30, 'right', 'top');
+                // (수정) 1. 폰트 적용
+                drawTextWithShadow(ctx, score.toString(), FONT_INTER_70, WHITE, WIDTH / 2, 70, 'center', 'middle');
+                particles.forEach(p => p.draw(ctx));
+                if (plane) plane.draw(ctx);
+            
+            } else {
+                // 게임 오버
+                obstacles.forEach(obs => obs.draw(ctx));
+                particles.forEach(p => p.draw(ctx));
+                // (수정) 1. 폰트 적용
+                drawTextWithShadow(ctx, "Game Over", FONT_RETRO_48, GAME_OVER_RED, WIDTH / 2, HEIGHT / 2 - 50, 'center', 'middle');
+            }
+
+            // (삭제) requestAnimationFrame(gameLoop); (맨 위로 이동)
+        }
+
+        // --- 6. 이벤트 리스너 ---
+        function handleGameAction() {
+             if (isSubmitting) return; // 점수 전송 중 재시작 방지
+
+             if (!gameStarted) {
+                gameStarted = true;
+                startOverlay.style.display = 'none';
+                plane.applyThrust();
+                const planeBodyHeight = plane.height / 2;
+                particles.push(new Particle(plane.x, plane.y + planeBodyHeight, true));
+             }
+             else if (!gameOver) {
+                plane.applyThrust();
+                const planeBodyHeight = plane.height / 2;
+                particles.push(new Particle(plane.x, plane.y + planeBodyHeight, true));
+            } else {
+                // 재시작
+                startGame();
+            }
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                handleGameAction();
+            }
+        });
+        
+        window.addEventListener('mousedown', (e) => {
+            // (수정) 로비 버튼 클릭 시, 게임 액션(재시작) 방지
+            if (e.target.closest('.back-btn')) {
+                return;
+            }
+            e.preventDefault();
+            handleGameAction();
+        });
+        
+        window.addEventListener('touchstart', (e) => {
+            // (수정) 로비 버튼 클릭 시, 게임 액션(재시작) 방지
+            if (e.target.closest('.back-btn')) {
+                return;
+            }
+            e.preventDefault();
+            handleGameAction();
+        }, { passive: false });
+
+        lobbyBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            returnToMinigameHub();
+        });
+        
+        // --- 화면 크기 조정 ---
+        function resizeCanvas() {
+            const container = document.getElementById('game-container');
+            const aspectRatio = WIDTH / HEIGHT; // 800 / 600
+            let newWidth = window.innerWidth;
+            let newHeight = window.innerHeight;
+            const windowAspectRatio = newWidth / newHeight;
+            let finalWidth, finalHeight;
+            if (windowAspectRatio > aspectRatio) {
+                finalHeight = newHeight;
+                finalWidth = newHeight * aspectRatio;
+            } else {
+                finalWidth = newWidth;
+                finalHeight = newWidth / aspectRatio;
+            }
+            container.style.width = `${finalWidth}px`;
+            container.style.height = `${finalHeight}px`;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // --- (수정) 7. 폰트 로드 후 게임 시작 ---
+        console.log("Waiting for fonts to load...");
+        // 폰트가 로드되었는지 확인 (특히 'Press Start 2P'와 'Inter')
+        document.fonts.ready.then(() => {
+            console.log("Fonts loaded, starting game.");
+            // 폰트 로드가 완료된 후 게임 시작
+            startGame();
+            gameLoop();
+        }).catch(err => {
+            console.error("Font loading failed, starting game anyway:", err);
+            // 폰트 로드 실패 시에도 (시스템 기본 폰트로) 게임 시작
+            startGame();
+            gameLoop();
+        });
+        
+        // (삭제) updateGlobalHighScore(); (게임 오버 시에만 필요)
+    </script>
+</body>
+</html>

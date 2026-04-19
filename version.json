@@ -1,0 +1,10 @@
+{
+  "appId": "livelysam",
+  "version": "1.0.0",
+  "releaseTag": "v1.0.0",
+  "defaultChannel": "stable",
+  "githubRepo": "rochelobeJYJ/livelysam",
+  "githubBranch": "main",
+  "updateManifestBaseUrl": "https://raw.githubusercontent.com/rochelobeJYJ/livelysam/main/release/updates",
+  "installerBaseName": "LivelySamSetup"
+}

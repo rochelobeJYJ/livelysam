@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Lane Dash</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-1: #545f6c;
+      --bg-2: #7a8999;
+      --panel: rgba(24, 30, 36, 0.76);
+      --panel-strong: rgba(24, 30, 36, 0.9);
+      --panel-border: rgba(255, 255, 255, 0.1);
+      --text: #f5f7fa;
+      --muted: #b5bdc8;
+      --accent: #ffcf66;
+      --gold: #ffcf66;
+      --blue: #79bbf3;
+      --danger: #ff7b57;
+      --shadow: 0 28px 70px rgba(0, 0, 0, 0.46);
+      --radius: 28px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      touch-action: none;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(255, 255, 255, 0.16), transparent 34%),
+        linear-gradient(180deg, var(--bg-2), var(--bg-1));
+      color: var(--text);
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: min(3vw, 18px);
+    }
+
+    body.preview-mode {
+      padding: 0;
+      background: transparent;
+    }
+
+    .shell {
+      position: relative;
+      width: min(94vw, 460px);
+      aspect-ratio: 9 / 16;
+      max-height: 96vh;
+      overflow: hidden;
+      border-radius: calc(var(--radius) + 6px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: var(--shadow);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.06)),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+    }
+
+    body.preview-mode .shell {
+      width: 100%;
+      height: 100%;
+      max-height: none;
+      aspect-ratio: auto;
+      border-radius: 0;
+      border: 0;
+      box-shadow: none;
+      background: transparent;
+    }
+
+    #gameCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+    }
+
+    .hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      gap: 6px;
+      pointer-events: none;
+    }
+
+    .hud-pill {
+      flex: 1;
+      min-height: 38px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--panel-border);
+      background: var(--panel);
+      backdrop-filter: blur(8px);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .hud-pill.gold .hud-value {
+      color: var(--gold);
+    }
+
+    .hud-pill.blue .hud-value {
+      color: var(--blue);
+    }
+
+    .hud-label {
+      display: inline-block;
+      font-size: 0.56rem;
+      line-height: 1;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0;
+      white-space: nowrap;
+    }
+
+    .hud-value {
+      display: inline-block;
+      font-size: 0.88rem;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      padding: 18px;
+    }
+
+    .overlay[hidden] {
+      display: none;
+    }
+
+    .start-overlay {
+      align-items: flex-end;
+      justify-content: center;
+      background:
+        linear-gradient(180deg, rgba(17, 22, 27, 0), rgba(17, 22, 27, 0.18) 52%, rgba(17, 22, 27, 0.8) 100%);
+    }
+
+    .gameover-overlay {
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(circle at top, rgba(255, 207, 102, 0.1), transparent 30%),
+        linear-gradient(180deg, rgba(17, 22, 27, 0.26), rgba(17, 22, 27, 0.84));
+    }
+
+    .overlay-card {
+      width: min(100%, 360px);
+      border-radius: 24px;
+      border: 1px solid var(--panel-border);
+      background: var(--panel-strong);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+
+    .start-card {
+      padding: 16px 16px 14px;
+    }
+
+    .gameover-card {
+      padding: 22px 20px 18px;
+      text-align: center;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      font-size: 0.72rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: #ffcf66;
+    }
+
+    .overlay-title {
+      margin: 0;
+      font-size: clamp(1.85rem, 5vw, 2.4rem);
+      line-height: 0.94;
+      letter-spacing: 0.02em;
+    }
+
+    .overlay-subtitle {
+      margin: 10px 0 12px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      color: #c5ccd4;
+    }
+
+    .legend-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .legend-chip {
+      padding: 10px 12px;
+      border-radius: 16px;
+      font-size: 0.86rem;
+      line-height: 1.35;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.035);
+      color: var(--text);
+    }
+
+    .legend-chip strong {
+      display: block;
+      font-size: 0.74rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .legend-chip.gold strong {
+      color: var(--gold);
+    }
+
+    .legend-chip.blue strong {
+      color: var(--blue);
+    }
+
+    .status-line,
+    .score-line {
+      margin: 0;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 0.93rem;
+      line-height: 1.45;
+      color: var(--text);
+      white-space: pre-line;
+    }
+
+    .status-line {
+      color: var(--gold);
+      min-height: 48px;
+      margin-bottom: 12px;
+    }
+
+    .start-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .input-hint {
+      margin: 0;
+      font-size: 0.86rem;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .button-row {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 16px;
+      padding: 14px 16px;
+      font: inherit;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 140ms ease, filter 140ms ease, opacity 140ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.04);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: default;
+      transform: none;
+      filter: none;
+    }
+
+    .primary-btn {
+      color: #2a1f07;
+      background: linear-gradient(135deg, #ffd979, #ffbf4f);
+    }
+
+    .secondary-btn {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.09);
+    }
+
+    body.preview-mode .hud,
+    body.preview-mode .overlay {
+      display: none !important;
+    }
+
+    @media (max-width: 420px) {
+      .hud {
+        top: 8px;
+        left: 8px;
+        right: 8px;
+        gap: 6px;
+      }
+
+      .hud-pill {
+        min-height: 34px;
+        padding: 6px 8px;
+        border-radius: 999px;
+      }
+
+      .hud-label {
+        font-size: 0.5rem;
+      }
+
+      .hud-value {
+        font-size: 0.78rem;
+      }
+
+      .overlay {
+        padding: 12px;
+      }
+
+      .start-card,
+      .gameover-card {
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+
+        .legend-row {
+        grid-template-columns: 1fr;
+      }
+
+      .input-hint {
+        font-size: 0.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell" id="shell">
+    <canvas id="gameCanvas" width="900" height="1600"></canvas>
+
+    <div class="hud" id="hud">
+      <div class="hud-pill">
+        <span class="hud-label">Score</span>
+        <span class="hud-value" id="scoreValue">0</span>
+      </div>
+      <div class="hud-pill">
+        <span class="hud-label">Best</span>
+        <span class="hud-value" id="bestValue">0</span>
+      </div>
+      <div class="hud-pill gold">
+        <span class="hud-label">Boost</span>
+        <span class="hud-value" id="boostValue">-</span>
+      </div>
+      <div class="hud-pill blue">
+        <span class="hud-label">Shield</span>
+        <span class="hud-value" id="shieldValue">-</span>
+      </div>
+    </div>
+
+    <div class="overlay start-overlay" id="startOverlay">
+      <div class="overlay-card start-card">
+        <p class="eyebrow">Quick Play</p>
+        <h1 class="overlay-title">Lane Dash</h1>
+        <p class="overlay-subtitle">
+          도심 도로를 읽고 차선을 바꾸며 버티는 러너입니다.
+          노랑은 연료 부스트, 파랑은 안전 실드입니다.
+        </p>
+        <div class="legend-row">
+          <div class="legend-chip gold">
+            <strong>Yellow</strong>
+            연료 부스트 2.8초
+            <br>생존 점수 상승
+          </div>
+          <div class="legend-chip blue">
+            <strong>Blue</strong>
+            실드 1회 저장
+            <br>충돌 한 번 방어
+          </div>
+        </div>
+        <div class="start-meta">
+          <p class="status-line" id="startStatus">랭킹 정보를 불러오는 중입니다.</p>
+          <p class="input-hint">좌우키, A/D, 탭 이동</p>
+        </div>
+        <div class="button-row">
+          <button type="button" class="primary-btn" id="startButton">바로 시작</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay gameover-overlay" id="gameOverOverlay" hidden>
+      <div class="overlay-card gameover-card">
+        <p class="eyebrow">Run Finished</p>
+        <h2 class="overlay-title">CRASH</h2>
+        <p class="score-line" id="finalScoreLine">최종 점수 0</p>
+        <p class="status-line" id="gameOverStatus">기록을 정리하고 있습니다.</p>
+        <div class="button-row">
+          <button type="button" class="primary-btn" id="restartButton">다시 하기</button>
+          <button type="button" class="secondary-btn" id="lobbyButton">로비로 돌아가기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./lanedash.js"></script>
+</body>
+</html>

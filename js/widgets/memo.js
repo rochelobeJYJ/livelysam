@@ -1,16 +1,55 @@
 (function () {
   'use strict';
+
   const LS = window.LivelySam = window.LivelySam || {};
 
+  function formatUpdatedAt(dateStr) {
+    if (!dateStr) return '';
+
+    const date = new Date(dateStr);
+    const today = new Date();
+    if (date.toDateString() === today.toDateString()) {
+      return LS.Helpers.formatTime(date, true, false);
+    }
+    return LS.Helpers.formatDate(date, 'M월 D일');
+  }
+
+  function escapeAndBreaks(value) {
+    return LS.Helpers.escapeHtml(String(value || '')).replace(/\n/g, '<br>');
+  }
+
+  function getMemoRecords(query, archivedOnly) {
+    if (query) {
+      return LS.Records.search(query, { facets: ['note'], archived: archivedOnly ? true : false });
+    }
+
+    const notes = LS.Records.listNotes({ includeArchived: archivedOnly });
+    return archivedOnly ? notes.filter((record) => record.archivedAt) : notes.filter((record) => !record.archivedAt);
+  }
+
+  function splitMemoBody(record) {
+    const title = String(record.title || '').trim();
+    const body = LS.Records.getDisplayBody(record);
+    const lines = String(body || '').split(/\r?\n/g);
+    const plainLines = lines.filter((line) => !/^\s*-\s*\[( |x|X)\]\s+/.test(line));
+    const preview = plainLines.join('\n').trim();
+    const fallback = title || LS.Records.getDisplayTitle(record, '메모');
+    return { title, preview, fallback };
+  }
+
   LS.MemoWidget = {
-    _memos: [],
+    _bound: false,
+    _query: '',
+    _showArchived: false,
 
     async init() {
-      try {
-        this._memos = await LS.Storage.dbGetAll('memos');
-      } catch {
-        this._memos = LS.Storage.get('memos_fallback', []);
+      await LS.Records.init();
+
+      if (!this._bound) {
+        this._bound = true;
+        window.addEventListener('livelysam:recordsChanged', () => this.render());
       }
+
       this.render();
     },
 
@@ -18,161 +57,192 @@
       const container = document.getElementById('memo-content');
       if (!container) return;
 
-      let html = '<div class="memo-list">';
+      const memos = getMemoRecords(this._query, this._showArchived);
+      const colors = LS.Records.getColorOptions();
+      const pinned = this._showArchived ? [] : memos.filter((record) => record.pinned);
+      const regular = this._showArchived ? memos : memos.filter((record) => !record.pinned);
 
-      if (this._memos.length === 0) {
-        html += '<div class="memo-empty">📝 + 버튼을 눌러 메모를 추가하세요</div>';
+      let html = '<div class="widget-toolbar">';
+      html += `<input class="widget-search" id="memo-search" type="text" placeholder="메모 검색" value="${LS.Helpers.escapeHtml(this._query)}">`;
+      html += '<div class="widget-filter-group">';
+      html += `<button class="widget-filter-btn ${this._showArchived ? '' : 'active'}" data-filter="active">사용 중</button>`;
+      html += `<button class="widget-filter-btn ${this._showArchived ? 'active' : ''}" data-filter="archived">보관함</button>`;
+      html += '</div></div>';
+
+      html += '<div class="memo-list">';
+
+      if (!memos.length) {
+        html += `<div class="memo-empty">${this._showArchived ? '보관된 메모가 없습니다.' : '+ 버튼으로 메모를 추가해 보세요'}</div>`;
+      } else {
+        if (pinned.length) {
+          html += '<div class="record-section-title">고정 메모</div>';
+          pinned.forEach((record) => {
+            html += this._renderMemoCard(record, colors);
+          });
+        }
+
+        if (regular.length) {
+          html += `<div class="record-section-title">${this._showArchived ? '보관된 메모' : '메모 목록'}</div>`;
+          regular.forEach((record) => {
+            html += this._renderMemoCard(record, colors);
+          });
+        }
       }
-
-      // 고정 메모 먼저, 그 다음 최신순
-      const sorted = [...this._memos].sort((a, b) => {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
-        return new Date(b.updatedAt) - new Date(a.updatedAt);
-      });
-
-      sorted.forEach(memo => {
-        const colors = {
-          yellow: '#FFF9C4',
-          pink: '#F8BBD0',
-          blue: '#BBDEFB',
-          green: '#C8E6C9',
-          purple: '#E1BEE7',
-          orange: '#FFE0B2'
-        };
-        const bgColor = colors[memo.color] || colors.yellow;
-
-        html += `<div class="memo-card" style="background:${bgColor}" data-id="${memo.id}">`;
-        html += `<div class="memo-card-header">`;
-        html += `<button class="memo-pin ${memo.pinned ? 'pinned' : ''}" data-action="pin" title="${memo.pinned ? '고정 해제' : '고정'}">📌</button>`;
-        html += `<button class="memo-delete" data-action="delete" title="삭제">×</button>`;
-        html += `</div>`;
-        html += `<div class="memo-card-body" data-action="edit" contenteditable="false">${this._renderContent(memo.content)}</div>`;
-        html += `<div class="memo-card-footer">`;
-        html += `<span class="memo-time">${this._formatTime(memo.updatedAt)}</span>`;
-        html += `<div class="memo-colors">`;
-        Object.keys(colors).forEach(c => {
-          html += `<span class="memo-color-dot" data-action="color" data-color="${c}" style="background:${colors[c]}" title="${c}"></span>`;
-        });
-        html += `</div></div></div>`;
-      });
 
       html += '</div>';
       container.innerHTML = html;
 
-      // 이벤트 바인딩
-      container.querySelectorAll('.memo-card').forEach(card => {
-        card.addEventListener('click', (e) => this._handleCardClick(e, card.dataset.id));
+      container.querySelector('#memo-search')?.addEventListener('input', (event) => {
+        this._query = event.target.value || '';
+        this.render();
+      });
+
+      container.querySelectorAll('[data-filter]').forEach((button) => {
+        button.addEventListener('click', () => {
+          this._showArchived = button.dataset.filter === 'archived';
+          this.render();
+        });
+      });
+
+      container.querySelectorAll('.memo-card').forEach((card) => {
+        card.addEventListener('click', (event) => this._handleCardClick(event, card.dataset.id));
       });
     },
 
-    _renderContent(content) {
-      return LS.Helpers.escapeHtml(content || '').replace(/\n/g, '<br>');
-    },
+    _renderMemoCard(record, colors) {
+      const colorMeta = LS.Records.getColorMeta(record.color);
+      const linkedLabels = LS.Records.getFacetLabels(record, ['note']);
+      const tagLabels = LS.Records.getTagLabels(record);
+      const checklist = LS.Records.getChecklistItems(record);
+      const body = splitMemoBody(record);
 
-    _formatTime(dateStr) {
-      if (!dateStr) return '';
-      const d = new Date(dateStr);
-      const now = new Date();
-      if (d.toDateString() === now.toDateString()) {
-        return LS.Helpers.formatTime(d, true, false);
+      let html = `<div class="memo-card" style="background:${colorMeta.bg}" data-id="${record.id}">`;
+      html += '<div class="memo-card-header">';
+      html += `<button class="memo-pin ${record.pinned ? 'pinned' : ''}" data-action="pin" title="${record.pinned ? '고정 해제' : '상단 고정'}">📌</button>`;
+      html += '<div class="memo-card-actions-right">';
+      html += '<button class="memo-edit" data-action="edit" title="편집">✏️</button>';
+      html += '<button class="memo-delete" data-action="delete" title="삭제">✕</button>';
+      html += '</div></div>';
+
+      html += '<div class="memo-card-body" data-action="edit">';
+      if (body.title && body.preview) {
+        html += `<div class="memo-card-title">${LS.Helpers.escapeHtml(body.title)}</div>`;
+        html += `<div class="memo-card-text">${escapeAndBreaks(body.preview)}</div>`;
+      } else {
+        html += `<div class="memo-card-text">${escapeAndBreaks(body.fallback)}</div>`;
       }
-      return LS.Helpers.formatDate(d, 'M월 D일');
-    },
+      html += '</div>';
 
-    _handleCardClick(e, id) {
-      const action = e.target.dataset.action || e.target.closest('[data-action]')?.dataset.action;
-      if (!action) return;
-
-      switch (action) {
-        case 'delete':
-          this._deleteMemo(id);
-          break;
-        case 'pin':
-          this._togglePin(id);
-          break;
-        case 'color':
-          this._changeColor(id, e.target.dataset.color);
-          break;
-        case 'edit':
-          this._editMemo(id);
-          break;
+      if (checklist.length) {
+        html += '<div class="memo-checklist">';
+        checklist.forEach((item) => {
+          html += `<button class="memo-checklist-item ${item.done ? 'done' : ''}" data-action="toggle-check" data-index="${item.index}">`;
+          html += `<span class="memo-checklist-box">${item.done ? '☑' : '☐'}</span>`;
+          html += `<span class="memo-checklist-text">${LS.Helpers.escapeHtml(item.text)}</span>`;
+          html += '</button>';
+        });
+        html += '</div>';
       }
+
+      if (record.category || linkedLabels.length || tagLabels.length) {
+        html += '<div class="record-badge-row">';
+        if (record.category) {
+          html += `<span class="record-category-badge">${LS.Helpers.escapeHtml(record.category)}</span>`;
+        }
+        linkedLabels.forEach((label) => {
+          html += `<span class="record-facet-badge">${LS.Helpers.escapeHtml(label)}</span>`;
+        });
+        tagLabels.forEach((label) => {
+          html += `<span class="record-tag-badge">${LS.Helpers.escapeHtml(label)}</span>`;
+        });
+        html += '</div>';
+      }
+
+      html += '<div class="memo-card-footer">';
+      html += `<span class="memo-time">${formatUpdatedAt(record.updatedAt)}</span>`;
+      html += '<div class="memo-colors">';
+      colors.forEach((color) => {
+        html += `<span class="memo-color-dot ${record.color === color.value ? 'is-active' : ''}" data-action="color" data-color="${color.value}" style="background:${color.bg}" title="${color.label}"></span>`;
+      });
+      html += '</div></div>';
+
+      html += '<div class="record-quick-actions">';
+      html += '<button class="record-quick-btn" data-action="convert-task">할 일</button>';
+      html += '<button class="record-quick-btn" data-action="convert-schedule">일정</button>';
+      html += '<button class="record-quick-btn" data-action="convert-countdown">D-Day</button>';
+      html += `<button class="record-quick-btn" data-action="${record.bookmark?.enabled ? 'open-link' : 'convert-bookmark'}">${record.bookmark?.enabled ? '링크' : '북마크'}</button>`;
+      html += `<button class="record-quick-btn" data-action="archive">${record.archivedAt ? '복원' : '보관'}</button>`;
+      html += '</div>';
+      html += '</div>';
+
+      return html;
     },
 
     async addMemo() {
-      const result = await LS.Helpers.promptModal('메모 추가', [
-        { id: 'content', type: 'textarea', label: '메모 내용', placeholder: '내용을 입력하세요' }
-      ]);
-      if (!result || !result.content.trim()) return;
-
-      const memo = {
-        id: LS.Helpers.generateId(),
-        content: result.content.trim(),
-        color: 'yellow',
-        pinned: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      this._memos.push(memo);
-      await this._save(memo);
-      this.render();
+      await LS.Records.openRecordEditor({ mode: 'note' });
     },
 
-    async _editMemo(id) {
-      const memo = this._memos.find(m => m.id === id);
-      if (!memo) return;
+    async _handleCardClick(event, recordId) {
+      const action = event.target.dataset.action || event.target.closest('[data-action]')?.dataset.action;
+      if (!action) return;
 
-      const result = await LS.Helpers.promptModal('메모 수정', [
-        { id: 'content', type: 'textarea', label: '메모 내용', value: memo.content }
-      ]);
-      if (!result) return;
-
-      memo.content = result.content.trim();
-      if (!memo.content) {
-          this._deleteMemo(id);
-          return;
+      if (action === 'delete') {
+        const confirmed = await LS.Helpers.confirmModal('메모 삭제', '이 메모를 목록에서 제거하시겠습니까?');
+        if (!confirmed) return;
+        await LS.Records.removeFacet(recordId, 'note');
+        return;
       }
-      
-      memo.updatedAt = new Date().toISOString();
-      await this._save(memo);
-      this.render();
-    },
 
-    async _deleteMemo(id) {
-      const confirmed = await LS.Helpers.confirmModal('메모 삭제', '이 메모를 삭제할까요?');
-      if (!confirmed) return;
-      this._memos = this._memos.filter(m => m.id !== id);
-      try {
-        await LS.Storage.dbDelete('memos', id);
-      } catch {
-        LS.Storage.set('memos_fallback', this._memos);
+      if (action === 'pin') {
+        await LS.Records.togglePinned(recordId);
+        return;
       }
-      this.render();
-    },
 
-    async _togglePin(id) {
-      const memo = this._memos.find(m => m.id === id);
-      if (!memo) return;
-      memo.pinned = !memo.pinned;
-      await this._save(memo);
-      this.render();
-    },
+      if (action === 'color') {
+        await LS.Records.setColor(recordId, event.target.dataset.color);
+        return;
+      }
 
-    async _changeColor(id, color) {
-      const memo = this._memos.find(m => m.id === id);
-      if (!memo) return;
-      memo.color = color;
-      await this._save(memo);
-      this.render();
-    },
+      if (action === 'archive') {
+        await LS.Records.toggleArchive(recordId);
+        return;
+      }
 
-    async _save(memo) {
-      try {
-        await LS.Storage.dbPut('memos', memo);
-      } catch {
-        LS.Storage.set('memos_fallback', this._memos);
+      if (action === 'toggle-check') {
+        const itemIndex = parseInt(event.target.closest('[data-index]')?.dataset.index || '-1', 10);
+        if (itemIndex >= 0) {
+          await LS.Records.toggleChecklistItem(recordId, itemIndex);
+        }
+        return;
+      }
+
+      if (action === 'convert-task') {
+        await LS.Records.convertRecord(recordId, 'task');
+        return;
+      }
+
+      if (action === 'convert-schedule') {
+        await LS.Records.convertRecord(recordId, 'schedule');
+        return;
+      }
+
+      if (action === 'convert-countdown') {
+        await LS.Records.convertRecord(recordId, 'countdown');
+        return;
+      }
+
+      if (action === 'convert-bookmark') {
+        await LS.Records.convertRecord(recordId, 'bookmark');
+        return;
+      }
+
+      if (action === 'open-link') {
+        LS.Records.openBookmark(recordId);
+        return;
+      }
+
+      if (action === 'edit') {
+        await LS.Records.openRecordEditor({ recordId, mode: 'note' });
       }
     }
   };

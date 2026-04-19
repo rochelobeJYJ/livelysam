@@ -1,0 +1,132 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function hasCreateFields() {
+      return request.resource.data.keys().hasAll([
+          'seasonId',
+          'gameId',
+          'playerId',
+          'nickname',
+          'score',
+          'source',
+          'createdAt',
+          'updatedAt',
+          'lastSubmittedAt'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'seasonId',
+          'gameId',
+          'playerId',
+          'nickname',
+          'score',
+          'source',
+          'createdAt',
+          'updatedAt',
+          'lastSubmittedAt'
+        ]);
+    }
+
+    function hasRunCreateFields() {
+      return request.resource.data.keys().hasAll([
+          'entryId',
+          'seasonId',
+          'gameId',
+          'playerId',
+          'nickname',
+          'score',
+          'source',
+          'createdAt',
+          'updatedAt',
+          'lastSubmittedAt'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'entryId',
+          'seasonId',
+          'gameId',
+          'playerId',
+          'nickname',
+          'score',
+          'source',
+          'createdAt',
+          'updatedAt',
+          'lastSubmittedAt'
+        ]);
+    }
+
+    function isValidCommon(seasonId, gameId, playerId) {
+      return request.resource.data.seasonId == seasonId &&
+        request.resource.data.gameId == gameId &&
+        request.resource.data.playerId == playerId &&
+        request.resource.data.source == 'livelysam' &&
+        request.resource.data.nickname is string &&
+        request.resource.data.nickname.size() > 0 &&
+        request.resource.data.nickname.size() <= 12 &&
+        request.resource.data.score is int &&
+        request.resource.data.score >= 0;
+    }
+
+    function isAllowedRunSlot(entryId, playerId) {
+      return entryId == playerId + '__top1' ||
+        entryId == playerId + '__top2' ||
+        entryId == playerId + '__top3';
+    }
+
+    match /minigameLeaderboards/{seasonId}/games/{gameId}/entries/{playerId} {
+      allow read: if true;
+
+      allow create: if request.auth != null &&
+        request.auth.uid == playerId &&
+        hasCreateFields() &&
+        isValidCommon(seasonId, gameId, playerId);
+
+      allow update: if request.auth != null &&
+        request.auth.uid == playerId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'nickname',
+          'score',
+          'updatedAt',
+          'lastSubmittedAt'
+        ]) &&
+        isValidCommon(seasonId, gameId, playerId) &&
+        request.resource.data.score >= resource.data.score &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.source == resource.data.source;
+
+      allow delete: if false;
+    }
+
+    match /minigameLeaderboards/{seasonId}/games/{gameId}/runs/{entryId} {
+      allow read: if true;
+
+      allow create: if request.auth != null &&
+        isAllowedRunSlot(entryId, request.auth.uid) &&
+        request.resource.data.entryId == entryId &&
+        request.resource.data.playerId == request.auth.uid &&
+        hasRunCreateFields() &&
+        isValidCommon(seasonId, gameId, request.auth.uid);
+
+      allow update: if request.auth != null &&
+        isAllowedRunSlot(entryId, request.auth.uid) &&
+        resource.data.entryId == entryId &&
+        resource.data.playerId == request.auth.uid &&
+        hasRunCreateFields() &&
+        request.resource.data.entryId == resource.data.entryId &&
+        request.resource.data.seasonId == resource.data.seasonId &&
+        request.resource.data.gameId == resource.data.gameId &&
+        request.resource.data.playerId == resource.data.playerId &&
+        request.resource.data.source == resource.data.source &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'nickname',
+          'score',
+          'updatedAt',
+          'lastSubmittedAt'
+        ]) &&
+        isValidCommon(seasonId, gameId, request.auth.uid) &&
+        request.resource.data.score >= resource.data.score &&
+        request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if false;
+    }
+  }
+}
+

@@ -15,6 +15,11 @@ $resultFile = Join-Path $runtimeDir "last-result.json"
 $stopFile = Join-Path $runtimeDir "stop.flag"
 $logFile = Join-Path $runtimeDir "host.log"
 $webViewProfileDir = Join-Path $runtimeDir "webview2-profile"
+$previewHostExeCandidates = @(
+    (Join-Path $rootPath "dist\launcher\BrowserPreviewHost.exe"),
+    (Join-Path $rootPath "BrowserPreviewHost.exe")
+)
+$previewHostExe = $previewHostExeCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 $pythonPath = Join-Path $rootPath "venv\Scripts\python.exe"
 
 function Ensure-RuntimeDir {
@@ -217,6 +222,7 @@ function Ensure-NativeDesktopInterop {
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Text;
 
 public static class LivelySamDesktopNative
 {
@@ -250,6 +256,7 @@ public static class LivelySamDesktopNative
     }
 
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+    private delegate bool EnumChildProc(IntPtr hwnd, IntPtr lParam);
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
@@ -261,10 +268,19 @@ public static class LivelySamDesktopNative
     private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
 
     [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool EnumChildWindows(IntPtr parent, EnumChildProc callback, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out UIntPtr result);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SystemParametersInfo(uint action, uint param, out RECT rect, uint winIni);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
@@ -281,6 +297,12 @@ public static class LivelySamDesktopNative
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
     public static RECT GetWorkArea()
     {
         RECT rect;
@@ -290,6 +312,63 @@ public static class LivelySamDesktopNative
         }
 
         return rect;
+    }
+
+    public static void EnableDpiAwareness()
+    {
+        try
+        {
+            SetProcessDPIAware();
+        }
+        catch
+        {
+        }
+    }
+
+    public static RECT GetWindowRectSafe(IntPtr hwnd)
+    {
+        RECT rect;
+        if (!GetWindowRect(hwnd, out rect))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        return rect;
+    }
+
+    private static bool IsLargeVisibleWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd))
+        {
+            return false;
+        }
+
+        RECT rect;
+        if (!GetWindowRect(hwnd, out rect))
+        {
+            return false;
+        }
+
+        return (rect.Right - rect.Left) >= 400 && (rect.Bottom - rect.Top) >= 300;
+    }
+
+    private static IntPtr FindChildWorkerW(IntPtr progman)
+    {
+        IntPtr childWorker = IntPtr.Zero;
+        EnumChildWindows(progman, (hwnd, lParam) =>
+        {
+            StringBuilder className = new StringBuilder(256);
+            GetClassName(hwnd, className, className.Capacity);
+            if (className.ToString() == "WorkerW" && IsLargeVisibleWindow(hwnd))
+            {
+                childWorker = hwnd;
+                return false;
+            }
+
+            return true;
+        }, IntPtr.Zero);
+
+        return childWorker;
     }
 
     public static IntPtr PrepareWorkerW()
@@ -302,6 +381,14 @@ public static class LivelySamDesktopNative
 
         UIntPtr result;
         SendMessageTimeout(progman, 0x052C, IntPtr.Zero, IntPtr.Zero, SMTO_NORMAL, 1000, out result);
+        SendMessageTimeout(progman, 0x052C, new IntPtr(0xD), IntPtr.Zero, SMTO_NORMAL, 1000, out result);
+        SendMessageTimeout(progman, 0x052C, new IntPtr(0xD), new IntPtr(1), SMTO_NORMAL, 1000, out result);
+
+        IntPtr childWorker = FindChildWorkerW(progman);
+        if (childWorker != IntPtr.Zero)
+        {
+            return childWorker;
+        }
 
         IntPtr workerw = IntPtr.Zero;
         EnumWindows((hwnd, lParam) =>
@@ -310,7 +397,7 @@ public static class LivelySamDesktopNative
             if (shellView != IntPtr.Zero)
             {
                 IntPtr siblingWorker = FindWindowEx(IntPtr.Zero, hwnd, "WorkerW", null);
-                if (siblingWorker != IntPtr.Zero)
+                if (IsLargeVisibleWindow(siblingWorker))
                 {
                     workerw = siblingWorker;
                     return false;
@@ -352,10 +439,6 @@ function Start-Host {
         throw "Wallpaper host is already running."
     }
 
-    if (-not (Test-Path -LiteralPath $pythonPath)) {
-        throw "python.exe not found in venv\Scripts."
-    }
-
     Ensure-RuntimeDir
     Remove-Item -LiteralPath $stopFile -Force -ErrorAction SilentlyContinue
     Write-Result @{
@@ -371,17 +454,27 @@ function Start-Host {
 
     $port = Get-FreePort
     $url = "http://127.0.0.1:$port/index.html?runtime=desktophost"
-    $serverArgs = @("-m", "http.server", "$port", "--bind", "127.0.0.1", "--directory", $rootPath)
-    $serverProcess = Start-Process -FilePath $pythonPath -ArgumentList $serverArgs -WindowStyle Hidden -PassThru
+    if ($previewHostExe) {
+        $serverProcess = Start-Process -FilePath $previewHostExe -ArgumentList @("serve", "--port", "$port") -WindowStyle Hidden -PassThru
+    } else {
+        if (-not (Test-Path -LiteralPath $pythonPath)) {
+            throw "BrowserPreviewHost.exe or python.exe not found. Checked: $($previewHostExeCandidates -join ', ')"
+        }
+        $serverArgs = @("-m", "http.server", "$port", "--bind", "127.0.0.1", "--directory", $rootPath)
+        $serverProcess = Start-Process -FilePath $pythonPath -ArgumentList $serverArgs -WindowStyle Hidden -PassThru
+    }
     Log-Message "Server process started: pid=$($serverProcess.Id) port=$port"
 
     try {
         Wait-ForServer -Url $url
         Log-Message "Local server ready at $url"
 
-        $workArea = [System.Windows.SystemParameters]::WorkArea
-        $initialWidth = 800
-        $initialHeight = 600
+        Ensure-NativeDesktopInterop
+        [LivelySamDesktopNative]::EnableDpiAwareness()
+        $desktopParent = [LivelySamDesktopNative]::PrepareWorkerW()
+        $desktopRect = [LivelySamDesktopNative]::GetWindowRectSafe($desktopParent)
+        $targetWidth = $desktopRect.Right - $desktopRect.Left
+        $targetHeight = $desktopRect.Bottom - $desktopRect.Top
         New-Item -ItemType Directory -Path $webViewProfileDir -Force | Out-Null
 
         $window = New-Object System.Windows.Window
@@ -392,10 +485,10 @@ function Start-Host {
         $window.Topmost = $false
         $window.AllowsTransparency = $false
         $window.Background = [System.Windows.Media.Brushes]::Black
-        $window.Left = $workArea.Left + 64
-        $window.Top = $workArea.Top + 64
-        $window.Width = $initialWidth
-        $window.Height = $initialHeight
+        $window.Left = 0
+        $window.Top = 0
+        $window.Width = $targetWidth
+        $window.Height = $targetHeight
 
         $grid = New-Object System.Windows.Controls.Grid
         $webView = New-Object Microsoft.Web.WebView2.Wpf.WebView2
@@ -458,12 +551,9 @@ function Start-Host {
             param($sender, $args)
             Log-Message ("WebView navigation completed. success={0}" -f $args.IsSuccess)
             if ($args.IsSuccess -and -not $script:desktopAttached) {
-                Ensure-NativeDesktopInterop
-                $nativeWorkArea = [LivelySamDesktopNative]::GetWorkArea()
-                $desktopParent = [LivelySamDesktopNative]::PrepareWorkerW()
                 $interop = New-Object System.Windows.Interop.WindowInteropHelper($window)
                 $hwnd = $interop.Handle
-                [LivelySamDesktopNative]::AttachWindow($hwnd, $desktopParent, $nativeWorkArea.Left, $nativeWorkArea.Top, ($nativeWorkArea.Right - $nativeWorkArea.Left), ($nativeWorkArea.Bottom - $nativeWorkArea.Top))
+                [LivelySamDesktopNative]::AttachWindow($hwnd, $desktopParent, 0, 0, $targetWidth, $targetHeight)
                 $script:desktopAttached = $true
                 $script:hostState.attached = $true
                 $script:hostState.window_handle = ("0x{0:X}" -f $hwnd.ToInt64())

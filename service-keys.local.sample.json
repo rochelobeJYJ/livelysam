@@ -1,0 +1,4 @@
+{
+  "neisApiKey": "YOUR_NEIS_SERVICE_KEY",
+  "weatherApiKey": "YOUR_OPENWEATHER_SERVICE_KEY"
+}

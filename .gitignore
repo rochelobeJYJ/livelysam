@@ -1,8 +1,6 @@
-# Lively Wallpaper System Files
-backup/
-
 # IDE and Project Settings
 .gemini/
+.claude/
 .vscode/
 .idea/
 *.lnk
@@ -16,7 +14,11 @@ Thumbs.db
 *.log
 node_modules/
 dist/
+build/
 runtime/
+LivelySamLauncher.exe
+BrowserPreviewHost.exe
+LocalStorageBridge.exe
 
 # Local Python experiments
 main.py
@@ -24,3 +26,29 @@ venv/
 .venv/
 __pycache__/
 *.pyc
+
+# Local Google desktop OAuth config
+google-oauth-desktop.json
+
+# Firebase / local secrets
+firebase-admin*.json
+firebase-service-account*.json
+serviceAccount*.json
+.runtimeconfig.json
+firebase-debug.log
+service-keys.local.json
+.env
+.env.*
+deploy/cloudrun/*.local
+deploy/cloudrun/*.local.*
+deploy/cloudrun/*.secrets
+deploy/cloudrun/*.secrets.*
+deploy/cloudrun/runtime-env.txt
+deploy/cloudrun/runtime-env.local.txt
+deploy/cloudrun/deploy-cloudrun.local.ps1
+
+# Minigame local repair scratch files
+js/minigames/games/fix*.py
+js/minigames/games/restore_overlays.py
+js/minigames/games/scan.py
+js/minigames/games/scan_broken_strings.txt

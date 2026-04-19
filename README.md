@@ -1,197 +1,118 @@
-# 🎓 LivelySam (라이블리쌤)
+# LivelySam
 
-> **한국 교사를 위한 올인원 데스크톱 대시보드 배경화면**
->
-> 외부 유료 앱 없이 로컬 실행기로 직접 바탕화면에 붙일 수 있는 실시간 교사 컨트롤센터
+한국 교사를 위한 로컬 대시보드형 배경화면/브라우저 보드입니다.  
+시계, 시간표, 일정, 급식, 날씨, 메모, 할 일, D-Day, 즐겨찾기를 한 화면에서 관리할 수 있습니다.
 
----
+## 권장 실행 방법
 
-## ✨ 주요 기능
+일반 사용자는 아래 실행기부터 사용하는 것을 권장합니다.
 
-| 기능 | 설명 |
-|------|------|
-| ⏰ **시계** | 디지털+아날로그 시계, 날짜, 요일, 학기 표시 |
-| 📋 **시간표** | NEIS 연동 주간 시간표, 현재 교시 하이라이트 |
-| 🍱 **급식** | 오늘/내일/이번주 급식, 알레르기 아이콘, 칼로리 |
-| 🌤️ **날씨** | 현재 날씨, 3시간 예보, 미세먼지 컬러 배지 |
-| 📅 **학사일정** | 월간 캘린더, NEIS 학사일정, 공휴일 |
-| 📝 **메모** | 무제한 스티키노트, 색상 변경, 고정 |
-| ✅ **할 일** | 우선순위·마감일, 체크리스트 |
-| ⏱️ **타이머** | 수업 타이머, 포모도로 모드 |
-| 📌 **D-Day** | 수능, 시험 등 D-Day 카운터 |
-| 🔗 **즐겨찾기** | 자주 방문하는 웹사이트 바로가기 |
+```bat
+start_livelysam_launcher.vbs
+```
 
----
+빌드된 실행 파일이 있으면 아래 경로의 GUI 실행기가 바로 열립니다.
 
-## 🚀 무료 추천 경로: 전용 로컬 실행기
+```text
+dist\launcher\LivelySamLauncher.exe
+```
 
-### 1단계: 바로 실행
+## 제공 방식
 
-시작:
+- 전용 로컬 실행기로 배경화면 모드 실행
+- 보조 모니터 우선 배치
+- 바탕화면 모드가 맞지 않으면 브라우저 미리보기로 대체 실행
+- 브라우저 보기와 배경화면 보기 사이에서 설정과 데이터를 공유
+- Lively Wallpaper용 HTML 패키지 지원
+
+## 포함 파일
+
+```text
+index.html
+css/
+js/
+tools/
+start_livelysam_launcher.cmd
+start_livelysam_launcher.vbs
+start_local_wallpaper.cmd
+stop_local_wallpaper.cmd
+build_livelysam_launcher_exe.cmd
+LivelyInfo.json
+LivelyProperties.json
+```
+
+## 데이터 저장과 개인정보
+
+모든 사용자 데이터는 로컬 PC에만 저장됩니다. 기본적으로 Git 저장소 내부가 아니라 사용자 로컬 앱데이터 경로를 사용합니다.
+
+공유 저장소 경로:
+
+```text
+%LocalAppData%\LivelySam\user-data\shared-storage.json
+```
+
+저장되는 예시는 아래와 같습니다.
+
+- API 키
+- 학교명, 학교 코드, 주소
+- 프로필 설정
+- 위젯 배치와 테마
+- 메모, 일정, 할 일, D-Day, 즐겨찾기
+
+GitHub 업로드 시 위 로컬 저장소 파일은 저장소 바깥에 있으므로 기본적으로 함께 올라가지 않습니다.
+
+## Lively Wallpaper에서 사용할 때
+
+1. Lively Wallpaper에 현재 폴더를 가져오거나 `index.html` 기반 패키지를 등록합니다.
+2. `LivelyInfo.json`, `LivelyProperties.json`을 함께 둡니다.
+3. 입력이 필요하면 Lively 설정에서 `Wallpaper Input > Keyboard`를 켭니다.
+
+권장 방식은 Lively HTML 직접 실행보다 로컬 실행기 사용입니다. 로컬 실행기가 데이터 유지와 실행 제어에 더 안정적입니다.
+
+## 로컬 배경화면 직접 실행
 
 ```bat
 start_local_wallpaper.cmd
-```
-
-중지:
-
-```bat
 stop_local_wallpaper.cmd
 ```
 
-### 2단계: 상태 확인
+이 방식은 테스트와 개발용으로 두고, 일반 사용자 배포는 GUI 실행기 사용을 권장합니다.
+
+## 실행기 EXE 다시 빌드
+
+```bat
+build_livelysam_launcher_exe.cmd
+```
+
+필수 조건:
+
+- `venv\Scripts\python.exe`
+- PyInstaller 설치
+
+## 릴리스 점검
+
+브라우저 없이 정적 릴리스 점검만 먼저 돌리려면 아래 스크립트를 사용합니다.
 
 ```powershell
-venv\Scripts\python.exe .\tools\desktop_wallpaper_host.py status
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run_release_audit.ps1
 ```
 
-### 3단계: 동작 방식
+헤드리스 브라우저 검증까지 포함한 확인은 아래 스크립트를 사용합니다.
 
-- 로컬 HTTP 서버로 현재 프로젝트를 서빙
-- Chrome 앱 창을 띄움
-- 그 창을 Windows 데스크톱 레이어(`WorkerW`)에 붙여서 배경처럼 보이게 처리
-- 자세한 구조는 [LOCAL_WALLPAPER_HOST.md](./LOCAL_WALLPAPER_HOST.md)를 보세요.
-
----
-
-## 🧪 무료 외부 대안
-
-- ScreenPlay 경로도 남겨뒀습니다.
-- 필요하면 [SCREENPLAY_SETUP.md](./SCREENPLAY_SETUP.md)를 참고할 수 있습니다.
-
----
-
-## 🧪 유료 대안
-
-- Wallpaper Engine 지원 경로도 남겨뒀습니다.
-- 필요하면 [WALLPAPER_ENGINE_SETUP.md](./WALLPAPER_ENGINE_SETUP.md)를 참고할 수 있습니다.
-
----
-
-## 🧪 기존 Lively 방식
-
-기존 Lively 가져오기 파일도 남아 있지만, 현재는 `ScreenPlay` 경로를 먼저 추천합니다.
-
----
-
-## 🚀 기존 설치 방법 (Lively)
-
-### 1단계: Lively Wallpaper 설치
-- [Lively Wallpaper](https://www.rocksdanister.com/lively/) 다운로드 및 설치
-- 또는 Microsoft Store에서 "Lively Wallpaper" 검색
-
-### 2단계: LivelySam 설치
-1. 이 폴더(`LivelySam`)를 원하는 위치에 복사
-2. Lively Wallpaper 실행
-3. **+ 버튼** → **로컬 파일 추가**
-4. `LivelySam` 폴더 안의 `index.html` 선택
-5. 배경화면으로 설정!
-
-### 3단계: 초기 설정 ⚠️ 중요!
-> **처음 실행하면 자동으로 설정 창이 열립니다.**
-
-1. **NEIS API 키 입력**
-   - [open.neis.go.kr](https://open.neis.go.kr) 접속 → 회원가입
-   - **마이페이지** → **인증키 신청** → 키 복사
-   - 설정 창에 붙여넣기
-
-2. **학교 검색**
-   - 학교명 입력 후 🔍 검색 버튼 클릭
-   - 검색 결과에서 학교 선택 → 끝!
-
-3. **날씨 API 키 입력** (선택)
-   - [openweathermap.org](https://openweathermap.org/api) 무료 계정 생성
-   - API Keys에서 키 복사 → 설정 창에 입력
-
-4. **저장** 버튼 클릭 → 모든 데이터가 자동으로 불러와집니다!
-
----
-
-## 🎨 테마
-
-8가지 테마 중 선택:
-- 🌸 벚꽃 파스텔
-- 🌊 오션 브리즈 (기본)
-- 🌿 민트 가든
-- 🍑 피치 코랄
-- 💜 라벤더 드림
-- 🌻 선샤인
-- 🧊 아이스 그레이
-- 🌅 선셋
-
-투명도도 자유롭게 조절 가능합니다.
-
----
-
-## 🔒 개인정보 보호
-
-- ✅ 모든 데이터는 **사용자 PC에만 저장** (localStorage + IndexedDB)
-- ❌ 클라우드 업로드 **절대 없음**
-- ❌ 외부 서버 전송 **절대 없음**
-- ✅ API 호출은 NEIS, OpenWeatherMap **공식 서버**에 직접 요청
-- ✅ 배포 파일에 개인정보 **포함하지 않음**
-
----
-
-## 📂 폴더 구조
-
-```
-LivelySam/
-├── index.html              # 메인 페이지
-├── css/style.css           # 스타일시트
-├── js/
-│   ├── app.js              # 메인 앱
-│   ├── config.js           # 설정 관리
-│   ├── lively.js           # Lively 연동
-│   ├── api/                # API 모듈
-│   ├── widgets/            # 위젯 모듈
-│   └── utils/              # 유틸리티
-├── LivelyProperties.json   # Lively 설정
-├── LivelyInfo.json         # Lively 메타정보
-└── README.md               # 이 파일
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run_review_fix_validation.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run_headless_validation.ps1
 ```
 
----
+Codex 샌드박스처럼 브라우저 권한이 제한된 환경에서는 헤드리스 검증이 실패할 수 있습니다. 그 경우 일반 로컬 PowerShell에서 다시 실행합니다.
 
-## ❓ FAQ
+## 문제 해결
 
-**Q: 인터넷 없이 사용할 수 있나요?**
-- 시계, 메모, 할일, 타이머, D-Day 등은 오프라인에서도 작동합니다.
-- 급식, 날씨, 시간표 등 API 연동 기능은 인터넷이 필요합니다.
+- 실행기가 열리지 않으면: `venv`와 `dist\launcher\LivelySamLauncher.exe` 존재 여부를 확인합니다.
+- 배경화면이 안 붙으면: 실행기에서 상태 확인 후 브라우저 미리보기로 먼저 테스트합니다.
+- 데이터가 안 보이면: `%LocalAppData%\LivelySam\user-data\shared-storage.json` 경로와 권한을 확인합니다.
+- Lively 입력이 안 되면: Lively의 키보드 입력 허용 설정을 켭니다.
 
-**Q: 위젯 배치를 바꿀 수 있나요?**
-- 네! 위젯 상단을 드래그하여 이동, 우하단 모서리를 잡아 크기를 조절할 수 있습니다.
+## 라이선스
 
-**Q: 데이터 백업은 어떻게 하나요?**
-- 설정 → 데이터 → 데이터 내보내기(JSON) 클릭
-- 자동 백업: 매일 1회 (최근 7일분 보관)
-
----
-
-## 📜 라이선스
-
-MIT License - 자유롭게 사용, 수정, 배포 가능합니다.
-
----
-
-## 🙏 감사
-
-이 프로젝트는 한국의 모든 선생님들을 위해 만들어졌습니다.
-학교명만 입력하면 끝! 🎉
-
----
-
-# 🎓 LivelySam - English Guide
-
-## Quick Setup
-1. Install [Lively Wallpaper](https://www.rocksdanister.com/lively/)
-2. Add `index.html` as wallpaper via Lively
-3. Enter your NEIS API key (from [open.neis.go.kr](https://open.neis.go.kr))
-4. Search your school → Done!
-
-## Privacy
-- All data stored locally only (no cloud, no external servers)
-- APIs called directly to official servers (NEIS, OpenWeatherMap)
-
-## License
 MIT

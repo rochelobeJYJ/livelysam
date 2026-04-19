@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Create or update this release tag (for example v1.0.0 or v1.1.0-beta.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create virtual environment
+        shell: powershell
+        run: |
+          python -m venv venv
+          .\venv\Scripts\python.exe -m pip install --upgrade pip pyinstaller
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+
+      - name: Sync release metadata
+        shell: powershell
+        run: .\tools\sync_release_metadata.ps1 -Root .
+
+      - name: Resolve release tag
+        id: release_ref
+        shell: powershell
+        run: |
+          $resolvedTag = "${{ github.event.inputs.release_tag }}"
+          if ([string]::IsNullOrWhiteSpace($resolvedTag)) {
+            $resolvedTag = $env:GITHUB_REF_NAME
+          }
+          if ([string]::IsNullOrWhiteSpace($resolvedTag)) {
+            throw "Release tag could not be resolved."
+          }
+          "release_tag=$resolvedTag" >> $env:GITHUB_OUTPUT
+
+      - name: Validate tag matches version.json
+        shell: powershell
+        run: |
+          $versionInfo = Get-Content -LiteralPath .\version.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $expectedTag = [string]$versionInfo.releaseTag
+          if ([string]::IsNullOrWhiteSpace($expectedTag)) {
+            $expectedTag = "v$($versionInfo.version)"
+          }
+          $releaseTag = "${{ steps.release_ref.outputs.release_tag }}"
+          if ($releaseTag -ne $expectedTag) {
+            throw "Release tag '$releaseTag' does not match version.json releaseTag '$expectedTag'."
+          }
+
+      - name: Determine release channel
+        id: release_meta
+        shell: powershell
+        run: |
+          $tag = "${{ steps.release_ref.outputs.release_tag }}"
+          $channel = if ($tag -match '-(alpha|beta|rc)') { 'beta' } else { 'stable' }
+          $isPrerelease = if ($channel -eq 'beta') { 'true' } else { 'false' }
+          $publishedAt = [DateTime]::UtcNow.ToString('o')
+          "channel=$channel" >> $env:GITHUB_OUTPUT
+          "is_prerelease=$isPrerelease" >> $env:GITHUB_OUTPUT
+          "published_at=$publishedAt" >> $env:GITHUB_OUTPUT
+
+      - name: Build launcher executables
+        shell: powershell
+        run: .\tools\build_livelysam_launcher_exe.ps1 -Root .
+
+      - name: Build installer
+        shell: powershell
+        run: .\tools\build_installer.ps1 -Root .
+
+      - name: Publish release manifest
+        shell: powershell
+        run: |
+          $versionInfo = Get-Content -LiteralPath .\version.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $installerPath = Join-Path (Resolve-Path '.').Path ("dist\installer\" + $versionInfo.installerBaseName + "-" + $versionInfo.version + ".exe")
+          .\tools\publish_release_manifest.ps1 `
+            -Root . `
+            -Channel "${{ steps.release_meta.outputs.channel }}" `
+            -InstallerPath $installerPath `
+            -ReleaseTag "${{ steps.release_ref.outputs.release_tag }}" `
+            -PublishedAt "${{ steps.release_meta.outputs.published_at }}"
+
+      - name: Run release audit
+        shell: powershell
+        run: .\tools\run_release_audit.ps1
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: powershell
+        run: |
+          $tag = "${{ steps.release_ref.outputs.release_tag }}"
+          $title = "LivelySam $tag"
+          $releaseExists = $true
+          gh release view $tag --repo $env:GITHUB_REPOSITORY | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            $releaseExists = $false
+          }
+          if (-not $releaseExists) {
+            $args = @("release", "create", $tag, "--repo", $env:GITHUB_REPOSITORY, "--target", $env:GITHUB_SHA, "--title", $title, "--generate-notes")
+            if ("${{ steps.release_meta.outputs.is_prerelease }}" -eq "true") {
+              $args += "--prerelease"
+            }
+            & gh @args
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to create GitHub release for $tag."
+            }
+          }
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: powershell
+        run: |
+          $versionInfo = Get-Content -LiteralPath .\version.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $installerPath = Join-Path (Resolve-Path '.').Path ("dist\installer\" + $versionInfo.installerBaseName + "-" + $versionInfo.version + ".exe")
+          $manifestPath = Join-Path (Resolve-Path '.').Path ("release\updates\latest-" + "${{ steps.release_meta.outputs.channel }}" + ".json")
+          gh release upload "${{ steps.release_ref.outputs.release_tag }}" $installerPath $manifestPath --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to upload release assets."
+          }
+
+      - name: Checkout metadata branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: metadata
+          fetch-depth: 0
+
+      - name: Update tracked channel manifest on main
+        shell: powershell
+        run: |
+          $channel = "${{ steps.release_meta.outputs.channel }}"
+          $source = Join-Path (Resolve-Path '.').Path ("release\updates\latest-" + $channel + ".json")
+          $target = Join-Path (Resolve-Path '.\metadata').Path ("release\updates\latest-" + $channel + ".json")
+          Copy-Item -LiteralPath $source -Destination $target -Force
+
+          git -C .\metadata config user.name "github-actions[bot]"
+          git -C .\metadata config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C .\metadata add ("release/updates/latest-" + $channel + ".json")
+          git -C .\metadata diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "No manifest changes to push."
+            exit 0
+          }
+
+          git -C .\metadata commit -m ("Update " + $channel + " release manifest for " + "${{ steps.release_ref.outputs.release_tag }}")
+          git -C .\metadata push origin HEAD:main

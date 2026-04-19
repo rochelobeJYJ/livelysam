@@ -32,6 +32,7 @@
       if (dateEl) {
         dateEl.textContent = LS.Helpers.formatDate(now, 'YYYY년 M월 D일');
       }
+      this._updateMoonPhase(now);
 
       // 요일
       const dayEl = document.getElementById('clock-day');
@@ -182,6 +183,116 @@
       ctx.strokeStyle = color;
       ctx.lineWidth = width;
       ctx.lineCap = 'round';
+      ctx.stroke();
+    },
+
+    _updateMoonPhase(now) {
+      const moonWrap = document.getElementById('clock-moon');
+      const moonCanvas = document.getElementById('clock-moon-canvas');
+      if (!moonWrap || !moonCanvas || !LS.Helpers?.getMoonPhaseInfo) return;
+
+      const info = LS.Helpers.getMoonPhaseInfo(now);
+
+      const tooltip = `${info.label} · 월령 ${info.age.toFixed(1)}일 · 밝기 ${Math.round(info.illumination * 100)}% · ${info.stageNumber}/${info.totalStages} 단계`;
+      moonWrap.title = tooltip;
+      moonWrap.setAttribute('aria-label', tooltip);
+
+      this._drawMoonPhase(moonCanvas, info);
+    },
+
+    _drawMoonPhase(canvas, info) {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const size = canvas.width;
+      const center = size / 2;
+      const radius = size * 0.34;
+      const phaseAngle = info.renderFraction * Math.PI * 2;
+      const sunX = Math.sin(phaseAngle);
+      const sunZ = -Math.cos(phaseAngle);
+      const image = ctx.createImageData(size, size);
+      const data = image.data;
+      const lightTone = { r: 255, g: 247, b: 221 };
+      const shadowTone = { r: 44, g: 52, b: 66 };
+
+      const craters = [
+        { x: -0.33, y: -0.16, r: 0.14, depth: 0.08 },
+        { x: 0.18, y: -0.28, r: 0.11, depth: 0.05 },
+        { x: 0.26, y: 0.14, r: 0.15, depth: 0.07 },
+        { x: -0.12, y: 0.3, r: 0.09, depth: 0.05 },
+        { x: -0.34, y: 0.2, r: 0.07, depth: 0.04 }
+      ];
+
+      ctx.clearRect(0, 0, size, size);
+
+      for (let y = 0; y < size; y += 1) {
+        for (let x = 0; x < size; x += 1) {
+          const dx = (x + 0.5 - center) / radius;
+          const dy = (y + 0.5 - center) / radius;
+          const distanceSq = dx * dx + dy * dy;
+          if (distanceSq > 1) continue;
+
+          const dz = Math.sqrt(1 - distanceSq);
+          const rawLight = dx * sunX + dz * sunZ;
+          const lambert = Math.max(0, rawLight);
+          const rim = Math.pow(Math.max(0, dz), 0.85);
+          const earthshine = 0.035 + rim * 0.035;
+          let brightness = rawLight > 0
+            ? 0.72 + Math.pow(lambert, 0.7) * 0.28 + rim * 0.06
+            : earthshine;
+
+          if (rawLight > 0) {
+            craters.forEach((crater) => {
+              const craterDx = dx - crater.x;
+              const craterDy = dy - crater.y;
+              const craterDistance = Math.sqrt(craterDx * craterDx + craterDy * craterDy);
+              if (craterDistance >= crater.r) return;
+              const craterFade = 1 - (craterDistance / crater.r);
+              brightness -= crater.depth * craterFade;
+            });
+          }
+
+          const value = Math.max(0, Math.min(1, brightness));
+          const baseTone = rawLight > 0 ? lightTone : shadowTone;
+          const r = Math.round(baseTone.r * value);
+          const g = Math.round(baseTone.g * value);
+          const b = Math.round(baseTone.b * value);
+          const alpha = 255;
+          const index = (y * size + x) * 4;
+
+          data[index] = r;
+          data[index + 1] = g;
+          data[index + 2] = b;
+          data[index + 3] = alpha;
+        }
+      }
+
+      ctx.putImageData(image, 0, 0);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(center, center, radius, 0, Math.PI * 2);
+      ctx.clip();
+
+      const glowOffsetX = center + (info.isWaxing ? radius * 0.24 : -radius * 0.24);
+      const glow = ctx.createRadialGradient(glowOffsetX, center - radius * 0.14, radius * 0.08, center, center, radius * 1.05);
+      glow.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+      glow.addColorStop(0.42, 'rgba(255, 248, 220, 0.08)');
+      glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(center - radius * 1.3, center - radius * 1.3, radius * 2.6, radius * 2.6);
+
+      const shade = ctx.createRadialGradient(center, center + radius * 0.3, radius * 0.15, center, center, radius * 1.2);
+      shade.addColorStop(0, 'rgba(20, 24, 38, 0)');
+      shade.addColorStop(1, 'rgba(20, 24, 38, 0.18)');
+      ctx.fillStyle = shade;
+      ctx.fillRect(center - radius * 1.3, center - radius * 1.3, radius * 2.6, radius * 2.6);
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(center, center, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+      ctx.lineWidth = 1;
       ctx.stroke();
     },
 

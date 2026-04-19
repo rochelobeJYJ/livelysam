@@ -1,0 +1,57 @@
+name: Release Prep
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release-prep.yml"
+      - "version.json"
+      - "index.html"
+      - "LivelyInfo.json"
+      - "LivelyProperties.json"
+      - "js/**"
+      - "tools/**"
+      - "release/**"
+
+jobs:
+  audit:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create virtual environment
+        shell: powershell
+        run: |
+          python -m venv venv
+          .\venv\Scripts\python.exe -m pip install --upgrade pip pyinstaller
+
+      - name: Sync release metadata
+        shell: powershell
+        run: .\tools\sync_release_metadata.ps1 -Root .
+
+      - name: Build launcher executables
+        shell: powershell
+        run: .\tools\build_livelysam_launcher_exe.ps1 -Root .
+
+      - name: Run release audit
+        shell: powershell
+        run: .\tools\run_release_audit.ps1
+
+      - name: Upload release-prep artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: livelysam-release-prep
+          path: |
+            dist/launcher/*.exe
+            release/installer/*.iss
+            release/installer/*.inc
+            release/updates/*.json

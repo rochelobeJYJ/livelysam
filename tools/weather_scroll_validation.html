@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LivelySam Weather Scroll Validation</title>
+</head>
+<body>
+  <main id="validation-root" data-validation-status="running">
+    <h1>Weather Scroll Validation</h1>
+    <pre id="validation-output">running...</pre>
+    <iframe id="app-frame" style="width: 1440px; height: 980px; border: 0;"></iframe>
+  </main>
+
+  <script>
+    (async () => {
+      const root = document.getElementById('validation-root');
+      const output = document.getElementById('validation-output');
+      const frame = document.getElementById('app-frame');
+      const results = [];
+
+      function log(ok, name, detail) {
+        results.push({ ok, name, detail: detail || '' });
+      }
+
+      function assert(condition, name, detail) {
+        if (!condition) {
+          throw new Error(`${name}: ${detail || 'assertion failed'}`);
+        }
+        log(true, name, detail);
+      }
+
+      function wait(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      async function waitFor(fn, timeoutMs, label) {
+        const startedAt = Date.now();
+        while ((Date.now() - startedAt) < timeoutMs) {
+          const value = fn();
+          if (value) {
+            return value;
+          }
+          await wait(120);
+        }
+        throw new Error(`timeout: ${label}`);
+      }
+
+      try {
+        frame.src = './validation_bootstrap.html?view=month&preset=school';
+
+        const doc = await waitFor(() => {
+          try {
+            const currentDoc = frame.contentDocument;
+            const widget = currentDoc?.querySelector('#widget-weather');
+            const content = currentDoc?.getElementById('weather-content');
+            return (widget && content) ? currentDoc : null;
+          } catch (error) {
+            return null;
+          }
+        }, 20000, 'weather widget mount');
+
+        await waitFor(() => {
+          const content = doc.getElementById('weather-content');
+          return content && content.children.length > 2;
+        }, 12000, 'weather sections render');
+
+        const widget = doc.querySelector('#widget-weather');
+        const widgetBody = widget.querySelector('.widget-body');
+        const weatherScroll = doc.getElementById('weather-scroll');
+        const weatherContent = doc.getElementById('weather-content');
+        const scroller = weatherScroll || widgetBody;
+
+        assert(Boolean(scroller), 'scroller-exists', weatherScroll ? 'weather-scroll wrapper detected' : 'widget-body fallback detected');
+        assert(Boolean(weatherContent), 'weather-content-exists', 'weather-content detected');
+        assert(scroller.scrollHeight > scroller.clientHeight, 'weather-overflows', `scrollHeight=${scroller.scrollHeight}, clientHeight=${scroller.clientHeight}`);
+
+        const beforeTop = scroller.scrollTop;
+        scroller.scrollTop = Math.min(200, scroller.scrollHeight - scroller.clientHeight);
+        await wait(120);
+        assert(scroller.scrollTop > beforeTop, 'scrolltop-changes', `before=${beforeTop}, after=${scroller.scrollTop}`);
+
+        const beforeWheelTop = scroller.scrollTop;
+        const wheelEvent = new frame.contentWindow.WheelEvent('wheel', {
+          deltaY: 120,
+          bubbles: true,
+          cancelable: true
+        });
+        weatherContent.dispatchEvent(wheelEvent);
+        await wait(120);
+        assert(scroller.scrollTop > beforeWheelTop, 'wheel-dispatch-scrolls', `before=${beforeWheelTop}, after=${scroller.scrollTop}`);
+
+        root.dataset.validationStatus = 'passed';
+        output.textContent = JSON.stringify({ status: 'passed', checks: results }, null, 2);
+      } catch (error) {
+        results.push({ ok: false, name: 'validation-error', detail: error.message });
+        root.dataset.validationStatus = 'failed';
+        output.textContent = JSON.stringify({ status: 'failed', checks: results }, null, 2);
+      }
+    })();
+  </script>
+</body>
+</html>

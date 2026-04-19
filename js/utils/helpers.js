@@ -60,6 +60,44 @@
     },
 
     /* ── HH:MM 문자열 → 분 단위 변환 ── */
+    getMoonPhaseInfo(date = new Date()) {
+      const targetDate = date instanceof Date ? new Date(date.getTime()) : new Date(date);
+      const synodicMonth = 29.530588853;
+      const referenceNewMoonUtc = Date.UTC(2000, 0, 6, 18, 14, 0);
+      const elapsedDays = (targetDate.getTime() - referenceNewMoonUtc) / 86400000;
+      const age = ((elapsedDays % synodicMonth) + synodicMonth) % synodicMonth;
+      const fraction = age / synodicMonth;
+      const totalStages = 30;
+      const stageIndex = Math.floor(fraction * totalStages) % totalStages;
+      const renderFraction = fraction;
+      const illumination = 0.5 * (1 - Math.cos(renderFraction * Math.PI * 2));
+
+      return {
+        age,
+        fraction,
+        illumination,
+        isWaxing: fraction < 0.5,
+        label: this.getMoonPhaseLabel(age, synodicMonth),
+        stageIndex,
+        stageNumber: stageIndex + 1,
+        totalStages,
+        renderFraction
+      };
+    },
+
+    getMoonPhaseLabel(age, synodicMonth = 29.530588853) {
+      if (age < 1.1 || age >= synodicMonth - 1.1) return '삭';
+      if (age < 6.4) return '초승달';
+      if (age < 8.8) return '상현 직전';
+      if (age < 10.2) return '상현달';
+      if (age < 13.9) return '차오르는 달';
+      if (age < 15.8) return '보름달';
+      if (age < 20.5) return '기우는 달';
+      if (age < 22.8) return '하현달';
+      if (age < synodicMonth - 1.1) return '그믐달';
+      return '삭 직전';
+    },
+
     timeToMinutes(timeStr) {
       const [h, m] = timeStr.split(':').map(Number);
       return h * 60 + m;
@@ -78,14 +116,6 @@
       if (m >= 3 && m <= 7) return '1학기';
       if (m >= 8 && m <= 12) return '2학기';
       return '겨울방학';
-    },
-
-    /* ── NEIS 날짜 파싱 (YYYYMMDD → Date) ── */
-    parseNeisDate(str) {
-      const y = parseInt(str.slice(0, 4));
-      const m = parseInt(str.slice(4, 6)) - 1;
-      const d = parseInt(str.slice(6, 8));
-      return new Date(y, m, d);
     },
 
     /* ── 급식 메뉴 파싱 (HTML 태그 제거 + 알레르기 분리) ── */
@@ -334,24 +364,101 @@
               if (String(f.value) === String(opt.value)) optionEl.selected = true;
               el.appendChild(optionEl);
             });
+          } else if (f.type === 'icon-grid') {
+            el = document.createElement('div');
+            el.className = 'prompt-icon-grid';
+            el.id = 'prompt-input-' + f.id;
+            el.value = f.value || '';
+
+            const buttons = [];
+            const targetInput = f.targetId ? inputs[f.targetId] : null;
+            const resolveValue = () => String(targetInput?.value || el.value || f.value || '').trim();
+            const syncActiveState = () => {
+              const currentValue = resolveValue();
+              el.value = currentValue;
+              buttons.forEach((button) => {
+                button.classList.toggle('is-active', button.dataset.value === currentValue);
+              });
+            };
+
+            (f.options || []).forEach((option) => {
+              const value = typeof option === 'string' ? option : String(option?.value || '');
+              const label = typeof option === 'string' ? option : String(option?.label || value);
+              if (!value) return;
+
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.className = 'prompt-icon-option';
+              button.textContent = value;
+              button.title = label;
+              button.dataset.value = value;
+              button.addEventListener('click', () => {
+                if (targetInput) {
+                  targetInput.value = value;
+                  targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                el.value = value;
+                syncActiveState();
+              });
+              el.appendChild(button);
+              buttons.push(button);
+            });
+
+            if (targetInput?.addEventListener) {
+              targetInput.addEventListener('input', syncActiveState);
+              targetInput.addEventListener('change', syncActiveState);
+            }
+
+            syncActiveState();
           } else {
             el = document.createElement('input');
             el.type = f.type || 'text';
           }
 
-          if (f.value !== undefined && f.value !== null) el.value = f.value;
-          if (f.placeholder) el.placeholder = f.placeholder;
-          if (f.min !== undefined) el.min = f.min;
-          if (f.max !== undefined) el.max = f.max;
-          if (f.step !== undefined) el.step = f.step;
-          if (f.readonly) el.readOnly = true;
+          if (f.type !== 'icon-grid') {
+            if (f.value !== undefined && f.value !== null) el.value = f.value;
+            if (f.placeholder) el.placeholder = f.placeholder;
+            if (f.min !== undefined) el.min = f.min;
+            if (f.max !== undefined) el.max = f.max;
+            if (f.step !== undefined) el.step = f.step;
+            if (f.readonly) el.readOnly = true;
+            el.className = 'prompt-input';
+            el.id = 'prompt-input-' + f.id;
+          }
 
-          el.className = 'prompt-input';
-          el.id = 'prompt-input-' + f.id;
           row.appendChild(el);
+          if (f.help) {
+            const helpEl = document.createElement('div');
+            helpEl.className = 'prompt-field-help';
+            helpEl.textContent = f.help;
+            row.appendChild(helpEl);
+          }
           bodyEl.appendChild(row);
           inputs[f.id] = el;
         });
+
+        const allDayInput = inputs.allDay;
+        const startTimeInput = inputs.startTime;
+        const endTimeInput = inputs.endTime;
+        if (allDayInput && (startTimeInput || endTimeInput)) {
+          const disableAllDayWhenTimeExists = () => {
+            const hasTime = Boolean(String(startTimeInput?.value || '').trim() || String(endTimeInput?.value || '').trim());
+            if (!hasTime || String(allDayInput.value || '') === '0') return;
+            allDayInput.value = '0';
+            allDayInput.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+          const clearTimesWhenAllDay = () => {
+            if (String(allDayInput.value || '') !== '1') return;
+            if (startTimeInput) startTimeInput.value = '';
+            if (endTimeInput) endTimeInput.value = '';
+          };
+
+          startTimeInput?.addEventListener('input', disableAllDayWhenTimeExists);
+          startTimeInput?.addEventListener('change', disableAllDayWhenTimeExists);
+          endTimeInput?.addEventListener('input', disableAllDayWhenTimeExists);
+          endTimeInput?.addEventListener('change', disableAllDayWhenTimeExists);
+          allDayInput.addEventListener('change', clearTimesWhenAllDay);
+        }
 
         let settled = false;
 
@@ -389,12 +496,13 @@
             return;
           }
 
-          if (event.key === 'Enter' && fields.length <= 1) {
+          if (event.key === 'Enter') {
             const activeEl = document.activeElement;
-            if (activeEl?.tagName !== 'TEXTAREA') {
-              event.preventDefault();
-              btnConfirm.click();
-            }
+            const isTextarea = activeEl?.tagName === 'TEXTAREA';
+            if (isTextarea && !event.ctrlKey && !event.metaKey) return;
+            if (activeEl?.tagName === 'BUTTON') return;
+            event.preventDefault();
+            btnConfirm.click();
           }
         };
 
@@ -431,14 +539,6 @@
         cancelText: options.cancelText || '취소'
       });
       return result !== null;
-    },
-
-    alertModal(title, message, options = {}) {
-      return this.promptModal(title, [], {
-        message,
-        confirmText: options.confirmText || '확인',
-        showCancel: false
-      });
     },
 
     showToast(message, tone = 'info', duration = 2600) {

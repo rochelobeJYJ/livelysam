@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LivelySam Review Fix Validation</title>
+</head>
+<body>
+  <main id="review-result" data-review-status="running">
+    <h1>Review Fix Validation</h1>
+    <pre id="review-output">running...</pre>
+  </main>
+
+  <script src="../js/utils/helpers.js?v=review-fix"></script>
+  <script src="../js/utils/storage.js?v=review-fix"></script>
+  <script src="../js/utils/records.js?v=review-fix"></script>
+  <script>
+    (async () => {
+      const output = document.getElementById('review-output');
+      const host = document.getElementById('review-result');
+      const results = [];
+
+      function log(ok, name, detail) {
+        results.push({ ok, name, detail: detail || '' });
+      }
+
+      function assert(condition, name, detail) {
+        if (!condition) {
+          throw new Error(`${name}: ${detail || 'assertion failed'}`);
+        }
+        log(true, name, detail);
+      }
+
+      try {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i += 1) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('ls_')) {
+            keys.push(key);
+          }
+        }
+        keys.forEach((key) => localStorage.removeItem(key));
+
+        localStorage.setItem('ls_db_store_backups', JSON.stringify([
+          { id: 'keep-backup', date: '2026-04-13', createdAt: '2026-04-13T00:00:00.000Z' }
+        ]));
+
+        await window.LivelySam.Storage.initDB();
+        window.LivelySam.Storage.set('config', { theme: 2, schoolName: 'ReviewSchool' });
+        window.LivelySam.Storage.set('staleKey', 'remove-me');
+        await window.LivelySam.Storage.dbPut('records', { id: 'seed-record', title: 'Seed' });
+        await window.LivelySam.Storage.dbPut('todos', { id: 'stale-todo', title: 'Stale Todo' });
+        await window.LivelySam.Storage.dbPut('backups', { id: 'backup-local', date: '2026-04-13' });
+
+        const exported = await window.LivelySam.Storage.exportAll();
+        assert(!Object.prototype.hasOwnProperty.call(exported.indexedDB || {}, 'backups'), 'export-excludes-backup-store', 'indexedDB.backups omitted');
+        assert(!Object.prototype.hasOwnProperty.call(exported.localStorage || {}, 'ls_db_store_backups'), 'export-excludes-backup-local-key', 'localStorage backup key omitted');
+
+        await window.LivelySam.Storage.importAll({
+          version: 2,
+          localStorage: {
+            ls_config: JSON.stringify({ theme: 5, schoolName: 'ImportedSchool' }),
+            ls_newKey: JSON.stringify('fresh-value')
+          },
+          indexedDB: {
+            records: [
+              { id: 'imported-record', title: 'Imported' }
+            ],
+            backups: [
+              { id: 'imported-backup', date: '2026-04-01' }
+            ]
+          }
+        });
+
+        assert(localStorage.getItem('ls_staleKey') === null, 'import-clears-stale-local-key', 'ls_staleKey removed');
+        assert(localStorage.getItem('ls_newKey') === JSON.stringify('fresh-value'), 'import-restores-local-key', 'ls_newKey restored');
+
+        const backupStoreRaw = localStorage.getItem('ls_db_store_backups');
+        const backupStore = JSON.parse(backupStoreRaw || '[]');
+        const backupIds = Array.isArray(backupStore) ? backupStore.map((item) => item.id).sort() : [];
+        assert(backupIds.length === 2 && backupIds[0] === 'backup-local' && backupIds[1] === 'keep-backup', 'import-preserves-backup-history', 'existing backup history kept and imported backups ignored');
+
+        const importedRecords = await window.LivelySam.Storage.dbGetAll('records');
+        assert(importedRecords.length === 1 && importedRecords[0].id === 'imported-record', 'import-replaces-record-store', 'records store replaced');
+        const importedTodos = await window.LivelySam.Storage.dbGetAll('todos');
+        assert(importedTodos.length === 0, 'import-clears-missing-store', 'missing stores are cleared during restore');
+
+        await window.LivelySam.Records.init();
+        const saved = await window.LivelySam.Records.saveRecord({
+          title: 'Memo Source',
+          body: 'keep this body',
+          color: 'yellow',
+          note: { enabled: true }
+        });
+
+        const originalPrompt = window.LivelySam.Helpers.promptModal;
+        window.LivelySam.Helpers.promptModal = async () => ({
+          title: 'Memo Link',
+          url: 'https://example.com',
+          icon: '🔗',
+          openMode: 'new',
+          category: '링크',
+          tags: 'memo,link',
+          color: 'yellow',
+          pinned: '0'
+        });
+
+        try {
+          await window.LivelySam.Records.openRecordEditor({ recordId: saved.id, mode: 'bookmark' });
+        } finally {
+          window.LivelySam.Helpers.promptModal = originalPrompt;
+        }
+
+        const updated = window.LivelySam.Records.getById(saved.id);
+        assert(updated.body === 'keep this body', 'bookmark-convert-preserves-body', 'memo body kept');
+        assert(updated.note && updated.note.enabled === true, 'bookmark-convert-keeps-existing-facet', 'note facet retained');
+        assert(updated.bookmark && updated.bookmark.enabled === true && updated.bookmark.url === 'https://example.com', 'bookmark-convert-enables-bookmark', 'bookmark facet stored');
+
+        host.dataset.reviewStatus = 'passed';
+        output.textContent = JSON.stringify({ status: 'passed', checks: results }, null, 2);
+      } catch (error) {
+        host.dataset.reviewStatus = 'failed';
+        results.push({ ok: false, name: 'validation-error', detail: error.message });
+        output.textContent = JSON.stringify({ status: 'failed', checks: results }, null, 2);
+      }
+    })();
+  </script>
+</body>
+</html>

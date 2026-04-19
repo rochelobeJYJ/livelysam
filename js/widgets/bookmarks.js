@@ -1,16 +1,35 @@
 (function () {
   'use strict';
+
   const LS = window.LivelySam = window.LivelySam || {};
 
+  function getBookmarkRecords(query, archivedOnly) {
+    if (query) {
+      return LS.Records.search(query, { facets: ['bookmark'], archived: archivedOnly ? true : false });
+    }
+
+    const bookmarks = LS.Records.listBookmarks({ includeArchived: archivedOnly });
+    return archivedOnly ? bookmarks.filter((record) => record.archivedAt) : bookmarks.filter((record) => !record.archivedAt);
+  }
+
+  function renderPreview(record) {
+    const body = LS.Records.getDisplayBody(record);
+    return body ? LS.Helpers.escapeHtml(body).replace(/\n/g, '<br>') : '';
+  }
+
   LS.BookmarksWidget = {
-    _bookmarks: [],
+    _bound: false,
+    _query: '',
+    _showArchived: false,
 
     async init() {
-      try {
-        this._bookmarks = await LS.Storage.dbGetAll('bookmarks');
-      } catch {
-        this._bookmarks = LS.Storage.get('bookmarks_fallback', []);
+      await LS.Records.init();
+
+      if (!this._bound) {
+        this._bound = true;
+        window.addEventListener('livelysam:recordsChanged', () => this.render());
       }
+
       this.render();
     },
 
@@ -18,140 +37,147 @@
       const container = document.getElementById('bookmarks-content');
       if (!container) return;
 
-      if (this._bookmarks.length === 0) {
-        container.innerHTML = '<div class="bm-empty">+ 버튼으로 즐겨찾기를 추가해보세요</div>';
-        return;
+      const bookmarks = getBookmarkRecords(this._query, this._showArchived);
+      const pinned = this._showArchived ? [] : bookmarks.filter((record) => record.pinned);
+      const regular = this._showArchived ? bookmarks : bookmarks.filter((record) => !record.pinned);
+
+      let html = '<div class="widget-toolbar">';
+      html += `<input class="widget-search" id="bookmark-search" type="text" placeholder="북마크 검색" value="${LS.Helpers.escapeHtml(this._query)}">`;
+      html += '<div class="widget-filter-group">';
+      html += `<button class="widget-filter-btn ${this._showArchived ? '' : 'active'}" data-filter="active">사용 중</button>`;
+      html += `<button class="widget-filter-btn ${this._showArchived ? 'active' : ''}" data-filter="archived">보관함</button>`;
+      html += '</div></div>';
+
+      html += '<div class="bm-list">';
+      if (!bookmarks.length) {
+        html += `<div class="bm-empty">${this._showArchived ? '보관된 북마크가 없습니다.' : '+ 버튼으로 북마크를 추가해 보세요'}</div>`;
+      } else {
+        if (pinned.length) {
+          html += '<div class="record-section-title">고정 북마크</div>';
+          html += '<div class="bm-grid">';
+          pinned.forEach((record) => {
+            html += this._renderCard(record);
+          });
+          html += '</div>';
+        }
+
+        if (regular.length) {
+          html += `<div class="record-section-title">${this._showArchived ? '보관된 북마크' : '북마크 목록'}</div>`;
+          html += '<div class="bm-grid">';
+          regular.forEach((record) => {
+            html += this._renderCard(record);
+          });
+          html += '</div>';
+        }
       }
-
-      let html = '<div class="bm-grid">';
-      this._bookmarks.forEach((bookmark) => {
-        const safeUrl = LS.Helpers.escapeHtml(bookmark.url);
-        const safeName = LS.Helpers.escapeHtml(bookmark.name);
-        const safeIcon = LS.Helpers.escapeHtml(bookmark.icon || '🔗');
-
-        html += `<div class="bm-item" data-id="${bookmark.id}">`;
-        html += `<button class="bm-link" data-action="open" data-url="${safeUrl}" title="${safeUrl}">`;
-        html += `<span class="bm-icon">${safeIcon}</span>`;
-        html += `<span class="bm-name">${safeName}</span>`;
-        html += `</button>`;
-        html += `<div class="bm-actions">`;
-        html += `<button class="bm-action-btn" data-action="copy" data-url="${safeUrl}" title="URL 복사">복사</button>`;
-        html += `<button class="bm-action-btn" data-action="edit" title="수정">수정</button>`;
-        html += `<button class="bm-action-btn" data-action="delete" title="삭제">삭제</button>`;
-        html += `</div>`;
-        html += `</div>`;
-      });
       html += '</div>';
+
       container.innerHTML = html;
 
-      container.onclick = (event) => this._handleClick(event);
+      container.querySelector('#bookmark-search')?.addEventListener('input', (event) => {
+        this._query = event.target.value || '';
+        this.render();
+      });
+
+      container.querySelectorAll('[data-filter]').forEach((button) => {
+        button.addEventListener('click', () => {
+          this._showArchived = button.dataset.filter === 'archived';
+          this.render();
+        });
+      });
+
+      container.querySelectorAll('.bm-item').forEach((card) => {
+        card.addEventListener('click', (event) => this._handleClick(event, card.dataset.id));
+      });
+    },
+
+    _renderCard(record) {
+      const colorMeta = LS.Records.getColorMeta(record.color);
+      const title = LS.Helpers.escapeHtml(LS.Records.getDisplayTitle(record, '북마크'));
+      const url = LS.Helpers.escapeHtml(record.bookmark.url);
+      const icon = LS.Helpers.escapeHtml(record.bookmark.icon || '🔖');
+      const desc = renderPreview(record);
+      const linkedLabels = LS.Records.getFacetLabels(record, ['bookmark']);
+      const tagLabels = LS.Records.getTagLabels(record);
+
+      let html = `<div class="bm-item" data-id="${record.id}" style="background:${colorMeta.bg}">`;
+      html += '<div class="bm-topbar">';
+      html += `<button class="bm-pin ${record.pinned ? 'pinned' : ''}" data-action="pin" title="${record.pinned ? '고정 해제' : '상단 고정'}">📌</button>`;
+      html += '<div class="bm-card-actions">';
+      html += '<button class="bm-icon-btn" data-action="edit" title="편집">✏️</button>';
+      html += '<button class="bm-icon-btn" data-action="delete" title="삭제">🗑️</button>';
+      html += '</div></div>';
+
+      html += `<button class="bm-link" data-action="open" title="${url}">`;
+      html += '<div class="bm-head">';
+      html += `<span class="bm-icon">${icon}</span>`;
+      html += `<span class="bm-name">${title}</span>`;
+      html += '</div>';
+      if (record.category) html += `<div class="bm-category">${LS.Helpers.escapeHtml(record.category)}</div>`;
+      html += `<div class="bm-url">${url}</div>`;
+      if (desc) html += `<div class="bm-desc">${desc}</div>`;
+      html += '</button>';
+
+      if (linkedLabels.length || tagLabels.length) {
+        html += '<div class="record-badge-row">';
+        linkedLabels.forEach((label) => {
+          html += `<span class="record-facet-badge">${LS.Helpers.escapeHtml(label)}</span>`;
+        });
+        tagLabels.forEach((label) => {
+          html += `<span class="record-tag-badge">${LS.Helpers.escapeHtml(label)}</span>`;
+        });
+        html += '</div>';
+      }
+
+      html += '<div class="bm-actions">';
+      html += '<button class="bm-action-btn" data-action="copy">복사</button>';
+      html += `<button class="bm-action-btn" data-action="archive">${record.archivedAt ? '복원' : '보관'}</button>`;
+      html += '</div>';
+      html += '</div>';
+
+      return html;
     },
 
     async addBookmark() {
-      const result = await LS.Helpers.promptModal('즐겨찾기 추가', [
-        { id: 'name', type: 'text', label: '이름', placeholder: '예: ChatGPT' },
-        { id: 'url', type: 'url', label: 'URL', placeholder: 'https://example.com' },
-        { id: 'icon', type: 'text', label: '아이콘', placeholder: '🔗', value: '🔗' }
-      ], {
-        confirmText: '추가'
-      });
-
-      if (!result) return;
-
-      const name = result.name?.trim();
-      const url = this._normalizeUrl(result.url);
-      const icon = result.icon?.trim() || '🔗';
-
-      if (!name || !url) {
-        LS.Helpers.showToast('이름과 URL을 모두 입력해주세요.', 'warning');
-        return;
-      }
-
-      const bookmark = {
-        id: LS.Helpers.generateId(),
-        name,
-        url,
-        icon,
-        createdAt: new Date().toISOString()
-      };
-
-      this._bookmarks.push(bookmark);
-      await this._save(bookmark);
-      this.render();
-      LS.Helpers.showToast('즐겨찾기를 추가했습니다.', 'success');
+      await LS.Records.openRecordEditor({ mode: 'bookmark' });
     },
 
-    async editBookmark(id) {
-      const bookmark = this._bookmarks.find((item) => item.id === id);
-      if (!bookmark) return;
+    async _handleClick(event, recordId) {
+      const action = event.target.dataset.action || event.target.closest('[data-action]')?.dataset.action;
+      if (!action || !recordId) return;
 
-      const result = await LS.Helpers.promptModal('즐겨찾기 수정', [
-        { id: 'name', type: 'text', label: '이름', value: bookmark.name },
-        { id: 'url', type: 'url', label: 'URL', value: bookmark.url },
-        { id: 'icon', type: 'text', label: '아이콘', value: bookmark.icon || '🔗' }
-      ], {
-        confirmText: '저장'
-      });
+      const record = LS.Records.getById(recordId);
+      if (!record) return;
 
-      if (!result) return;
-
-      const name = result.name?.trim();
-      const url = this._normalizeUrl(result.url);
-      const icon = result.icon?.trim() || '🔗';
-
-      if (!name || !url) {
-        LS.Helpers.showToast('이름과 URL을 모두 입력해주세요.', 'warning');
+      if (action === 'open') {
+        LS.Records.openBookmark(record);
         return;
       }
 
-      bookmark.name = name;
-      bookmark.url = url;
-      bookmark.icon = icon;
-
-      await this._save(bookmark);
-      this.render();
-      LS.Helpers.showToast('즐겨찾기를 수정했습니다.', 'success');
-    },
-
-    async deleteBookmark(id) {
-      const confirmed = await LS.Helpers.confirmModal('즐겨찾기 삭제', '이 즐겨찾기를 삭제할까요?');
-      if (!confirmed) return;
-
-      this._bookmarks = this._bookmarks.filter((item) => item.id !== id);
-      try {
-        await LS.Storage.dbDelete('bookmarks', id);
-      } catch {
-        LS.Storage.set('bookmarks_fallback', this._bookmarks);
-      }
-      this.render();
-      LS.Helpers.showToast('즐겨찾기를 삭제했습니다.', 'success');
-    },
-
-    async _handleClick(event) {
-      const actionEl = event.target.closest('[data-action]');
-      if (!actionEl) return;
-
-      const card = actionEl.closest('.bm-item');
-      const id = card?.dataset.id;
-      const action = actionEl.dataset.action;
-      const url = actionEl.dataset.url;
-
-      if (action === 'open' && url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
+      if (action === 'copy') {
+        await this._copyUrl(record.bookmark.url);
         return;
       }
 
-      if (action === 'copy' && url) {
-        await this._copyUrl(url);
+      if (action === 'pin') {
+        await LS.Records.togglePinned(recordId);
         return;
       }
 
-      if (!id) return;
+      if (action === 'archive') {
+        await LS.Records.toggleArchive(recordId);
+        return;
+      }
 
       if (action === 'edit') {
-        this.editBookmark(id);
-      } else if (action === 'delete') {
-        this.deleteBookmark(id);
+        await LS.Records.openRecordEditor({ recordId, mode: 'bookmark' });
+        return;
+      }
+
+      if (action === 'delete') {
+        const confirmed = await LS.Helpers.confirmModal('북마크 삭제', '이 북마크 연결을 제거하시겠습니까?');
+        if (!confirmed) return;
+        await LS.Records.removeFacet(recordId, 'bookmark');
       }
     },
 
@@ -159,28 +185,11 @@
       try {
         if (navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(url);
-          LS.Helpers.showToast('URL을 복사했습니다.', 'success');
+          LS.Helpers.showToast('링크 주소를 복사했습니다.', 'success');
           return;
         }
-      } catch {
-        // Fall through to the warning toast below.
-      }
-      LS.Helpers.showToast('클립보드 복사에 실패했습니다. URL을 직접 확인해주세요.', 'warning', 3200);
-    },
-
-    _normalizeUrl(url) {
-      const trimmed = String(url || '').trim();
-      if (!trimmed) return '';
-      if (/^https?:\/\//i.test(trimmed)) return trimmed;
-      return `https://${trimmed}`;
-    },
-
-    async _save(bookmark) {
-      try {
-        await LS.Storage.dbPut('bookmarks', bookmark);
-      } catch {
-        LS.Storage.set('bookmarks_fallback', this._bookmarks);
-      }
+      } catch {}
+      LS.Helpers.showToast('클립보드 복사에 실패했습니다. 링크를 직접 확인해 주세요.', 'warning', 3200);
     }
   };
 })();

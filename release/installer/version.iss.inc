@@ -1,0 +1,7 @@
+#define MyAppVersion "1.0.0"
+#define MyReleaseTag "v1.0.0"
+#define MyAppId "livelysam"
+#define MyDefaultChannel "stable"
+#define MyGithubRepo "rochelobeJYJ/livelysam"
+#define MyInstallerBaseName "LivelySamSetup"
+#define MyInstallerOutputBaseName "LivelySamSetup-1.0.0"

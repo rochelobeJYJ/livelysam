@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LivelySam Validation Bootstrap</title>
+</head>
+<body>
+  <p>Preparing validation data...</p>
+  <script>
+    (() => {
+      const params = new URLSearchParams(location.search);
+      const view = params.get('view') || 'month';
+      const preset = params.get('preset') || 'school';
+      const rootDate = '2026-04-13';
+      const now = new Date().toISOString();
+      const seededKeys = new Set();
+
+      const schoolCoords = { lat: 37.5665, lon: 126.9780, label: 'SchoolBase' };
+      const homeCoords = { lat: 35.1796, lon: 129.0756, label: 'HomeBase' };
+
+      function scopeOf(coords) {
+        return `${coords.lat.toFixed(4)},${coords.lon.toFixed(4)}`;
+      }
+
+      function setJson(key, value, options = {}) {
+        localStorage.setItem(`ls_${key}`, JSON.stringify(value));
+        if (options.track !== false) {
+          seededKeys.add(key);
+        }
+      }
+
+      function buildForecast(baseTimestamp, temps) {
+        return temps.map((temp, index) => ({
+          dt: Math.floor((baseTimestamp + (index * 3 * 60 * 60 * 1000)) / 1000),
+          main: {
+            temp,
+            temp_min: temp - 1,
+            temp_max: temp + 1
+          },
+          weather: [{ icon: index % 2 === 0 ? '01d' : '03d', description: index % 2 === 0 ? 'clear' : 'cloudy' }],
+          pop: index % 3 === 0 ? 0.7 : 0.2
+        }));
+      }
+
+      function buildAirForecast(baseTimestamp, values) {
+        return values.map((value, index) => ({
+          dt: Math.floor((baseTimestamp + (index * 6 * 60 * 60 * 1000)) / 1000),
+          main: { aqi: value.aqi },
+          components: {
+            pm2_5: value.pm25,
+            pm10: value.pm10,
+            o3: 20,
+            no2: 12,
+            so2: 3,
+            co: 200
+          }
+        }));
+      }
+
+      function seedWeatherCache(coords, weather, forecastTemps, airValues) {
+        const scope = scopeOf(coords);
+        const nowMs = Date.now();
+        const forecastBase = new Date('2026-04-13T06:00:00+09:00').getTime();
+
+        setJson(`cachedWeather:${scope}`, weather);
+        setJson(`cachedWeather:${scope}:time`, nowMs);
+        setJson(`cachedForecastRaw:${scope}`, buildForecast(forecastBase, forecastTemps));
+        setJson(`cachedForecastRaw:${scope}:time`, nowMs);
+        setJson(`cachedAirQuality:${scope}`, {
+          aqi: airValues[0].aqi,
+          pm25: airValues[0].pm25,
+          pm10: airValues[0].pm10,
+          o3: 20,
+          no2: 12,
+          so2: 3,
+          co: 200,
+          updatedAt: nowMs
+        });
+        setJson(`cachedAirQuality:${scope}:time`, nowMs);
+        setJson(`cachedAirQualityForecastRaw:${scope}`, buildAirForecast(forecastBase, airValues));
+        setJson(`cachedAirQualityForecastRaw:${scope}:time`, nowMs);
+      }
+
+      function blankRepeat() {
+        return {
+          enabled: false,
+          frequency: 'weekly',
+          interval: 1,
+          weekdays: [],
+          until: ''
+        };
+      }
+
+      function buildRecord(seed) {
+        return {
+          id: seed.id,
+          title: seed.title,
+          body: seed.body || '',
+          color: seed.color || 'blue',
+          pinned: false,
+          archivedAt: null,
+          category: seed.category || '',
+          tags: seed.tags || [],
+          legacyRefs: [],
+          createdAt: now,
+          updatedAt: now,
+          note: { enabled: false },
+          task: {
+            enabled: false,
+            dueDate: '',
+            startTime: '',
+            endTime: '',
+            done: false,
+            repeat: blankRepeat()
+          },
+          schedule: {
+            enabled: false,
+            date: '',
+            startTime: '',
+            endTime: '',
+            allDay: true,
+            repeat: blankRepeat()
+          },
+          countdown: {
+            enabled: false,
+            targetDate: '',
+            group: ''
+          },
+          bookmark: {
+            enabled: false,
+            url: '',
+            icon: '🔖',
+            openMode: 'new'
+          }
+        };
+      }
+
+      function buildRecords() {
+        const records = [];
+
+        const recurringSchedule = buildRecord({
+          id: 'record-schedule-1',
+          title: 'Weekly Sync',
+          body: 'Review class progress',
+          color: 'blue',
+          category: 'School',
+          tags: ['weekly']
+        });
+        recurringSchedule.schedule = {
+          enabled: true,
+          date: '2026-04-13',
+          startTime: '09:00',
+          endTime: '09:40',
+          allDay: false,
+          repeat: {
+            enabled: true,
+            frequency: 'weekly',
+            interval: 1,
+            weekdays: [1],
+            until: '2026-12-31'
+          }
+        };
+        records.push(recurringSchedule);
+
+        const taskRecord = buildRecord({
+          id: 'record-task-1',
+          title: 'Lesson Review',
+          body: '- [ ] Check notes',
+          color: 'mint',
+          category: 'Task',
+          tags: ['review']
+        });
+        taskRecord.task = {
+          enabled: true,
+          dueDate: rootDate,
+          startTime: '15:00',
+          endTime: '15:30',
+          done: false,
+          repeat: blankRepeat()
+        };
+        records.push(taskRecord);
+
+        const countdownRecord = buildRecord({
+          id: 'record-countdown-1',
+          title: 'Midterm Exam',
+          color: 'orange',
+          category: 'Exam',
+          tags: ['important']
+        });
+        countdownRecord.countdown = {
+          enabled: true,
+          targetDate: '2026-04-17',
+          group: 'Exam'
+        };
+        records.push(countdownRecord);
+
+        const personalSchedule = buildRecord({
+          id: 'record-schedule-2',
+          title: 'Parent Call',
+          body: 'Follow up with parent',
+          color: 'purple',
+          category: 'Personal',
+          tags: ['call']
+        });
+        personalSchedule.schedule = {
+          enabled: true,
+          date: '2026-04-15',
+          startTime: '18:30',
+          endTime: '19:00',
+          allDay: false,
+          repeat: blankRepeat()
+        };
+        records.push(personalSchedule);
+
+        return records;
+      }
+
+      function seedLocalStores(records) {
+        setJson('db_store_memos', []);
+        setJson('db_store_todos', []);
+        setJson('db_store_bookmarks', []);
+        setJson('db_store_schedules', []);
+        setJson('db_store_records', records);
+        setJson('db_store_backups', []);
+      }
+
+      setJson('calendarViewMode', view);
+      setJson('config', {
+        schoolName: 'SchoolBase',
+        schoolAddress: 'Seoul Test Address',
+        neisApiKey: '',
+        weatherApiKey: 'validation-key',
+        weatherLat: schoolCoords.lat,
+        weatherLon: schoolCoords.lon,
+        weatherSchoolLat: schoolCoords.lat,
+        weatherSchoolLon: schoolCoords.lon,
+        weatherActivePreset: preset,
+        weatherHomeLabel: homeCoords.label,
+        weatherHomeAddress: 'Busan Test Address',
+        weatherHomeLat: homeCoords.lat,
+        weatherHomeLon: homeCoords.lon,
+        weatherShowCurrent: true,
+        weatherShowDetails: true,
+        weatherShowHourlyForecast: true,
+        weatherShowDailyForecast: true,
+        weatherShowAirCurrent: true,
+        weatherShowAirHourlyForecast: true,
+        weatherShowAirDailyForecast: true,
+        weatherShowAlerts: true,
+        weatherShowUpdatedAt: true,
+        googleClientId: '',
+        googleCalendarSyncEnabled: false,
+        googleTasksSyncEnabled: false,
+        googleCalendarId: 'primary',
+        googleTasklistId: '@default',
+        theme: 1,
+        widgetOpacity: 75,
+        fontSize: 14,
+        backgroundOpacity: 98,
+        clockFormat: 1,
+        showAnalogClock: true,
+        showSeconds: true,
+        timetableMode: 0,
+        grade: 0,
+        classNum: '1',
+        startTime: '08:20',
+        morningMinutes: 10,
+        classMinutes: 50,
+        breakMinutes: 10,
+        lunchMinutes: 60,
+        lunchAfterPeriod: 1,
+        totalPeriods: 1,
+        afterSchoolEnabled: false,
+        afterSchoolMinutes: 70,
+        afterSchoolDays: '1,3,5',
+        customPrimaryColor: '',
+        customPrimaryLightColor: '',
+        customAccentColor: '',
+        customBackgroundColor: '',
+        gridLayout: null,
+        customPeriods: null
+      });
+
+      seedWeatherCache(schoolCoords, {
+        temp: 22,
+        feelsLike: 21,
+        tempMin: 17,
+        tempMax: 25,
+        humidity: 54,
+        pressure: 1012,
+        description: 'school clear',
+        icon: '01d',
+        windSpeed: 3,
+        windGust: 5,
+        visibilityKm: 10,
+        clouds: 12,
+        cityName: schoolCoords.label,
+        sunrise: Date.now(),
+        sunset: Date.now(),
+        updatedAt: Date.now()
+      }, [22, 23, 24, 21, 19, 18, 17, 16], [
+        { aqi: 2, pm25: 18, pm10: 32 },
+        { aqi: 2, pm25: 21, pm10: 35 },
+        { aqi: 3, pm25: 39, pm10: 48 },
+        { aqi: 3, pm25: 42, pm10: 50 }
+      ]);
+
+      seedWeatherCache(homeCoords, {
+        temp: 18,
+        feelsLike: 17,
+        tempMin: 14,
+        tempMax: 20,
+        humidity: 61,
+        pressure: 1014,
+        description: 'home cloudy',
+        icon: '03d',
+        windSpeed: 5,
+        windGust: 9,
+        visibilityKm: 9,
+        clouds: 56,
+        cityName: homeCoords.label,
+        sunrise: Date.now(),
+        sunset: Date.now(),
+        updatedAt: Date.now()
+      }, [18, 18, 19, 17, 16, 15, 14, 14], [
+        { aqi: 3, pm25: 33, pm10: 41 },
+        { aqi: 4, pm25: 48, pm10: 62 },
+        { aqi: 4, pm25: 57, pm10: 70 },
+        { aqi: 3, pm25: 39, pm10: 52 }
+      ]);
+
+      seedLocalStores(buildRecords());
+      setJson('validationSandbox', {
+        active: true,
+        source: 'validation_bootstrap',
+        createdAt: now,
+        keys: [...seededKeys]
+      }, { track: false });
+      location.replace(`../index.html?runtime=browserpreview&validate=1&seed=${encodeURIComponent(view)}-${encodeURIComponent(preset)}`);
+    })();
+  </script>
+</body>
+</html>
