@@ -89,6 +89,7 @@ jobs:
             release/installer/*.inc
             release/updates/*.json
 
+      # A release-labeled commit on main publishes or refreshes the GitHub Release assets.
       - name: Resolve release metadata
         if: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release ') }}
         id: release_meta
