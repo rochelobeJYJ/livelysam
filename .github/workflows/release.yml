@@ -3,9 +3,6 @@ name: Publish Release
 run-name: Publish ${{ github.event.inputs.release_tag || github.ref_name }}
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       release_tag:

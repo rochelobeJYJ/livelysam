@@ -15,6 +15,9 @@ on:
       - "tools/**"
       - "release/**"
 
+permissions:
+  contents: write
+
 jobs:
   audit:
     runs-on: windows-latest
@@ -85,3 +88,57 @@ jobs:
             release/installer/*.iss
             release/installer/*.inc
             release/updates/*.json
+
+      - name: Resolve release metadata
+        if: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release ') }}
+        id: release_meta
+        shell: powershell
+        run: |
+          $versionInfo = Get-Content -LiteralPath .\version.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $releaseTag = [string]$versionInfo.releaseTag
+          if ([string]::IsNullOrWhiteSpace($releaseTag)) {
+            $releaseTag = "v$($versionInfo.version)"
+          }
+          $channel = if ($releaseTag -match '-(alpha|beta|rc)') { 'beta' } else { 'stable' }
+          $isPrerelease = if ($channel -eq 'beta') { 'true' } else { 'false' }
+          "release_tag=$releaseTag" >> $env:GITHUB_OUTPUT
+          "channel=$channel" >> $env:GITHUB_OUTPUT
+          "is_prerelease=$isPrerelease" >> $env:GITHUB_OUTPUT
+
+      - name: Create or update GitHub Release
+        if: ${{ steps.release_meta.outputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: powershell
+        run: |
+          $tag = "${{ steps.release_meta.outputs.release_tag }}"
+          $title = "LivelySam $tag"
+          $releaseExists = $true
+          gh release view $tag --repo $env:GITHUB_REPOSITORY | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            $releaseExists = $false
+          }
+          if (-not $releaseExists) {
+            $args = @("release", "create", $tag, "--repo", $env:GITHUB_REPOSITORY, "--title", $title, "--generate-notes")
+            if ("${{ steps.release_meta.outputs.is_prerelease }}" -eq "true") {
+              $args += "--prerelease"
+            }
+            & gh @args
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to create GitHub release for $tag."
+            }
+          }
+
+      - name: Upload release assets
+        if: ${{ steps.release_meta.outputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: powershell
+        run: |
+          $versionInfo = Get-Content -LiteralPath .\version.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $installerPath = Join-Path (Resolve-Path '.').Path ("dist\installer\" + $versionInfo.installerBaseName + "-" + $versionInfo.version + ".exe")
+          $manifestPath = Join-Path (Resolve-Path '.').Path ("release\updates\latest-" + "${{ steps.release_meta.outputs.channel }}" + ".json")
+          gh release upload "${{ steps.release_meta.outputs.release_tag }}" $installerPath $manifestPath --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to upload release assets."
+          }
