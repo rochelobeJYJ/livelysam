@@ -692,14 +692,24 @@ class LauncherApp:
         self.btn_stop.pack(side="left", padx=(8, 0))
 
         footer = tk.Frame(body, bg=P["card"])
-        footer.pack(fill="x", side="bottom", pady=(10, 0))
+        footer.pack(fill="x", side="bottom", pady=(6, 0))
         footer_row1 = tk.Frame(footer, bg=P["card"])
-        footer_row1.pack(anchor="w")
-        self._link(footer_row1, command=self.on_toggle_update_channel, textvariable=self.update_channel_var, font_size=8).pack(side="left", padx=(0, 10))
+        footer_row1.pack(anchor="w", pady=(0, 4))
+        self._link(footer_row1, command=self.on_toggle_update_channel, textvariable=self.update_channel_var, font_size=8).pack(side="left", padx=(0, 8))
         self._link(footer_row1, "업데이트 확인", self.on_check_updates, font_size=8).pack(side="left")
-        self._link(footer_row1, "다운로드", self.open_manual_download_page, font_size=8).pack(side="left", padx=(10, 0))
-        self._link(footer_row1, "로그 폴더", self.open_log_folder, font_size=8).pack(side="left", padx=(10, 0))
-        self._link(footer_row1, "Star", self.open_github_repo, font_size=8).pack(side="left", padx=(10, 0))
+        self._link(footer_row1, "직접 다운로드", self.open_manual_download_page, font_size=8).pack(side="left", padx=(8, 0))
+        self._link(footer_row1, "로그 폴더", self.open_log_folder, font_size=8).pack(side="left", padx=(8, 0))
+
+        footer_row2 = tk.Frame(footer, bg=P["card"])
+        footer_row2.pack(anchor="w")
+        tk.Label(
+            footer_row2,
+            text="LivelySam이 마음에 드셨다면 깃허브에 Star를 눌러주세요!",
+            bg=P["card"],
+            fg=P["text3"],
+            font=(FONT, 7),
+        ).pack(side="left")
+        self._link(footer_row2, "Star 누르러 가기!", self.open_github_repo, font_size=7).pack(side="left", padx=(8, 0))
 
     def _link(
         self,
