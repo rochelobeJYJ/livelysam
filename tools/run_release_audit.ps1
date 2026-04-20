@@ -270,6 +270,10 @@ function Assert-VersionMetadata {
   Assert-TextContains -RelativePath 'release\installer\LivelySam.iss' -Pattern 'RestartApplications=no' -Name 'installer:no-restart-apps'
   Assert-TextContains -RelativePath 'release\installer\LivelySam.iss' -Pattern 'procedure CurUninstallStepChanged' -Name 'installer:custom-uninstall-close'
   Assert-TextContains -RelativePath 'release\installer\LivelySam.iss' -Pattern 'taskkill.exe' -Name 'installer:taskkill'
+  Assert-TextContains -RelativePath 'release\installer\LivelySam.iss' -Pattern 'Filename: "{app}\dist\launcher\LivelySamLauncher.exe"; WorkingDir: "{app}"; Description:' -Name 'installer:postinstall-launcher-exe'
+  Assert-TextContains -RelativePath 'release\installer\LivelySam.iss' -Pattern 'Flags: nowait postinstall skipifsilent' -Name 'installer:postinstall-flags'
+  Assert-TextContains -RelativePath 'release\installer\LivelySam.iss' -Pattern 'Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\dist\launcher\LivelySamLauncher.exe"; WorkingDir: "{app}"' -Name 'installer:start-menu-launcher-exe'
+  Assert-TextContains -RelativePath 'release\installer\LivelySam.iss' -Pattern 'Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\dist\launcher\LivelySamLauncher.exe"; WorkingDir: "{app}"' -Name 'installer:desktop-launcher-exe'
   Assert-FileExists -RelativePath ("dist\installer\" + $installerFileName)
   Assert-FileExists -RelativePath 'tools\sign_windows_artifacts.ps1'
   Assert-TextContains -RelativePath 'tools\build_installer.ps1' -Pattern 'sync_release_metadata.ps1' -Name 'installer:build-sync'

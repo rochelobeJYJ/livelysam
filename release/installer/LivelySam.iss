@@ -59,11 +59,11 @@ Name: "{localappdata}\LivelySam\runtime"
 Name: "{localappdata}\LivelySam\user-data"
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\start_livelysam_launcher.vbs"; IconFilename: "{app}\assets\icons\livelysam_launcher.ico"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\start_livelysam_launcher.vbs"; Tasks: desktopicon; IconFilename: "{app}\assets\icons\livelysam_launcher.ico"
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\dist\launcher\LivelySamLauncher.exe"; WorkingDir: "{app}"; IconFilename: "{app}\assets\icons\livelysam_launcher.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\dist\launcher\LivelySamLauncher.exe"; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\assets\icons\livelysam_launcher.ico"
 
 [Run]
-Filename: "{app}\start_livelysam_launcher.vbs"; Description: "LivelySam 실행"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\dist\launcher\LivelySamLauncher.exe"; WorkingDir: "{app}"; Description: "LivelySam 실행"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\LivelySam\runtime"
