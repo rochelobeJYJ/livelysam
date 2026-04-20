@@ -50,6 +50,27 @@ jobs:
         shell: powershell
         run: .\tools\build_installer.ps1 -Root .
 
+      - name: Publish local update manifests
+        shell: powershell
+        run: |
+          $versionInfo = Get-Content -LiteralPath .\version.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $installerPath = Join-Path (Resolve-Path '.').Path ("dist\installer\" + $versionInfo.installerBaseName + "-" + $versionInfo.version + ".exe")
+          $publishedAt = [DateTime]::UtcNow.ToString('o')
+
+          .\tools\publish_release_manifest.ps1 `
+            -Root . `
+            -Channel stable `
+            -InstallerPath $installerPath `
+            -ReleaseTag $versionInfo.releaseTag `
+            -PublishedAt $publishedAt | Out-Null
+
+          .\tools\publish_release_manifest.ps1 `
+            -Root . `
+            -Channel beta `
+            -InstallerPath $installerPath `
+            -ReleaseTag $versionInfo.releaseTag `
+            -PublishedAt $publishedAt | Out-Null
+
       - name: Run release audit
         shell: powershell
         run: .\tools\run_release_audit.ps1

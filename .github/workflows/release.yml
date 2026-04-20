@@ -1,4 +1,6 @@
-name: Release
+name: Publish Release
+
+run-name: Publish ${{ github.event.inputs.release_tag || github.ref_name }}
 
 on:
   push:
@@ -15,7 +17,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  publish_release:
     runs-on: windows-latest
 
     steps:

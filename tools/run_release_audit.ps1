@@ -389,6 +389,8 @@ Assert-TextContains -RelativePath '.gitignore' -Pattern 'dist/' -Name 'gitignore
 Assert-TextContains -RelativePath '.gitignore' -Pattern 'runtime/' -Name 'gitignore:runtime'
 Assert-TextContains -RelativePath '.gitignore' -Pattern 'venv/' -Name 'gitignore:venv'
 Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'tools\sync_release_metadata.ps1' -Name 'workflow:sync-step'
+Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'name: Publish local update manifests' -Name 'workflow:publish-local-manifests-step'
+Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'tools\publish_release_manifest.ps1' -Name 'workflow:publish-local-manifests-script'
 Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'tools\run_release_audit.ps1' -Name 'workflow:audit-step'
 Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'actions/upload-artifact@v4' -Name 'workflow:artifact-upload'
 Assert-TextContains -RelativePath 'RELEASE_CHECKLIST.md' -Pattern 'tools\build_installer.ps1' -Name 'checklist:installer-build'
