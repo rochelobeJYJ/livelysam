@@ -384,6 +384,8 @@ Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 
 Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'actions/upload-artifact@v4' -Name 'workflow:artifact-upload'
 Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'name: Resolve release metadata' -Name 'workflow:release-meta-step'
 Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'gh release upload' -Name 'workflow:release-upload'
+Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'name: Sync repository update manifests' -Name 'workflow:manifest-sync-step'
+Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'git push origin HEAD:main' -Name 'workflow:manifest-sync-push'
 Assert-TextContains -RelativePath 'RELEASE_CHECKLIST.md' -Pattern 'tools\build_installer.ps1' -Name 'checklist:installer-build'
 Assert-TextContains -RelativePath 'RELEASE_CHECKLIST.md' -Pattern '%LocalAppData%\LivelySam\updates' -Name 'checklist:update-check'
 Assert-TextContains -RelativePath 'RELEASE_CHECKLIST.md' -Pattern 'tools\sign_windows_artifacts.ps1' -Name 'checklist:signing-script'

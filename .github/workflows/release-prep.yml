@@ -143,3 +143,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to upload release assets."
           }
+
+      - name: Sync repository update manifests
+        if: ${{ steps.release_meta.outputs.release_tag != '' }}
+        shell: powershell
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add release/updates/latest-stable.json release/updates/latest-beta.json
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Repository update manifests are already current."
+            exit 0
+          }
+          git commit -m "Sync release manifests for ${{ steps.release_meta.outputs.release_tag }}"
+          git push origin HEAD:main
