@@ -8,6 +8,7 @@ import os
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -270,6 +271,12 @@ class LauncherApp:
             version_text = f"{version_text}  |  최신 {latest_version}"
         self.version_var.set(version_text)
 
+    def _format_update_help_detail(self, detail: str | None = None) -> str:
+        guidance = "업데이트가 계속 실패하면 하단의 '다운로드' 링크로 최신 설치 파일을 직접 내려받아 설치해 주세요."
+        if detail:
+            return self._format_log_detail(f"{detail}\n\n{guidance}")
+        return self._format_log_detail(guidance)
+
     def _start_update_check(self, *, prompt_install: bool) -> None:
         channel = self._update_channel
         self._set_update_state(checking=True)
@@ -285,7 +292,7 @@ class LauncherApp:
                 self._log_exception("update check raised unexpected error", error)
                 self._set_update_state()
                 if prompt_install:
-                    messagebox.showerror("업데이트 확인 실패", self._format_log_detail(str(error)))
+                    messagebox.showerror("업데이트 확인 실패", self._format_update_help_detail(str(error)))
                 return
 
             self._update_info = info or {}
@@ -293,7 +300,10 @@ class LauncherApp:
 
             if self._update_info.get("error"):
                 if prompt_install:
-                    messagebox.showerror("업데이트 확인 실패", self._format_log_detail(str(self._update_info.get("error") or "")))
+                    messagebox.showerror(
+                        "업데이트 확인 실패",
+                        self._format_update_help_detail(str(self._update_info.get("error") or "")),
+                    )
                 return
 
             if self._update_info.get("available"):
@@ -315,7 +325,7 @@ class LauncherApp:
 
     def _start_update_install(self, manifest: dict) -> None:
         if not manifest:
-            messagebox.showerror("업데이트 설치 실패", "업데이트 매니페스트가 비어 있습니다.")
+            messagebox.showerror("업데이트 설치 실패", self._format_update_help_detail("업데이트 매니페스트가 비어 있습니다."))
             return
 
         self._set_busy(True, "업데이트 설치 파일을 준비하는 중입니다.", "새 버전을 내려받고 있습니다.")
@@ -329,7 +339,7 @@ class LauncherApp:
                 self._log_exception("update download/install failed", error)
                 self._update_info = {"channel": self._update_channel, "error": str(error)}
                 self._set_update_state()
-                messagebox.showerror("업데이트 설치 실패", self._format_log_detail(str(error)))
+                messagebox.showerror("업데이트 설치 실패", self._format_update_help_detail(str(error)))
                 return
 
             self._update_info = {
@@ -351,6 +361,52 @@ class LauncherApp:
     def _refresh_update_channel_link(self) -> None:
         channel_label = backend.get_update_channel_label(self._update_channel)
         self.update_channel_var.set(f"\uc5c5\ub370\uc774\ud2b8 \ucc44\ub110: {channel_label}")
+
+    def _repo_url(self) -> str:
+        repo = str((backend.VERSION_INFO or {}).get("githubRepo") or "").strip()
+        if not repo:
+            return ""
+        return f"https://github.com/{repo}"
+
+    def _release_page_url(self) -> str:
+        manifest = self._update_info.get("manifest") or {}
+        release_url = str(manifest.get("releaseNotesUrl") or "").strip()
+        if release_url:
+            return release_url
+        repo_url = self._repo_url()
+        if not repo_url:
+            return ""
+        if self._update_channel == "beta":
+            return f"{repo_url}/releases"
+        return f"{repo_url}/releases/latest"
+
+    def _open_web_link(self, url: str, *, error_title: str, context: str) -> bool:
+        if not url:
+            messagebox.showerror(error_title, self._format_log_detail("열 수 있는 주소를 찾지 못했습니다."))
+            return False
+        try:
+            webbrowser.open_new_tab(url)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self._log_exception(context, exc)
+            messagebox.showerror(error_title, self._format_log_detail(str(exc)))
+            return False
+
+    def open_manual_download_page(self) -> None:
+        url = self._release_page_url()
+        if self._open_web_link(url, error_title="다운로드 열기 실패", context="failed to open release download page"):
+            self.set_status(
+                "최신 릴리즈 페이지를 열었습니다.",
+                "업데이트가 실패하면 GitHub에서 최신 설치 파일을 직접 내려받아 설치해 주세요.",
+            )
+
+    def open_github_repo(self) -> None:
+        url = self._repo_url()
+        if self._open_web_link(url, error_title="GitHub 열기 실패", context="failed to open github repository"):
+            self.set_status(
+                "프로그램이 마음에 드셨다면 GitHub에 Star를 남겨 주세요.",
+                "브라우저에서 LivelySam GitHub 저장소를 열었습니다.",
+            )
 
     def on_toggle_update_channel(self) -> None:
         next_channel = "beta" if self._update_channel == "stable" else "stable"
@@ -641,7 +697,9 @@ class LauncherApp:
         footer_row1.pack(anchor="w")
         self._link(footer_row1, command=self.on_toggle_update_channel, textvariable=self.update_channel_var, font_size=8).pack(side="left", padx=(0, 10))
         self._link(footer_row1, "업데이트 확인", self.on_check_updates, font_size=8).pack(side="left")
+        self._link(footer_row1, "다운로드", self.open_manual_download_page, font_size=8).pack(side="left", padx=(10, 0))
         self._link(footer_row1, "로그 폴더", self.open_log_folder, font_size=8).pack(side="left", padx=(10, 0))
+        self._link(footer_row1, "Star", self.open_github_repo, font_size=8).pack(side="left", padx=(10, 0))
 
     def _link(
         self,

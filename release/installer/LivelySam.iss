@@ -73,9 +73,11 @@ procedure TryTerminateProcessByImageName(const ImageName: string);
 var
   ResultCode: Integer;
 begin
+  // Do not use /T here. When the launcher starts the installer, killing the
+  // full process tree can terminate the installer before setup continues.
   Exec(
     ExpandConstant('{sys}\taskkill.exe'),
-    '/F /T /IM "' + ImageName + '"',
+    '/F /IM "' + ImageName + '"',
     '',
     SW_HIDE,
     ewWaitUntilTerminated,
