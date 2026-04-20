@@ -81,6 +81,17 @@ jobs:
           "is_prerelease=$isPrerelease" >> $env:GITHUB_OUTPUT
           "published_at=$publishedAt" >> $env:GITHUB_OUTPUT
 
+      - name: Prepare code signing certificate
+        if: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 != '' }}
+        shell: powershell
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "livelysam-signing.pfx"
+          [System.IO.File]::WriteAllBytes($certPath, [System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}"))
+          "LIVELYSAM_SIGN_CERT_FILE=$certPath" >> $env:GITHUB_ENV
+          "LIVELYSAM_SIGN_CERT_PASSWORD=${{ secrets.WINDOWS_SIGN_PFX_PASSWORD }}" >> $env:GITHUB_ENV
+          "LIVELYSAM_SIGN_TIMESTAMP_URL=http://timestamp.digicert.com" >> $env:GITHUB_ENV
+          "LIVELYSAM_REQUIRE_SIGNING=1" >> $env:GITHUB_ENV
+
       - name: Build launcher executables
         shell: powershell
         run: .\tools\build_livelysam_launcher_exe.ps1 -Root .
@@ -167,3 +178,12 @@ jobs:
 
           git -C .\metadata commit -m ("Update " + $channel + " release manifest for " + "${{ steps.release_ref.outputs.release_tag }}")
           git -C .\metadata push origin HEAD:main
+
+      - name: Cleanup code signing certificate
+        if: ${{ always() }}
+        shell: powershell
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "livelysam-signing.pfx"
+          if (Test-Path -LiteralPath $certPath) {
+            Remove-Item -LiteralPath $certPath -Force
+          }

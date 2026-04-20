@@ -11,6 +11,7 @@ $distDir = Join-Path $rootPath "dist\launcher"
 $workDir = Join-Path $rootPath "build\launcher"
 $logDir = Join-Path $rootPath "runtime\launcher-build"
 $launcherIconPath = Join-Path $rootPath "assets\icons\livelysam_launcher.ico"
+$signScript = Join-Path $toolsDir "sign_windows_artifacts.ps1"
 
 if (-not (Test-Path -LiteralPath $pythonPath)) {
     throw "python.exe not found in venv\Scripts."
@@ -107,6 +108,11 @@ $artifacts = @(
     "BrowserPreviewHost.exe",
     "LocalStorageBridge.exe"
 )
+
+$artifactPaths = @($artifacts | ForEach-Object { Join-Path $distDir $_ })
+if (Test-Path -LiteralPath $signScript) {
+    & $signScript -Files $artifactPaths -Description "LivelySam launcher binaries" | Out-Null
+}
 
 $copyWarnings = @()
 foreach ($artifact in $artifacts) {

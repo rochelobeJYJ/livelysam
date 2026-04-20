@@ -100,6 +100,33 @@ function Assert-TextContains {
   }
 }
 
+function Assert-TextOrder {
+  param(
+    [string]$RelativePath,
+    [string]$FirstPattern,
+    [string]$SecondPattern,
+    [string]$Name
+  )
+
+  $fullPath = Get-FullPath $RelativePath
+  try {
+    $content = Get-Content -LiteralPath $fullPath -Raw -Encoding UTF8
+    $firstIndex = $content.IndexOf($FirstPattern)
+    $secondIndex = $content.IndexOf($SecondPattern)
+    if ($firstIndex -lt 0) {
+      Add-CheckResult -Name $Name -Passed $false -Detail "Pattern not found: $FirstPattern" -Path $fullPath
+    } elseif ($secondIndex -lt 0) {
+      Add-CheckResult -Name $Name -Passed $false -Detail "Pattern not found: $SecondPattern" -Path $fullPath
+    } elseif ($firstIndex -lt $secondIndex) {
+      Add-CheckResult -Name $Name -Passed $true -Detail 'Pattern order is correct.' -Path $fullPath
+    } else {
+      Add-CheckResult -Name $Name -Passed $false -Detail "Expected '$FirstPattern' before '$SecondPattern'." -Path $fullPath
+    }
+  } catch {
+    Add-CheckResult -Name $Name -Passed $false -Detail $_.Exception.Message -Path $fullPath
+  }
+}
+
 function Assert-JsonValue {
   param(
     [string]$RelativePath,
@@ -113,6 +140,21 @@ function Assert-JsonValue {
     Add-CheckResult -Name $Name -Passed $true -Detail "Value matches: $Expected" -Path $fullPath
   } else {
     Add-CheckResult -Name $Name -Passed $false -Detail "Expected '$Expected' but found '$Actual'" -Path $fullPath
+  }
+}
+
+function Assert-JsonNotBlank {
+  param(
+    [string]$RelativePath,
+    [string]$Name,
+    [object]$Actual
+  )
+
+  $fullPath = Get-FullPath $RelativePath
+  if ([string]::IsNullOrWhiteSpace([string]$Actual)) {
+    Add-CheckResult -Name $Name -Passed $false -Detail 'Value is blank.' -Path $fullPath
+  } else {
+    Add-CheckResult -Name $Name -Passed $true -Detail "Value present: $Actual" -Path $fullPath
   }
 }
 
@@ -150,9 +192,23 @@ function Assert-PythonCompile {
 
 function Invoke-ReleaseMetadataSync {
   $syncScript = Get-FullPath 'tools\sync_release_metadata.ps1'
+  $manifestRelativePaths = @(
+    'release\updates\latest-stable.json',
+    'release\updates\latest-beta.json'
+  )
   if (-not (Test-Path -LiteralPath $syncScript)) {
     Add-CheckResult -Name 'release:sync-script' -Passed $false -Detail 'sync_release_metadata.ps1 is missing.' -Path $syncScript
     return
+  }
+
+  $manifestSnapshots = @{}
+  foreach ($relativePath in $manifestRelativePaths) {
+    $fullPath = Get-FullPath $relativePath
+    if (Test-Path -LiteralPath $fullPath) {
+      $manifestSnapshots[$fullPath] = Get-Content -LiteralPath $fullPath -Raw -Encoding UTF8
+    } else {
+      $manifestSnapshots[$fullPath] = $null
+    }
   }
 
   try {
@@ -160,6 +216,19 @@ function Invoke-ReleaseMetadataSync {
     Add-CheckResult -Name 'release:sync' -Passed $true -Detail 'Release metadata generated successfully.' -Path $syncScript
   } catch {
     Add-CheckResult -Name 'release:sync' -Passed $false -Detail $_.Exception.Message -Path $syncScript
+  } finally {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    foreach ($relativePath in $manifestRelativePaths) {
+      $fullPath = Get-FullPath $relativePath
+      $original = $manifestSnapshots[$fullPath]
+      if ($null -eq $original) {
+        if (Test-Path -LiteralPath $fullPath) {
+          Remove-Item -LiteralPath $fullPath -Force
+        }
+      } else {
+        [System.IO.File]::WriteAllText($fullPath, $original, $utf8NoBom)
+      }
+    }
   }
 }
 
@@ -202,8 +271,11 @@ function Assert-VersionMetadata {
   Assert-TextContains -RelativePath 'release\installer\LivelySam.iss' -Pattern 'procedure CurUninstallStepChanged' -Name 'installer:custom-uninstall-close'
   Assert-TextContains -RelativePath 'release\installer\LivelySam.iss' -Pattern 'taskkill.exe' -Name 'installer:taskkill'
   Assert-FileExists -RelativePath ("dist\installer\" + $installerFileName)
+  Assert-FileExists -RelativePath 'tools\sign_windows_artifacts.ps1'
   Assert-TextContains -RelativePath 'tools\build_installer.ps1' -Pattern 'sync_release_metadata.ps1' -Name 'installer:build-sync'
   Assert-TextContains -RelativePath 'tools\build_installer.ps1' -Pattern 'Programs\Inno Setup 6\ISCC.exe' -Name 'installer:build-user-scope'
+  Assert-TextContains -RelativePath 'tools\build_installer.ps1' -Pattern 'sign_windows_artifacts.ps1' -Name 'installer:build-sign-hook'
+  Assert-TextContains -RelativePath 'tools\build_livelysam_launcher_exe.ps1' -Pattern 'sign_windows_artifacts.ps1' -Name 'launcher:build-sign-hook'
   Assert-TextContains -RelativePath 'tools\publish_release_manifest.ps1' -Pattern 'Get-FileHash' -Name 'release-manifest:hash'
   Assert-TextContains -RelativePath 'tools\publish_release_manifest.ps1' -Pattern 'latest-$Channel.json' -Name 'release-manifest:channel-target'
   Assert-TextContains -RelativePath 'tools\livelysam_launcher_gui.py' -Pattern 'def check_for_updates' -Name 'updater:backend-check'
@@ -214,9 +286,13 @@ function Assert-VersionMetadata {
   Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'choco install innosetup' -Name 'release-workflow:innosetup'
   Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'release_tag:' -Name 'release-workflow:dispatch-tag-input'
   Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'name: Resolve release tag' -Name 'release-workflow:resolve-tag'
+  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'Prepare code signing certificate' -Name 'release-workflow:signing-setup'
+  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'LIVELYSAM_SIGN_CERT_FILE' -Name 'release-workflow:signing-cert-env'
+  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'LIVELYSAM_REQUIRE_SIGNING=1' -Name 'release-workflow:signing-required'
   Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'tools\publish_release_manifest.ps1' -Name 'release-workflow:manifest-step'
   Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'gh release upload' -Name 'release-workflow:upload'
   Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'Update tracked channel manifest on main' -Name 'release-workflow:main-sync'
+  Assert-TextOrder -RelativePath '.github\workflows\release.yml' -FirstPattern 'name: Run release audit' -SecondPattern 'name: Publish release manifest' -Name 'release-workflow:audit-before-manifest'
 
   try {
     $stable = Read-JsonRelative -RelativePath 'release\updates\latest-stable.json'
@@ -229,6 +305,8 @@ function Assert-VersionMetadata {
     Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-installer' -Actual $stable.installer.fileName -Expected $installerFileName
     Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-url' -Actual $stable.installer.downloadUrl -Expected $downloadUrl
     Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-notes' -Actual $stable.releaseNotesUrl -Expected $releaseNotesUrl
+    Assert-JsonNotBlank -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-publishedAt' -Actual $stable.publishedAt
+    Assert-JsonNotBlank -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-sha256' -Actual $stable.installer.sha256
 
     Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-appId' -Actual $beta.appId -Expected $appId
     Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-channel' -Actual $beta.channel -Expected 'beta'
@@ -237,6 +315,8 @@ function Assert-VersionMetadata {
     Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-installer' -Actual $beta.installer.fileName -Expected $installerFileName
     Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-url' -Actual $beta.installer.downloadUrl -Expected $downloadUrl
     Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-notes' -Actual $beta.releaseNotesUrl -Expected $releaseNotesUrl
+    Assert-JsonNotBlank -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-publishedAt' -Actual $beta.publishedAt
+    Assert-JsonNotBlank -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-sha256' -Actual $beta.installer.sha256
   } catch {
     Add-CheckResult -Name 'manifest:parse' -Passed $false -Detail $_.Exception.Message -Path (Get-FullPath 'release\updates')
   }
@@ -255,6 +335,7 @@ $requiredFiles = @(
   'stop_local_wallpaper.cmd',
   'build_livelysam_launcher_exe.cmd',
   'tools\build_installer.ps1',
+  'tools\sign_windows_artifacts.ps1',
   'tools\publish_release_manifest.ps1',
   'tools\sync_release_metadata.ps1',
   'tools\livelysam_launcher_gui.py',
@@ -305,6 +386,8 @@ Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 
 Assert-TextContains -RelativePath '.github\workflows\release-prep.yml' -Pattern 'actions/upload-artifact@v4' -Name 'workflow:artifact-upload'
 Assert-TextContains -RelativePath 'RELEASE_CHECKLIST.md' -Pattern 'tools\build_installer.ps1' -Name 'checklist:installer-build'
 Assert-TextContains -RelativePath 'RELEASE_CHECKLIST.md' -Pattern '%LocalAppData%\LivelySam\updates' -Name 'checklist:update-check'
+Assert-TextContains -RelativePath 'RELEASE_CHECKLIST.md' -Pattern 'tools\sign_windows_artifacts.ps1' -Name 'checklist:signing-script'
+Assert-TextContains -RelativePath 'RELEASE_CHECKLIST.md' -Pattern 'WINDOWS_SIGN_PFX_BASE64' -Name 'checklist:signing-secret'
 
 Assert-VersionMetadata
 
