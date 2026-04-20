@@ -31,7 +31,7 @@ SetupIconFile=..\..\assets\icons\livelysam_launcher.ico
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "바탕 화면 바로가기 만들기"; GroupDescription: "추가 작업:"
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
 Source: "..\..\index.html"; DestDir: "{app}"; Flags: ignoreversion
@@ -63,7 +63,7 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\dist\launcher\LivelySamLau
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\dist\launcher\LivelySamLauncher.exe"; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\assets\icons\livelysam_launcher.ico"
 
 [Run]
-Filename: "{app}\dist\launcher\LivelySamLauncher.exe"; WorkingDir: "{app}"; Description: "LivelySam 실행"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\dist\launcher\LivelySamLauncher.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,LivelySam}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\LivelySam\runtime"

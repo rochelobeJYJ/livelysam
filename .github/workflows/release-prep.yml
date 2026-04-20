@@ -34,6 +34,10 @@ jobs:
           python -m venv venv
           .\venv\Scripts\python.exe -m pip install --upgrade pip pyinstaller
 
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+
       - name: Sync release metadata
         shell: powershell
         run: .\tools\sync_release_metadata.ps1 -Root .
@@ -41,6 +45,10 @@ jobs:
       - name: Build launcher executables
         shell: powershell
         run: .\tools\build_livelysam_launcher_exe.ps1 -Root .
+
+      - name: Build installer
+        shell: powershell
+        run: .\tools\build_installer.ps1 -Root .
 
       - name: Run release audit
         shell: powershell
@@ -52,6 +60,7 @@ jobs:
           name: livelysam-release-prep
           path: |
             dist/launcher/*.exe
+            dist/installer/*.exe
             release/installer/*.iss
             release/installer/*.inc
             release/updates/*.json
