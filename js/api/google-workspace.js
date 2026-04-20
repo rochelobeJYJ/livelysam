@@ -1299,6 +1299,10 @@
     });
   }
 
+  function doesRemoteTaskMatchRecord(record, remoteTask) {
+    return buildTaskSignatureFromRecord(record) === buildTaskSignatureFromRemote(remoteTask);
+  }
+
   function getDuplicateFacetMeta(record, kind = 'calendar') {
     return kind === 'task'
       ? (record?.sync?.google?.task || {})
@@ -1801,6 +1805,66 @@
     return record.task?.enabled && buildTaskSignatureFromRecord(record) !== text(meta.lastSignature);
   }
 
+  function isSameTimestamp(left, right) {
+    const leftText = text(left);
+    const rightText = text(right);
+    if (!leftText && !rightText) return true;
+
+    const leftStamp = parseTimestamp(leftText);
+    const rightStamp = parseTimestamp(rightText);
+    if (leftStamp || rightStamp) {
+      return leftStamp === rightStamp;
+    }
+
+    return leftText === rightText;
+  }
+
+  function resolveRemoteMergeAction(record, meta, localSignature, remoteSignature, remoteUpdatedAt, remoteEtag) {
+    const hasRemoteBinding = Boolean(text(meta?.remoteId));
+    const lastSignature = text(meta?.lastSignature);
+    const localDirty = localSignature !== lastSignature;
+    const remoteMetadataDirty = (
+      !isSameTimestamp(meta?.remoteUpdatedAt, remoteUpdatedAt)
+      || text(meta?.etag) !== text(remoteEtag)
+    );
+    const remoteSemanticallyDirty = remoteSignature !== lastSignature;
+    const sameSignature = localSignature === remoteSignature;
+
+    if (sameSignature) {
+      return (localDirty || remoteMetadataDirty || !hasRemoteBinding) ? 'bind' : 'noop';
+    }
+
+    if (!localDirty) {
+      return (remoteSemanticallyDirty || remoteMetadataDirty) ? 'apply' : 'noop';
+    }
+
+    if (!remoteSemanticallyDirty) {
+      return 'keep-local';
+    }
+
+    if (!remoteMetadataDirty) {
+      return 'keep-local';
+    }
+
+    const localUpdatedAt = parseTimestamp(record?.updatedAt);
+    const remoteUpdatedStamp = parseTimestamp(remoteUpdatedAt);
+    const lastSyncedAt = Math.max(
+      parseTimestamp(meta?.lastSyncedAt),
+      parseTimestamp(meta?.remoteUpdatedAt)
+    );
+    const localChangedAfterSync = localUpdatedAt > lastSyncedAt;
+    const remoteChangedAfterSync = remoteUpdatedStamp > lastSyncedAt;
+
+    if (localChangedAfterSync && !remoteChangedAfterSync) {
+      return 'keep-local';
+    }
+    if (!localChangedAfterSync && remoteChangedAfterSync) {
+      return 'apply';
+    }
+
+    return remoteUpdatedStamp > localUpdatedAt ? 'apply' : 'keep-local';
+  }
+
   function buildCalendarPayload(record) {
     const title = LS.Records.getDisplayTitle(record, '일정');
     const body = LS.Records.getDisplayBody(record);
@@ -1922,6 +1986,11 @@
     return fetchGoogle(url, accessToken, { method: 'POST', body: payload });
   }
 
+  async function fetchTask(accessToken, tasklistId, taskId) {
+    const url = `https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(tasklistId)}/tasks/${encodeURIComponent(taskId)}`;
+    return fetchGoogle(url, accessToken);
+  }
+
   async function updateTask(accessToken, tasklistId, taskId, payload) {
     const url = `https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(tasklistId)}/tasks/${encodeURIComponent(taskId)}`;
     return fetchGoogle(url, accessToken, { method: 'PATCH', body: payload });
@@ -1971,15 +2040,18 @@
       remainingDeleteQueue: 0,
       remoteCalendarsCreated: 0,
       remoteCalendarsUpdated: 0,
+      remoteCalendarsMetadataRefreshed: 0,
       remoteCalendarsBound: 0,
       remoteTasksCreated: 0,
       remoteTasksUpdated: 0,
+      remoteTasksMetadataRefreshed: 0,
       remoteTasksBound: 0,
       remoteTasksRemoved: 0,
       pushedCalendarCreates: 0,
       pushedCalendarUpdates: 0,
       pushedCalendarRebinds: 0,
       pushedTaskCreates: 0,
+      pushedTaskDeferred: 0,
       pushedTaskUpdates: 0,
       pushedTaskRebinds: 0,
       localRecordChanges: 0
@@ -2141,8 +2213,6 @@
         const meta = existing.sync?.google?.calendar || {};
         const localSignature = buildScheduleSignatureFromRecord(existing);
         const remoteSignature = buildScheduleSignatureFromRemote(remote);
-        const localDirty = localSignature !== text(meta.lastSignature);
-        const remoteDirty = text(meta.remoteUpdatedAt) !== text(remote.updatedAt);
 
         if (!text(meta.remoteId) && localSignature === remoteSignature) {
           syncStats.remoteCalendarsBound += 1;
@@ -2150,7 +2220,22 @@
           continue;
         }
 
-        if (!localDirty || localSignature === remoteSignature || (remoteDirty && parseTimestamp(remote.updatedAt) >= parseTimestamp(existing.updatedAt))) {
+        const mergeAction = resolveRemoteMergeAction(
+          existing,
+          meta,
+          localSignature,
+          remoteSignature,
+          remote.updatedAt,
+          remote.etag
+        );
+
+        if (mergeAction === 'bind') {
+          syncStats.remoteCalendarsMetadataRefreshed += 1;
+          upsertLocalRecord(bindCalendarSyncOnly(existing, remote, syncStamp));
+          continue;
+        }
+
+        if (mergeAction === 'apply') {
           syncStats.remoteCalendarsUpdated += 1;
           upsertLocalRecord(applyRemoteCalendarToRecord(existing, remote, syncStamp));
           continue;
@@ -2182,8 +2267,6 @@
         const meta = existing.sync?.google?.task || {};
         const localSignature = buildTaskSignatureFromRecord(existing);
         const remoteSignature = buildTaskSignatureFromRemote(remote);
-        const localDirty = localSignature !== text(meta.lastSignature);
-        const remoteDirty = text(meta.remoteUpdatedAt) !== text(remote.updatedAt);
 
         if (!text(meta.remoteId) && localSignature === remoteSignature) {
           syncStats.remoteTasksBound += 1;
@@ -2191,7 +2274,22 @@
           continue;
         }
 
-        if (!localDirty || localSignature === remoteSignature || (remoteDirty && parseTimestamp(remote.updatedAt) >= parseTimestamp(existing.updatedAt))) {
+        const mergeAction = resolveRemoteMergeAction(
+          existing,
+          meta,
+          localSignature,
+          remoteSignature,
+          remote.updatedAt,
+          remote.etag
+        );
+
+        if (mergeAction === 'bind') {
+          syncStats.remoteTasksMetadataRefreshed += 1;
+          upsertLocalRecord(bindTaskSyncOnly(existing, remote, syncStamp));
+          continue;
+        }
+
+        if (mergeAction === 'apply') {
           syncStats.remoteTasksUpdated += 1;
           upsertLocalRecord(applyRemoteTaskToRecord(existing, remote, syncStamp));
           continue;
@@ -2234,9 +2332,11 @@
       annotateSyncStage('remote-merged', {
         remoteCalendarsCreated: syncStats.remoteCalendarsCreated,
         remoteCalendarsUpdated: syncStats.remoteCalendarsUpdated,
+        remoteCalendarsMetadataRefreshed: syncStats.remoteCalendarsMetadataRefreshed,
         remoteCalendarsBound: syncStats.remoteCalendarsBound,
         remoteTasksCreated: syncStats.remoteTasksCreated,
         remoteTasksUpdated: syncStats.remoteTasksUpdated,
+        remoteTasksMetadataRefreshed: syncStats.remoteTasksMetadataRefreshed,
         remoteTasksBound: syncStats.remoteTasksBound,
         remoteTasksRemoved: syncStats.remoteTasksRemoved,
         localRecordChanges: syncStats.localRecordChanges
@@ -2411,8 +2511,30 @@
               meta.remoteId,
               buildTaskPayload(next)
             );
-            const normalized = normalizeRemoteTask(updated, selectedTasklist);
+            let normalized = normalizeRemoteTask(updated, selectedTasklist);
+            if (normalized && !doesRemoteTaskMatchRecord(next, normalized)) {
+              try {
+                const refreshed = await fetchTask(
+                  accessToken,
+                  text(meta.tasklistId, selectedTasklist.id),
+                  meta.remoteId
+                );
+                const refreshedNormalized = normalizeRemoteTask(refreshed, selectedTasklist);
+                if (refreshedNormalized) {
+                  normalized = refreshedNormalized;
+                }
+              } catch (refreshError) {
+                if (refreshError?.status !== 404) {
+                  console.warn('[GoogleWorkspace] task update verification failed:', refreshError);
+                }
+              }
+            }
             if (normalized) {
+              if (!doesRemoteTaskMatchRecord(next, normalized)) {
+                syncStats.pushedTaskDeferred += 1;
+                remoteTaskMap.set(getTaskRemoteKey(normalized), normalized);
+                continue;
+              }
               syncStats.pushedTaskUpdates += 1;
               remoteTaskMap.set(getTaskRemoteKey(normalized), normalized);
               next = applyRemoteTaskToRecord(next, normalized, syncStamp);
@@ -2477,15 +2599,18 @@
         remainingDeleteQueue: syncStats.remainingDeleteQueue,
         remoteCalendarsCreated: syncStats.remoteCalendarsCreated,
         remoteCalendarsUpdated: syncStats.remoteCalendarsUpdated,
+        remoteCalendarsMetadataRefreshed: syncStats.remoteCalendarsMetadataRefreshed,
         remoteCalendarsBound: syncStats.remoteCalendarsBound,
         remoteTasksCreated: syncStats.remoteTasksCreated,
         remoteTasksUpdated: syncStats.remoteTasksUpdated,
+        remoteTasksMetadataRefreshed: syncStats.remoteTasksMetadataRefreshed,
         remoteTasksBound: syncStats.remoteTasksBound,
         remoteTasksRemoved: syncStats.remoteTasksRemoved,
         pushedCalendarCreates: syncStats.pushedCalendarCreates,
         pushedCalendarUpdates: syncStats.pushedCalendarUpdates,
         pushedCalendarRebinds: syncStats.pushedCalendarRebinds,
         pushedTaskCreates: syncStats.pushedTaskCreates,
+        pushedTaskDeferred: syncStats.pushedTaskDeferred,
         pushedTaskUpdates: syncStats.pushedTaskUpdates,
         pushedTaskRebinds: syncStats.pushedTaskRebinds,
         localRecordChanges: syncStats.localRecordChanges
@@ -2514,11 +2639,14 @@
         stack: text(error?.stack),
         remoteCalendarsCreated: syncStats.remoteCalendarsCreated,
         remoteCalendarsUpdated: syncStats.remoteCalendarsUpdated,
+        remoteCalendarsMetadataRefreshed: syncStats.remoteCalendarsMetadataRefreshed,
         remoteTasksCreated: syncStats.remoteTasksCreated,
         remoteTasksUpdated: syncStats.remoteTasksUpdated,
+        remoteTasksMetadataRefreshed: syncStats.remoteTasksMetadataRefreshed,
         pushedCalendarCreates: syncStats.pushedCalendarCreates,
         pushedCalendarUpdates: syncStats.pushedCalendarUpdates,
         pushedTaskCreates: syncStats.pushedTaskCreates,
+        pushedTaskDeferred: syncStats.pushedTaskDeferred,
         pushedTaskUpdates: syncStats.pushedTaskUpdates,
         localRecordChanges: syncStats.localRecordChanges
       });

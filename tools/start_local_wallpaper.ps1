@@ -847,29 +847,55 @@ if (-not `$targetScreen) {
     if ([string]::IsNullOrWhiteSpace(`$normalized)) { return }
     if (`$normalized.IndexOf('?') -ge 0 -or `$normalized.IndexOf('*') -ge 0 -or `$normalized.IndexOf('<') -ge 0 -or `$normalized.IndexOf('>') -ge 0 -or `$normalized.IndexOf('|') -ge 0) { return }
 
-    if (`$normalized -match '^(file://|[a-zA-Z]:\\|\\\\)') {
-      if (`$normalized -match '^([a-zA-Z]:\\|\\\\)') {
-        try {
-          `$resolvedItem = Get-Item -LiteralPath `$normalized -ErrorAction Stop
-          `$normalized = [string]`$resolvedItem.FullName
-        } catch {
-          try {
-            `$normalized = [System.IO.Path]::GetFullPath(`$normalized)
-          } catch { }
-        }
+    `$isFilesystemPath = `$false
+    if (`$normalized -match '^file://') {
+      try {
+        `$uri = [System.Uri]`$normalized
+        if (-not `$uri.IsFile) { return }
+        `$normalized = `$uri.LocalPath
+        `$isFilesystemPath = `$true
+      } catch {
+        return
       }
+    } elseif (`$normalized -match '^([a-zA-Z]:\\|\\\\)') {
+      `$isFilesystemPath = `$true
+    }
 
-      `$exists = `$false
-      foreach (`$existing in `$Results) {
-        if ([string]::Equals([string]`$existing, `$normalized, [System.StringComparison]::OrdinalIgnoreCase)) {
-          `$exists = `$true
-          break
-        }
-      }
+    if (-not `$isFilesystemPath) { return }
 
-      if (-not `$exists) {
-        `$Results.Add(`$normalized)
+    `$pathExists = `$false
+    try {
+      `$resolvedItem = Get-Item -LiteralPath `$normalized -ErrorAction Stop
+      `$normalized = [string]`$resolvedItem.FullName
+      `$pathExists = `$true
+    } catch {
+      try {
+        `$normalized = [System.IO.Path]::GetFullPath(`$normalized)
+      } catch { }
+      try {
+        `$pathExists = Test-Path -LiteralPath `$normalized -PathType Any
+      } catch {
+        `$pathExists = `$false
       }
+    }
+
+    if (-not `$pathExists) {
+      try {
+        Log-Message ('Native drop candidate ignored because target does not exist: ' + `$normalized) 'WARN'
+      } catch { }
+      return
+    }
+
+    `$exists = `$false
+    foreach (`$existing in `$Results) {
+      if ([string]::Equals([string]`$existing, `$normalized, [System.StringComparison]::OrdinalIgnoreCase)) {
+        `$exists = `$true
+        break
+      }
+    }
+
+    if (-not `$exists) {
+      `$Results.Add(`$normalized)
     }
   }
 

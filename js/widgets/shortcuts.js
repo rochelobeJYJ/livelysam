@@ -1004,9 +1004,7 @@
         seenRawKeys.add(targetKey);
 
         try {
-          const shortcut = await this._buildShortcutFromTarget(target, {
-            allowUnverified: true
-          });
+          const shortcut = await this._buildShortcutFromTarget(target);
           if (!shortcut) continue;
           const resolvedKey = dedupeKey(shortcut.target);
           if (!resolvedKey || existingKeys.has(resolvedKey)) {
