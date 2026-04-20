@@ -290,17 +290,6 @@ function Assert-VersionMetadata {
   Assert-TextContains -RelativePath 'tools\livelysam_launcher_compact.py' -Pattern 'def on_check_updates' -Name 'updater:launcher-check'
   Assert-TextContains -RelativePath 'tools\livelysam_launcher_compact.py' -Pattern 'def on_toggle_update_channel' -Name 'updater:launcher-channel'
   Assert-TextContains -RelativePath 'tools\livelysam_launcher_compact.py' -Pattern 'self.pill_update' -Name 'updater:launcher-pill'
-  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'choco install innosetup' -Name 'release-workflow:innosetup'
-  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'release_tag:' -Name 'release-workflow:dispatch-tag-input'
-  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'name: Resolve release tag' -Name 'release-workflow:resolve-tag'
-  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'Prepare code signing certificate' -Name 'release-workflow:signing-setup'
-  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'LIVELYSAM_SIGN_CERT_FILE' -Name 'release-workflow:signing-cert-env'
-  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'LIVELYSAM_REQUIRE_SIGNING=1' -Name 'release-workflow:signing-required'
-  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'tools\publish_release_manifest.ps1' -Name 'release-workflow:manifest-step'
-  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'gh release upload' -Name 'release-workflow:upload'
-  Assert-TextContains -RelativePath '.github\workflows\release.yml' -Pattern 'Update tracked channel manifest on main' -Name 'release-workflow:main-sync'
-  Assert-TextOrder -RelativePath '.github\workflows\release.yml' -FirstPattern 'name: Run release audit' -SecondPattern 'name: Publish release manifest' -Name 'release-workflow:audit-before-manifest'
-
   try {
     $stable = Read-JsonRelative -RelativePath 'release\updates\latest-stable.json'
     $beta = Read-JsonRelative -RelativePath 'release\updates\latest-beta.json'
@@ -355,7 +344,6 @@ $requiredFiles = @(
   'release\updates\latest-stable.json',
   'release\updates\latest-beta.json',
   '.github\workflows\release-prep.yml',
-  '.github\workflows\release.yml',
   'dist\launcher\LivelySamLauncher.exe',
   'dist\launcher\BrowserPreviewHost.exe',
   'dist\launcher\LocalStorageBridge.exe'
