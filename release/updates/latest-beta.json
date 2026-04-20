@@ -2,14 +2,14 @@
     "manifestVersion":  1,
     "appId":  "livelysam",
     "channel":  "beta",
-    "version":  "1.0.2",
-    "releaseTag":  "v1.0.2",
+    "version":  "1.0.3",
+    "releaseTag":  "v1.0.3",
     "prerelease":  true,
-    "publishedAt":  "2026-04-20T04:55:20.3856095Z",
-    "releaseNotesUrl":  "https://github.com/rochelobeJYJ/livelysam/releases/tag/v1.0.2",
+    "publishedAt":  "2026-04-20T07:01:29.1205866Z",
+    "releaseNotesUrl":  "https://github.com/rochelobeJYJ/livelysam/releases/tag/v1.0.3",
     "installer":  {
-                      "fileName":  "LivelySamSetup-1.0.2.exe",
-                      "downloadUrl":  "https://github.com/rochelobeJYJ/livelysam/releases/download/v1.0.2/LivelySamSetup-1.0.2.exe",
-                      "sha256":  "1d36f6259fdcde82a7ba2abd122a5e15ce99cffe0f02975a16bdc7fba578e4bd"
+                      "fileName":  "LivelySamSetup-1.0.3.exe",
+                      "downloadUrl":  "https://github.com/rochelobeJYJ/livelysam/releases/download/v1.0.3/LivelySamSetup-1.0.3.exe",
+                      "sha256":  "00da462539bfd1d2b181370d5534432a49cc432399e47145e302892f75914b36"
                   }
 }

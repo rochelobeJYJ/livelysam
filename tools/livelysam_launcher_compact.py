@@ -18,6 +18,7 @@ if str(ROOT_DIR) not in sys.path:
 
 import tools.livelysam_launcher_gui as backend  # noqa: E402
 
+APP_ROOT = getattr(backend, "ROOT_PATH", ROOT_DIR)
 
 P = {
     "bg": "#EEF4FB",
@@ -50,12 +51,14 @@ FONT = "Malgun Gothic"
 WINDOW_W = 492
 WINDOW_H = 548
 BUG_REPORT_EMAIL = "gritiquol@naver.com"
+LAUNCHER_ICON_ICO = APP_ROOT / "assets" / "icons" / "livelysam_launcher.ico"
+LAUNCHER_ICON_PNG = APP_ROOT / "assets" / "icons" / "livelysam_launcher_256.png"
 
 
 def _configure_logger() -> tuple[logging.Logger, Path]:
     candidates = [
         backend.APPDATA_DIR / "logs",
-        ROOT_DIR / "runtime" / "launcher",
+        APP_ROOT / "runtime" / "launcher",
     ]
     log_paths: list[Path] = []
     for candidate in candidates:
@@ -67,12 +70,12 @@ def _configure_logger() -> tuple[logging.Logger, Path]:
             continue
 
     if not log_paths:
-        log_paths.append(ROOT_DIR / f"launcher-{os.getpid()}.log")
+        log_paths.append(APP_ROOT / f"launcher-{os.getpid()}.log")
 
     logger = logging.getLogger("livelysam.launcher")
     if logger.handlers:
         existing_path = getattr(logger.handlers[0], "baseFilename", None)
-        return logger, Path(existing_path) if existing_path else ROOT_DIR / "launcher.log"
+        return logger, Path(existing_path) if existing_path else APP_ROOT / "launcher.log"
 
     logger.setLevel(logging.INFO)
     logger.propagate = False
@@ -198,6 +201,8 @@ class LauncherApp:
         self.root.resizable(False, False)
         self.root.configure(bg=P["bg"])
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self._window_icon_image: tk.PhotoImage | None = None
+        self._apply_window_icon()
         self._apply_native_rounding()
 
         self.settings = backend.load_launcher_settings()
@@ -208,7 +213,8 @@ class LauncherApp:
         self.monitor_var = tk.StringVar(value="모니터 불러오는 중...")
         self.status_var = tk.StringVar(value="상태를 불러오는 중입니다.")
         self.detail_var = tk.StringVar(value="실행기와 미리보기 상태를 확인하고 있습니다.")
-
+        self._current_version = backend.get_current_version()
+        self.version_var = tk.StringVar()
         self.update_channel_var = tk.StringVar()
 
         self._busy = False
@@ -236,6 +242,7 @@ class LauncherApp:
 
     def _set_update_state(self, *, checking: bool = False, info: dict | None = None) -> None:
         payload = info if info is not None else self._update_info
+        self._refresh_version_text(payload)
         if checking:
             self._set_pill(self.pill_update, "info", "업데이트 확인")
             return
@@ -253,6 +260,15 @@ class LauncherApp:
             return
 
         self._set_pill(self.pill_update, "ok", "최신 버전")
+
+    def _refresh_version_text(self, payload: dict | None = None) -> None:
+        info = payload or {}
+        installed_version = str(self._current_version or "").strip() or "알 수 없음"
+        latest_version = str(info.get("latestVersion") or "").strip()
+        version_text = f"설치 버전 {installed_version}"
+        if latest_version and latest_version != installed_version:
+            version_text = f"{version_text}  |  최신 {latest_version}"
+        self.version_var.set(version_text)
 
     def _start_update_check(self, *, prompt_install: bool) -> None:
         channel = self._update_channel
@@ -380,6 +396,26 @@ class LauncherApp:
         except Exception as exc:  # noqa: BLE001
             self._log_warning("native window rounding unavailable", exc)
 
+    def _apply_window_icon(self) -> None:
+        if os.name == "nt":
+            try:
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("LivelySam.Launcher")
+            except Exception:
+                pass
+
+        if LAUNCHER_ICON_PNG.exists():
+            try:
+                self._window_icon_image = tk.PhotoImage(file=str(LAUNCHER_ICON_PNG))
+                self.root.iconphoto(True, self._window_icon_image)
+            except Exception as exc:  # noqa: BLE001
+                self._log_warning("failed to apply launcher PNG icon", exc)
+
+        if LAUNCHER_ICON_ICO.exists():
+            try:
+                self.root.iconbitmap(default=str(LAUNCHER_ICON_ICO))
+            except Exception as exc:  # noqa: BLE001
+                self._log_warning("failed to apply launcher ICO icon", exc)
+
     def _dispatch(self, callback) -> None:
         if self._closed:
             return
@@ -488,6 +524,7 @@ class LauncherApp:
         title_group.pack(side="left")
         tk.Label(title_group, text="LivelySam", bg=P["card"], fg=P["text"], font=(FONT, 18, "bold")).pack(anchor="w")
         tk.Label(title_group, text="로컬 배경 실행기", bg=P["card"], fg=P["text3"], font=(FONT, 8)).pack(anchor="w", pady=(1, 0))
+        tk.Label(title_group, textvariable=self.version_var, bg=P["card"], fg=P["text3"], font=(FONT, 8)).pack(anchor="w", pady=(1, 0))
 
         self.pill_status = Pill(header, "준비 중", bg=P["off_bg"], fg=P["off_fg"], parent_bg=P["card"], font_size=9, height=24, padding=12)
         self.pill_status.pack(side="right", pady=4)
