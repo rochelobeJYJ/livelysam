@@ -89,6 +89,10 @@ jobs:
         shell: powershell
         run: .\tools\build_installer.ps1 -Root .
 
+      - name: Run release audit
+        shell: powershell
+        run: .\tools\run_release_audit.ps1
+
       - name: Publish release manifest
         shell: powershell
         run: |
@@ -100,10 +104,6 @@ jobs:
             -InstallerPath $installerPath `
             -ReleaseTag "${{ steps.release_ref.outputs.release_tag }}" `
             -PublishedAt "${{ steps.release_meta.outputs.published_at }}"
-
-      - name: Run release audit
-        shell: powershell
-        run: .\tools\run_release_audit.ps1
 
       - name: Create or update GitHub Release
         env:
