@@ -184,6 +184,64 @@
     return normalizeTargetText(target).toLowerCase();
   }
 
+  function normalizePathKey(target) {
+    const normalized = normalizeTargetText(target);
+    if (!normalized) return '';
+
+    if (/^[a-z]:[\\/]?$/i.test(normalized)) {
+      return `${normalized.slice(0, 2).toLowerCase()}\\`;
+    }
+
+    const uncRootMatch = normalized.match(/^(\\\\[^\\]+\\[^\\]+)[\\\/]*$/);
+    if (uncRootMatch) {
+      return `${uncRootMatch[1].toLowerCase()}\\`;
+    }
+
+    return normalized.replace(/[\\/]+$/, '').toLowerCase();
+  }
+
+  function isAncestorTarget(ancestorTarget, descendantTarget) {
+    const ancestorKey = normalizePathKey(ancestorTarget);
+    const descendantKey = normalizePathKey(descendantTarget);
+    if (!ancestorKey || !descendantKey || ancestorKey === descendantKey) {
+      return false;
+    }
+
+    const prefix = ancestorKey.endsWith('\\') ? ancestorKey : `${ancestorKey}\\`;
+    return descendantKey.startsWith(prefix);
+  }
+
+  function pruneNestedDropShortcuts(shortcuts) {
+    const candidates = Array.isArray(shortcuts) ? shortcuts.filter(Boolean) : [];
+    if (candidates.length < 2) {
+      return candidates;
+    }
+
+    return candidates.filter((candidate) => {
+      if (normalizeKind(candidate.kind) !== 'folder') {
+        return true;
+      }
+
+      const nestedChild = candidates.find((other) => (
+        other
+        && other !== candidate
+        && isAncestorTarget(candidate.target, other.target)
+      ));
+
+      if (!nestedChild) {
+        return true;
+      }
+
+      console.warn(
+        '[Shortcuts] dropped ancestor folder candidate ignored:',
+        candidate.target,
+        'child=',
+        nestedChild.target
+      );
+      return false;
+    });
+  }
+
   function parseDownloadUrl(value) {
     const raw = toText(value);
     if (!raw) return [];
@@ -936,7 +994,7 @@
 
       const existingKeys = new Set(this._items.map((item) => dedupeKey(item.target)));
       const seenRawKeys = new Set();
-      const additions = [];
+      const resolvedCandidates = [];
 
       for (const target of normalizedTargets) {
         const targetKey = dedupeKey(target);
@@ -954,12 +1012,14 @@
           if (!resolvedKey || existingKeys.has(resolvedKey)) {
             continue;
           }
-          additions.push(shortcut);
+          resolvedCandidates.push(shortcut);
           existingKeys.add(resolvedKey);
         } catch (error) {
           console.warn('[Shortcuts] dropped target could not be registered:', target, error);
         }
       }
+
+      const additions = pruneNestedDropShortcuts(resolvedCandidates);
 
       if (!additions.length) {
         LS.Helpers.showToast('추가할 새 파일이나 폴더가 없습니다.', 'info', 2200);
