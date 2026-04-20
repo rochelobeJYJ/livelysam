@@ -21,6 +21,8 @@ $previewHostExeCandidates = @(
 )
 $previewHostExe = $previewHostExeCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 $pythonPath = Join-Path $rootPath "venv\Scripts\python.exe"
+$previewHostScript = Join-Path $rootPath "tools\browser_preview_host.py"
+$storageBridgeScript = Join-Path $rootPath "tools\ensure_local_storage_bridge.ps1"
 
 function Ensure-RuntimeDir {
     New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
@@ -171,6 +173,7 @@ function Get-WebView2LoaderDirectory {
     if ([IntPtr]::Size -eq 8) {
         $candidates += @(
             "C:\Program Files\Microsoft Office\root\Office16",
+            "C:\Program Files\Microsoft OneDrive\26.055.0323.0004",
             "C:\Program Files\Microsoft OneDrive\26.040.0301.0001"
         )
     } else {
@@ -439,6 +442,11 @@ function Start-Host {
         throw "Wallpaper host is already running."
     }
 
+    $bridgeInfo = $null
+    if (Test-Path -LiteralPath $storageBridgeScript) {
+        $bridgeInfo = & $storageBridgeScript -Root $rootPath | ConvertFrom-Json
+    }
+
     Ensure-RuntimeDir
     Remove-Item -LiteralPath $stopFile -Force -ErrorAction SilentlyContinue
     Write-Result @{
@@ -453,21 +461,28 @@ function Start-Host {
     Ensure-WebView2Assemblies -ManagedDir $webView2ManagedDir -LoaderDir $webView2LoaderDir
 
     $port = Get-FreePort
-    $url = "http://127.0.0.1:$port/index.html?runtime=desktophost"
-    if ($previewHostExe) {
-        $serverProcess = Start-Process -FilePath $previewHostExe -ArgumentList @("serve", "--port", "$port") -WindowStyle Hidden -PassThru
-    } else {
-        if (-not (Test-Path -LiteralPath $pythonPath)) {
-            throw "BrowserPreviewHost.exe or python.exe not found. Checked: $($previewHostExeCandidates -join ', ')"
+    $statusUrl = "http://127.0.0.1:$port/index.html?runtime=desktophost"
+    $launchUrl = $statusUrl
+    if ($bridgeInfo -and [int]$bridgeInfo.port -gt 0) {
+        $queryParts = @("runtime=desktophost", "bridgePort=$([int]$bridgeInfo.port)")
+        if (-not [string]::IsNullOrWhiteSpace([string]$bridgeInfo.auth_token)) {
+            $queryParts += "livelySamToken=$([System.Uri]::EscapeDataString([string]$bridgeInfo.auth_token))"
         }
-        $serverArgs = @("-m", "http.server", "$port", "--bind", "127.0.0.1", "--directory", $rootPath)
-        $serverProcess = Start-Process -FilePath $pythonPath -ArgumentList $serverArgs -WindowStyle Hidden -PassThru
+        $launchUrl = "http://127.0.0.1:$port/index.html?" + ($queryParts -join "&")
+    }
+    if ((Test-Path -LiteralPath $pythonPath) -and (Test-Path -LiteralPath $previewHostScript)) {
+        $serverArgs = @($previewHostScript, "serve", "--port", "$port")
+        $serverProcess = Start-Process -FilePath $pythonPath -ArgumentList $serverArgs -WorkingDirectory $rootPath -WindowStyle Hidden -PassThru
+    } elseif ($previewHostExe) {
+        $serverProcess = Start-Process -FilePath $previewHostExe -ArgumentList @("serve", "--port", "$port") -WorkingDirectory $rootPath -WindowStyle Hidden -PassThru
+    } else {
+        throw "BrowserPreviewHost runtime not found. Checked: $($previewHostExeCandidates -join ', '), $previewHostScript, $pythonPath"
     }
     Log-Message "Server process started: pid=$($serverProcess.Id) port=$port"
 
     try {
-        Wait-ForServer -Url $url
-        Log-Message "Local server ready at $url"
+        Wait-ForServer -Url $statusUrl
+        Log-Message "Local server ready at $statusUrl"
 
         Ensure-NativeDesktopInterop
         [LivelySamDesktopNative]::EnableDpiAwareness()
@@ -503,7 +518,7 @@ function Start-Host {
             host_pid = $PID
             server_pid = $serverProcess.Id
             port = $port
-            url = $url
+            url = $statusUrl
             renderer = "WebView2"
             webview2_managed_dir = $webView2ManagedDir
             webview2_loader_dir = $webView2LoaderDir
@@ -527,7 +542,7 @@ function Start-Host {
             param($sender, $args)
             if ($args.IsSuccess) {
                 Log-Message "WebView2 initialization completed."
-                $sender.CoreWebView2.Navigate($url)
+                $sender.CoreWebView2.Navigate($launchUrl)
             } else {
                 $exceptionText = if ($args.InitializationException) { $args.InitializationException.ToString() } else { "Unknown WebView2 initialization error." }
                 Log-Message "WebView2 initialization failed: $exceptionText" "ERROR"
@@ -564,7 +579,7 @@ function Start-Host {
                     attached = $true
                     message = "Local wallpaper host attached successfully."
                     updated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-                    url = $url
+                    url = $statusUrl
                     renderer = "WebView2"
                     window_handle = $script:hostState.window_handle
                     desktop_parent = $script:hostState.desktop_parent
@@ -644,6 +659,7 @@ function Stop-Host {
 
     $hostPid = [int]$state.host_pid
     $serverPid = [int]$state.server_pid
+    $serverLauncherPid = [int]$state.server_launcher_pid
     $deadline = (Get-Date).AddSeconds(10)
     while ((Get-Date) -lt $deadline) {
         if (-not (Test-PidRunning -ProcessId $hostPid)) {
@@ -654,6 +670,7 @@ function Stop-Host {
 
     Stop-ProcessIfRunning -ProcessId $hostPid
     Stop-ProcessIfRunning -ProcessId $serverPid
+    Stop-ProcessIfRunning -ProcessId $serverLauncherPid
     Clear-State
 
     Write-Result @{
@@ -674,6 +691,7 @@ function Show-Status {
         }
         $status["host_running"] = Test-PidRunning -ProcessId ([int]$state.host_pid)
         $status["server_running"] = Test-PidRunning -ProcessId ([int]$state.server_pid)
+        $status["server_launcher_running"] = Test-PidRunning -ProcessId ([int]$state.server_launcher_pid)
         $status | ConvertTo-Json -Depth 8
         return
     }

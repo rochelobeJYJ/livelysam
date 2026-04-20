@@ -4,9 +4,40 @@
   const LS = window.LivelySam = window.LivelySam || {};
   const OWM_BASE = 'https://api.openweathermap.org/data/2.5';
   const GEO_BASE = 'https://api.openweathermap.org/geo/1.0';
+  const WEATHER_API_TIMEOUT_MS = 8000;
 
   function createCacheBucket() {
     return Object.create(null);
+  }
+
+  function isObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function text(value, fallback = '') {
+    if (value === null || value === undefined) return fallback;
+    const normalized = String(value).trim();
+    return normalized || fallback;
+  }
+
+  function toNumber(value, fallback = 0) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+  }
+
+  function hasValidCoordinates(lat, lon) {
+    return Number.isFinite(Number(lat)) && Number.isFinite(Number(lon));
+  }
+
+  function resolveTimeout(value, fallback = WEATHER_API_TIMEOUT_MS) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+  }
+
+  function buildTimeoutError(timeoutMs) {
+    const error = new Error(`날씨 API 요청 시간이 초과되었습니다. (${timeoutMs}ms)`);
+    error.name = 'TimeoutError';
+    return error;
   }
 
   LS.WeatherAPI = {
@@ -48,26 +79,128 @@
       return this.usesProxy() || Boolean(this.apiKey);
     },
 
+    hasValidLocation() {
+      return hasValidCoordinates(this.lat, this.lon);
+    },
+
+    _requireValidLocation() {
+      if (!this.hasValidLocation()) {
+        throw new Error('Weather location is not configured.');
+      }
+    },
+
+    _getWeatherDescriptor(raw) {
+      const weather = Array.isArray(raw?.weather) ? raw.weather.find((item) => isObject(item)) : null;
+      return {
+        description: text(raw?.description || weather?.description),
+        icon: text(raw?.icon || weather?.icon)
+      };
+    },
+
+    _normalizeLocation(raw) {
+      if (!isObject(raw) || !hasValidCoordinates(raw.lat, raw.lon)) return null;
+      return {
+        lat: Number(raw.lat),
+        lon: Number(raw.lon),
+        name: text(raw.local_names?.ko || raw.name)
+      };
+    },
+
+    _normalizeCurrentWeather(raw) {
+      if (!isObject(raw)) return null;
+      const main = isObject(raw.main) ? raw.main : raw;
+      const wind = isObject(raw.wind) ? raw.wind : raw;
+      const clouds = isObject(raw.clouds) ? raw.clouds : raw;
+      const sys = isObject(raw.sys) ? raw.sys : raw;
+      const descriptor = this._getWeatherDescriptor(raw);
+      return {
+        temp: Math.round(toNumber(raw.temp ?? main.temp)),
+        feelsLike: Math.round(toNumber(raw.feelsLike ?? raw.feels_like ?? main.feelsLike ?? main.feels_like)),
+        tempMin: Math.round(toNumber(raw.tempMin ?? raw.minTemp ?? main.tempMin ?? main.temp_min ?? main.temp)),
+        tempMax: Math.round(toNumber(raw.tempMax ?? raw.maxTemp ?? main.tempMax ?? main.temp_max ?? main.temp)),
+        humidity: Math.round(toNumber(raw.humidity ?? main.humidity)),
+        pressure: Math.round(toNumber(raw.pressure ?? main.pressure)),
+        description: descriptor.description,
+        icon: descriptor.icon,
+        windSpeed: toNumber(raw.windSpeed ?? wind.speed),
+        windGust: toNumber(raw.windGust ?? wind.gust),
+        visibilityKm: Math.round(toNumber(raw.visibilityKm ?? ((raw.visibility ?? 0) / 1000)) * 10) / 10,
+        clouds: Math.round(toNumber(raw.clouds ?? clouds.all)),
+        cityName: text(raw.cityName || raw.name),
+        sunrise: raw.sunrise ? toNumber(raw.sunrise) : (sys.sunrise ? toNumber(sys.sunrise) * 1000 : null),
+        sunset: raw.sunset ? toNumber(raw.sunset) : (sys.sunset ? toNumber(sys.sunset) * 1000 : null),
+        updatedAt: toNumber(raw.updatedAt, Date.now())
+      };
+    },
+
+    _normalizeForecastEntry(raw) {
+      if (!isObject(raw)) return null;
+      const main = isObject(raw.main) ? raw.main : raw;
+      const descriptor = this._getWeatherDescriptor(raw);
+      const rawPop = raw.pop ?? raw.popMax ?? 0;
+      return {
+        time: toNumber(raw.time ?? (raw.dt ? raw.dt * 1000 : 0)),
+        temp: Math.round(toNumber(raw.temp ?? main.temp)),
+        tempMin: Math.round(toNumber(raw.tempMin ?? raw.minTemp ?? main.temp_min ?? main.temp)),
+        tempMax: Math.round(toNumber(raw.tempMax ?? raw.maxTemp ?? main.temp_max ?? main.temp)),
+        icon: descriptor.icon,
+        description: descriptor.description,
+        pop: Math.round(toNumber(rawPop) > 1 ? toNumber(rawPop) : toNumber(rawPop) * 100)
+      };
+    },
+
+    _normalizeAirQuality(raw) {
+      if (!isObject(raw)) return null;
+      const components = isObject(raw.components) ? raw.components : raw;
+      const main = isObject(raw.main) ? raw.main : raw;
+      return {
+        aqi: Math.round(toNumber(raw.aqi ?? main.aqi)),
+        pm25: Math.round(toNumber(raw.pm25 ?? components.pm2_5)),
+        pm10: Math.round(toNumber(raw.pm10 ?? components.pm10)),
+        o3: Math.round(toNumber(raw.o3 ?? components.o3)),
+        no2: Math.round(toNumber(raw.no2 ?? components.no2)),
+        so2: Math.round(toNumber(raw.so2 ?? components.so2)),
+        co: Math.round(toNumber(raw.co ?? components.co)),
+        updatedAt: raw.updatedAt !== undefined ? toNumber(raw.updatedAt) : undefined
+      };
+    },
+
+    _normalizeBundle(bundle) {
+      if (!isObject(bundle)) return null;
+      return {
+        weather: this._normalizeCurrentWeather(bundle.weather),
+        forecast: (Array.isArray(bundle.forecast) ? bundle.forecast : [])
+          .map((item) => this._normalizeForecastEntry(item))
+          .filter(Boolean),
+        dailyForecast: (Array.isArray(bundle.dailyForecast) ? bundle.dailyForecast : [])
+          .filter((item) => isObject(item)),
+        airQuality: this._normalizeAirQuality(bundle.airQuality),
+        airQualityForecast: (Array.isArray(bundle.airQualityForecast) ? bundle.airQualityForecast : [])
+          .filter((item) => isObject(item)),
+        dailyAirQualityForecast: (Array.isArray(bundle.dailyAirQualityForecast) ? bundle.dailyAirQualityForecast : [])
+          .filter((item) => isObject(item)),
+        updatedAt: toNumber(bundle.updatedAt, Date.now())
+      };
+    },
+
     async geocode(address) {
       if (!String(address || '').trim()) return null;
 
       try {
         if (!this.usesDirectKey()) {
-          const payload = await LS.DataService.fetchJson('weather/geocode', { address });
-          return payload?.location || null;
+          const payload = await LS.DataService.fetchJson('weather/geocode', { address }, {
+            timeoutMs: WEATHER_API_TIMEOUT_MS
+          });
+          return this._normalizeLocation(payload?.location);
         }
 
         const url = `${GEO_BASE}/direct?q=${encodeURIComponent(address)},KR&limit=1&appid=${this.apiKey}`;
         const data = await this._fetchJson(url);
-        if (Array.isArray(data) && data.length > 0) {
-          return {
-            lat: data[0].lat,
-            lon: data[0].lon,
-            name: data[0].local_names?.ko || data[0].name
-          };
-        }
-        return null;
+        return this._normalizeLocation(Array.isArray(data) ? data[0] : null);
       } catch (error) {
+        if (error?.name === 'TimeoutError') {
+          throw error;
+        }
         console.error('[Weather] Geocoding failed:', error);
         return null;
       }
@@ -80,27 +213,10 @@
       }
 
       return this._fetchCachedResource('weather', 'cachedWeather', async () => {
+        this._requireValidLocation();
         const url = `${OWM_BASE}/weather?lat=${this.lat}&lon=${this.lon}&appid=${this.apiKey}&units=metric&lang=kr`;
         const data = await this._fetchJson(url);
-
-        return {
-          temp: Math.round(data.main.temp),
-          feelsLike: Math.round(data.main.feels_like),
-          tempMin: Math.round(data.main.temp_min),
-          tempMax: Math.round(data.main.temp_max),
-          humidity: data.main.humidity,
-          pressure: data.main.pressure,
-          description: data.weather[0]?.description || '',
-          icon: data.weather[0]?.icon || '',
-          windSpeed: data.wind?.speed || 0,
-          windGust: data.wind?.gust || 0,
-          visibilityKm: Math.round(((data.visibility || 0) / 1000) * 10) / 10,
-          clouds: data.clouds?.all || 0,
-          cityName: data.name,
-          sunrise: data.sys?.sunrise ? data.sys.sunrise * 1000 : null,
-          sunset: data.sys?.sunset ? data.sys.sunset * 1000 : null,
-          updatedAt: Date.now()
-        };
+        return this._normalizeCurrentWeather(data);
       }, null);
     },
 
@@ -111,7 +227,7 @@
       }
 
       const list = await this._getForecastList();
-      return list.slice(0, 6).map((item) => this._mapForecastEntry(item));
+      return list.slice(0, 6).map((item) => this._normalizeForecastEntry(item)).filter(Boolean);
     },
 
     async getDailyForecast() {
@@ -131,9 +247,10 @@
       }
 
       return this._fetchCachedResource('airQuality', 'cachedAirQuality', async () => {
+        this._requireValidLocation();
         const url = `${OWM_BASE}/air_pollution?lat=${this.lat}&lon=${this.lon}&appid=${this.apiKey}`;
         const data = await this._fetchJson(url);
-        const first = data.list?.[0];
+        const first = Array.isArray(data?.list) ? data.list.find((item) => isObject(item)) : null;
         if (!first) return null;
 
         return {
@@ -152,7 +269,7 @@
       const list = await this._getAirQualityForecastList();
       return list.slice(0, 24).map((item) => ({
         ...this._mapAirQualityEntry(item),
-        time: item.dt * 1000
+        time: toNumber(item.dt) * 1000
       }));
     },
 
@@ -202,7 +319,7 @@
           lat: this.lat,
           lon: this.lon
         });
-        return payload?.bundle || null;
+        return this._normalizeBundle(payload?.bundle);
       }, null);
     },
 
@@ -233,17 +350,19 @@
 
     async _getForecastList() {
       return this._fetchCachedResource('forecastRaw', 'cachedForecastRaw', async () => {
+        this._requireValidLocation();
         const url = `${OWM_BASE}/forecast?lat=${this.lat}&lon=${this.lon}&appid=${this.apiKey}&units=metric&lang=kr`;
         const data = await this._fetchJson(url);
-        return Array.isArray(data.list) ? data.list : [];
+        return Array.isArray(data?.list) ? data.list.filter((item) => isObject(item)) : [];
       }, []);
     },
 
     async _getAirQualityForecastList() {
       return this._fetchCachedResource('airQualityForecastRaw', 'cachedAirQualityForecastRaw', async () => {
+        this._requireValidLocation();
         const url = `${OWM_BASE}/air_pollution/forecast?lat=${this.lat}&lon=${this.lon}&appid=${this.apiKey}`;
         const data = await this._fetchJson(url);
-        return Array.isArray(data.list) ? data.list : [];
+        return Array.isArray(data?.list) ? data.list.filter((item) => isObject(item)) : [];
       }, []);
     },
 
@@ -385,12 +504,43 @@
       }
     },
 
-    async _fetchJson(url) {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+    async _fetchJson(url, options = {}) {
+      const timeoutMs = resolveTimeout(options.timeoutMs, WEATHER_API_TIMEOUT_MS);
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      let timeoutId = 0;
+
+      try {
+        const response = await Promise.race([
+          fetch(url, controller ? { signal: controller.signal } : {}),
+          new Promise((_, reject) => {
+            timeoutId = window.setTimeout(() => {
+              try {
+                controller?.abort();
+              } catch {
+                // noop
+              }
+              reject(buildTimeoutError(timeoutMs));
+            }, timeoutMs);
+          })
+        ]);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json().catch(() => null);
+        if (!payload || (typeof payload !== 'object' && !Array.isArray(payload))) {
+          throw new Error('Invalid weather response');
+        }
+        return payload;
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw buildTimeoutError(timeoutMs);
+        }
+        throw error;
+      } finally {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+        }
       }
-      return response.json();
     }
   };
 })();

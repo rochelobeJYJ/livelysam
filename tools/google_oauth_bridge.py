@@ -23,11 +23,17 @@ DEFAULT_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token"
 DEFAULT_REVOKE_URI = "https://oauth2.googleapis.com/revoke"
 DEFAULT_USERINFO_URI = "https://openidconnect.googleapis.com/v1/userinfo"
-GOOGLE_API_ALLOWED_HOSTS = {
-    "www.googleapis.com",
-    "tasks.googleapis.com",
-    "openidconnect.googleapis.com",
-    "oauth2.googleapis.com",
+GOOGLE_API_ALLOWED_PATH_PREFIXES = {
+    "www.googleapis.com": (
+        "/calendar/v3/",
+        "/oauth2/v3/userinfo",
+    ),
+    "tasks.googleapis.com": (
+        "/tasks/v1/",
+    ),
+    "openidconnect.googleapis.com": (
+        "/v1/userinfo",
+    ),
 }
 DEFAULT_SCOPES = [
     "openid",
@@ -357,8 +363,12 @@ class GoogleOAuthBridge:
     ) -> tuple[int, Any]:
         normalized_method = text(method, "GET").upper()
         parsed_url = urllib.parse.urlparse(text(url))
-        if parsed_url.scheme != "https" or parsed_url.netloc not in GOOGLE_API_ALLOWED_HOSTS:
+        allowed_prefixes = GOOGLE_API_ALLOWED_PATH_PREFIXES.get(parsed_url.netloc, ())
+        if parsed_url.scheme != "https" or not allowed_prefixes:
             raise RuntimeError("허용되지 않은 Google API 주소입니다.")
+
+        if not any(parsed_url.path.startswith(prefix) for prefix in allowed_prefixes):
+            raise RuntimeError("Google API path is not allowed.")
 
         token_payload = self.get_access_token()
         auth = token_payload.get("auth", {}) if isinstance(token_payload, dict) else {}
@@ -456,7 +466,7 @@ class GoogleOAuthBridge:
 
         if not finished:
             raise RuntimeError("Google 로그인 시간이 초과되었습니다. 다시 시도해 주세요.")
-        if text(payload.get("state")) != state:
+        if not secrets.compare_digest(text(payload.get("state")), state):
             raise RuntimeError("Google 로그인 검증에 실패했습니다. 다시 시도해 주세요.")
         if text(payload.get("error")):
             detail = text(payload.get("error_description")) or text(payload.get("error"))

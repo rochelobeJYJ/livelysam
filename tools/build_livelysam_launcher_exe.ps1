@@ -9,6 +9,8 @@ $pythonPath = Join-Path $rootPath "venv\Scripts\python.exe"
 $toolsDir = Join-Path $rootPath "tools"
 $distDir = Join-Path $rootPath "dist\launcher"
 $workDir = Join-Path $rootPath "build\launcher"
+$logDir = Join-Path $rootPath "runtime\launcher-build"
+$launcherIconPath = Join-Path $rootPath "assets\icons\livelysam_launcher.ico"
 
 if (-not (Test-Path -LiteralPath $pythonPath)) {
     throw "python.exe not found in venv\Scripts."
@@ -16,11 +18,23 @@ if (-not (Test-Path -LiteralPath $pythonPath)) {
 
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+& $pythonPath (Join-Path $toolsDir "generate_launcher_icon.py")
+if (-not (Test-Path -LiteralPath $launcherIconPath)) {
+    throw "launcher icon was not generated."
+}
+
+foreach ($name in @("LivelySamLauncher", "BrowserPreviewHost", "LocalStorageBridge")) {
+    Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
 
 function Invoke-PyInstallerBuild {
     param(
         [string]$Name,
         [string]$EntryScript,
+        [string[]]$HiddenImports = @(),
+        [string]$IconPath = "",
         [switch]$Windowed
     )
 
@@ -44,15 +58,47 @@ function Invoke-PyInstallerBuild {
         $args += "--windowed"
     }
 
-    $args += $entryPath
+    if ($IconPath) {
+        if (-not (Test-Path -LiteralPath $IconPath)) {
+            throw "Icon path not found: $IconPath"
+        }
+        $args += @("--icon", $IconPath)
+    }
 
-    & $pythonPath @args
+    foreach ($hiddenImport in $HiddenImports) {
+        if ($hiddenImport) {
+            $args += @("--hidden-import", $hiddenImport)
+        }
+    }
+
+    $args += $entryPath
+    $logStamp = Get-Date -Format "yyyyMMdd-HHmmss-fff"
+    $logPath = Join-Path $logDir ("{0}-{1}.log" -f $Name, $logStamp)
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $pythonPath @args *> $logPath
+    $ErrorActionPreference = $previousErrorActionPreference
+
     if ($LASTEXITCODE -ne 0) {
+        $tail = ""
+        if (Test-Path -LiteralPath $logPath) {
+            $tail = (Get-Content -LiteralPath $logPath -Tail 40 -ErrorAction SilentlyContinue) -join [Environment]::NewLine
+        }
+        if ($tail) {
+            throw "$Name build failed.`n`n$tail"
+        }
         throw "$Name build failed."
     }
+
+    Write-Host "$Name build log: $logPath"
 }
 
-Invoke-PyInstallerBuild -Name "LivelySamLauncher" -EntryScript "livelysam_launcher_compact.py" -Windowed
+Invoke-PyInstallerBuild -Name "LivelySamLauncher" -EntryScript "livelysam_launcher_compact.py" -Windowed -IconPath $launcherIconPath -HiddenImports @(
+    "tools.browser_preview_host",
+    "tools.generate_minigame_catalog",
+    "webbrowser"
+)
 Invoke-PyInstallerBuild -Name "BrowserPreviewHost" -EntryScript "browser_preview_host.py"
 Invoke-PyInstallerBuild -Name "LocalStorageBridge" -EntryScript "local_storage_bridge.py"
 

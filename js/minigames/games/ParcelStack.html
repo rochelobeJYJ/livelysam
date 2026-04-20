@@ -4,6 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Parcel Stack</title>
+  <meta name="livelysam:minigame:id" content="parcel-stack">
+  <meta name="livelysam:minigame:title" content="Parcel Stack">
+  <meta name="livelysam:minigame:icon" content="📦">
+  <meta name="livelysam:minigame:status" content="ready">
+  <meta name="livelysam:minigame:series-id" content="parcel-stack">
+  <meta name="livelysam:minigame:series-title" content="Parcel Stack">
+  <meta name="livelysam:minigame:series-description" content="정확한 타이밍으로 상자를 쌓는 적재 게임입니다.">
+  <meta name="livelysam:minigame:series-icon" content="📦">
+  <meta name="livelysam:minigame:description" content="움직이는 상자를 카트 위에 최대한 안정적으로 쌓아 올립니다.">
+  <meta name="livelysam:minigame:score-label" content="적재 점수">
+  <meta name="livelysam:minigame:leaderboard-mode" content="all-scores">
+  <meta name="livelysam:minigame:hall-notice" content="개인당 최고 점수 3개를 기록합니다.">
+  <meta name="livelysam:minigame:tags" content="firebase,hall-of-fame,new">
+  <meta name="livelysam:minigame:sort-order" content="70">
   <style>
     :root {
       color-scheme: light;
@@ -55,9 +69,8 @@
 
     .shell {
       position: relative;
-      width: min(94vw, 460px);
-      aspect-ratio: 9 / 16;
-      max-height: 96vh;
+      width: min(94vw, calc(96vh * 900 / 1368), 520px);
+      aspect-ratio: 900 / 1368;
       overflow: hidden;
       border-radius: calc(var(--radius) + 6px);
       border: 1px solid var(--shell-edge);
@@ -79,10 +92,19 @@
     }
 
     #gameCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
       display: block;
       width: 100%;
-      height: 100%;
+      height: calc(100% * 1600 / 1368);
       background: transparent;
+    }
+
+    body.preview-mode #gameCanvas {
+      position: static;
+      width: 100%;
+      height: 100%;
     }
 
     .hud {
@@ -271,6 +293,64 @@
       text-align: center;
     }
 
+    .footnote {
+      font-size: 0.76rem;
+      line-height: 1.32;
+      letter-spacing: -0.03em;
+      white-space: nowrap;
+      word-break: keep-all;
+    }
+
+    .stage-start-group {
+      margin: 0 0 12px;
+      padding: 12px;
+      border-radius: 18px;
+      border: 1px solid rgba(72, 63, 49, 0.07);
+      background: rgba(255, 255, 255, 0.46);
+    }
+
+    .stage-start-group[hidden] {
+      display: none;
+    }
+
+    .stage-start-label {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 0.76rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .stage-start-note {
+      font-size: 0.72rem;
+      letter-spacing: 0;
+      text-transform: none;
+      color: var(--olive);
+    }
+
+    .stage-select {
+      width: 100%;
+      min-height: 44px;
+      padding: 0 14px;
+      border: 1px solid rgba(72, 63, 49, 0.12);
+      border-radius: 14px;
+      background: rgba(248, 245, 238, 0.92);
+      color: var(--ink);
+      font: inherit;
+      font-size: 0.92rem;
+      font-weight: 700;
+      outline: none;
+    }
+
+    .stage-select:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
     .button-row {
       display: flex;
       gap: 10px;
@@ -347,6 +427,10 @@
       .button-row {
         flex-direction: column;
       }
+
+      .footnote {
+        white-space: normal;
+      }
     }
   </style>
 </head>
@@ -393,6 +477,13 @@
             다음 실수를 버티기 어려워집니다.
           </div>
         </div>
+        <div class="stage-start-group" id="startStageGroup" hidden>
+          <div class="stage-start-label">
+            <span>Start Stage</span>
+            <span class="stage-start-note" id="startStageNote"></span>
+          </div>
+          <select id="startStageSelect" class="stage-select" aria-label="Choose starting stage"></select>
+        </div>
         <p class="status-line" id="startStatus">기록 정보를 불러오는 중입니다.</p>
         <p class="input-hint">탭, 클릭, 스페이스로 낙하</p>
         <div class="button-row">
@@ -407,6 +498,13 @@
         <h2 class="overlay-title">STACK DOWN</h2>
         <p class="score-line" id="finalScoreLine">최종 점수 0</p>
         <p class="status-line" id="gameOverStatus">기록을 정리하고 있습니다.</p>
+        <div class="stage-start-group" id="restartStageGroup" hidden>
+          <div class="stage-start-label">
+            <span>Restart From</span>
+            <span class="stage-start-note" id="restartStageNote"></span>
+          </div>
+          <select id="restartStageSelect" class="stage-select" aria-label="Choose restart stage"></select>
+        </div>
         <p class="footnote">명예의 전당에는 개인당 최고 점수 3개만 남습니다.</p>
         <div class="button-row">
           <button type="button" class="primary-btn" id="restartButton">다시 하기</button>

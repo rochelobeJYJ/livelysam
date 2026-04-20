@@ -1571,7 +1571,16 @@
     openBookmark(recordOrId) {
       const bookmark = this.getBookmarkInfo(recordOrId);
       if (!bookmark) return false;
-      window.open(bookmark.url, bookmark.openMode === 'same' ? '_self' : '_blank', 'noopener,noreferrer');
+      const rawUrl = String(bookmark.url || '').trim();
+      if (!/^https?:\/\//i.test(rawUrl)) {
+        return false;
+      }
+      try {
+        new URL(rawUrl);
+      } catch {
+        return false;
+      }
+      window.open(rawUrl, bookmark.openMode === 'same' ? '_self' : '_blank', 'noopener,noreferrer');
       return true;
     },
 

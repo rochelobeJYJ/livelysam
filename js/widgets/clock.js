@@ -82,7 +82,25 @@
 
       if (!periodEl) return;
 
-      if (info.current) {
+      if (info.status === 'weekend') {
+        const weekendInfo = info.nextSchoolStart;
+        periodEl.textContent = '주말';
+        periodEl.className = 'period-badge period-before';
+        if (remainEl) {
+          remainEl.textContent = weekendInfo
+            ? `${weekendInfo.dayName} 일과 시작까지 ${LS.Helpers.formatRemainingMinutes(weekendInfo.remainingMinutes)} 남음`
+            : '다음 일과 정보를 확인할 수 없습니다.';
+        }
+        if (progressEl) progressEl.style.width = '0%';
+        if (nextEl) {
+          if (weekendInfo) {
+            nextEl.textContent = `다음 일과: ${weekendInfo.dayName} ${weekendInfo.label} (${weekendInfo.start})`;
+            nextEl.style.display = 'block';
+          } else {
+            nextEl.style.display = 'none';
+          }
+        }
+      } else if (info.current) {
         periodEl.textContent = info.current.label;
         periodEl.className = 'period-badge period-' + info.current.type;
 
@@ -206,22 +224,18 @@
 
       const size = canvas.width;
       const center = size / 2;
-      const radius = size * 0.34;
-      const phaseAngle = info.renderFraction * Math.PI * 2;
-      const sunX = Math.sin(phaseAngle);
-      const sunZ = -Math.cos(phaseAngle);
+      const radius = size * 0.35;
       const image = ctx.createImageData(size, size);
       const data = image.data;
-      const lightTone = { r: 255, g: 247, b: 221 };
-      const shadowTone = { r: 44, g: 52, b: 66 };
-
-      const craters = [
-        { x: -0.33, y: -0.16, r: 0.14, depth: 0.08 },
-        { x: 0.18, y: -0.28, r: 0.11, depth: 0.05 },
-        { x: 0.26, y: 0.14, r: 0.15, depth: 0.07 },
-        { x: -0.12, y: 0.3, r: 0.09, depth: 0.05 },
-        { x: -0.34, y: 0.2, r: 0.07, depth: 0.04 }
-      ];
+      const waxing = info.isWaxing;
+      const rawTerminator = Math.cos(info.renderFraction * Math.PI * 2);
+      const terminator = Math.sign(rawTerminator) * Math.pow(Math.abs(rawTerminator), 2);
+      const lightTone = { r: 255, g: 224, b: 118 };
+      const shadowTone = { r: 136, g: 140, b: 160 };
+      const smoothstep = (edge0, edge1, value) => {
+        const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+        return t * t * (3 - 2 * t);
+      };
 
       ctx.clearRect(0, 0, size, size);
 
@@ -232,32 +246,18 @@
           const distanceSq = dx * dx + dy * dy;
           if (distanceSq > 1) continue;
 
-          const dz = Math.sqrt(1 - distanceSq);
-          const rawLight = dx * sunX + dz * sunZ;
-          const lambert = Math.max(0, rawLight);
-          const rim = Math.pow(Math.max(0, dz), 0.85);
-          const earthshine = 0.035 + rim * 0.035;
-          let brightness = rawLight > 0
-            ? 0.72 + Math.pow(lambert, 0.7) * 0.28 + rim * 0.06
-            : earthshine;
-
-          if (rawLight > 0) {
-            craters.forEach((crater) => {
-              const craterDx = dx - crater.x;
-              const craterDy = dy - crater.y;
-              const craterDistance = Math.sqrt(craterDx * craterDx + craterDy * craterDy);
-              if (craterDistance >= crater.r) return;
-              const craterFade = 1 - (craterDistance / crater.r);
-              brightness -= crater.depth * craterFade;
-            });
-          }
-
-          const value = Math.max(0, Math.min(1, brightness));
-          const baseTone = rawLight > 0 ? lightTone : shadowTone;
-          const r = Math.round(baseTone.r * value);
-          const g = Math.round(baseTone.g * value);
-          const b = Math.round(baseTone.b * value);
-          const alpha = 255;
+          const rim = Math.sqrt(Math.max(0, 1 - distanceSq));
+          const limbX = Math.sqrt(Math.max(0, 1 - dy * dy));
+          const threshold = waxing ? terminator * limbX : -terminator * limbX;
+          const terminatorDelta = waxing ? dx - threshold : threshold - dx;
+          const lightMix = smoothstep(-0.03, 0.03, terminatorDelta);
+          const outerFade = 1 - smoothstep(0.94, 1, Math.sqrt(distanceSq));
+          const litBrightness = 0.92 + rim * 0.08;
+          const shadowBrightness = 0.54 + rim * 0.08;
+          const r = Math.round(((shadowTone.r * shadowBrightness) * (1 - lightMix)) + ((lightTone.r * litBrightness) * lightMix));
+          const g = Math.round(((shadowTone.g * shadowBrightness) * (1 - lightMix)) + ((lightTone.g * litBrightness) * lightMix));
+          const b = Math.round(((shadowTone.b * shadowBrightness) * (1 - lightMix)) + ((lightTone.b * litBrightness) * lightMix));
+          const alpha = Math.round(255 * outerFade);
           const index = (y * size + x) * 4;
 
           data[index] = r;
@@ -274,24 +274,19 @@
       ctx.arc(center, center, radius, 0, Math.PI * 2);
       ctx.clip();
 
-      const glowOffsetX = center + (info.isWaxing ? radius * 0.24 : -radius * 0.24);
-      const glow = ctx.createRadialGradient(glowOffsetX, center - radius * 0.14, radius * 0.08, center, center, radius * 1.05);
-      glow.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-      glow.addColorStop(0.42, 'rgba(255, 248, 220, 0.08)');
-      glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      const glowOffsetX = center + (waxing ? radius * 0.34 : -radius * 0.34);
+      const glow = ctx.createRadialGradient(glowOffsetX, center - radius * 0.08, radius * 0.05, glowOffsetX, center, radius * 0.9);
+      glow.addColorStop(0, 'rgba(255, 228, 138, 0.34)');
+      glow.addColorStop(0.28, 'rgba(255, 210, 90, 0.14)');
+      glow.addColorStop(1, 'rgba(255, 210, 90, 0)');
       ctx.fillStyle = glow;
       ctx.fillRect(center - radius * 1.3, center - radius * 1.3, radius * 2.6, radius * 2.6);
 
-      const shade = ctx.createRadialGradient(center, center + radius * 0.3, radius * 0.15, center, center, radius * 1.2);
-      shade.addColorStop(0, 'rgba(20, 24, 38, 0)');
-      shade.addColorStop(1, 'rgba(20, 24, 38, 0.18)');
-      ctx.fillStyle = shade;
-      ctx.fillRect(center - radius * 1.3, center - radius * 1.3, radius * 2.6, radius * 2.6);
       ctx.restore();
 
       ctx.beginPath();
       ctx.arc(center, center, radius, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+      ctx.strokeStyle = 'rgba(124, 102, 38, 0.5)';
       ctx.lineWidth = 1;
       ctx.stroke();
     },

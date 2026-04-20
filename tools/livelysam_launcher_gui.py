@@ -12,9 +12,19 @@ import os
 import re
 import subprocess
 import sys
+import ctypes
 import urllib.error
 import urllib.request
+import contextlib
+import importlib.util
+import io
 from pathlib import Path
+
+try:
+    # Keep PyInstaller aware of the dynamically loaded browser preview host module.
+    import tools.browser_preview_host as _browser_preview_host_static  # noqa: F401
+except Exception:  # pragma: no cover - optional during partial runtime setups
+    _browser_preview_host_static = None
 
 
 # ── paths ────────────────────────────────────────────────────────────
@@ -55,9 +65,11 @@ BROWSER_PREVIEW_EXE_CANDIDATES = [
 ]
 LOCAL_APPDATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
 APPDATA_DIR = LOCAL_APPDATA / "LivelySam"
+RUNTIME_DIR = APPDATA_DIR / "runtime"
 LEGACY_LAUNCHER_SETTINGS_PATH = APPDATA_DIR / "launcher-settings.json"
 LAUNCHER_SETTINGS_PATH = APPDATA_DIR / "launcher-settings.v2.json"
 SHARED_STORAGE_PATH = APPDATA_DIR / "user-data" / "shared-storage.json"
+BRIDGE_ENDPOINT_FILE = RUNTIME_DIR / "bridge-endpoint.json"
 UPDATES_DIR = APPDATA_DIR / "updates"
 VERSION_FILE = ROOT_PATH / "version.json"
 
@@ -67,16 +79,34 @@ BROWSER_PREVIEW_SCRIPT = ROOT_PATH / "tools" / "browser_preview_host.py"
 BROWSER_PREVIEW_RUNTIME_DIR = ROOT_PATH / "runtime" / "browser-preview"
 BROWSER_PREVIEW_STATE_FILE = BROWSER_PREVIEW_RUNTIME_DIR / "state.json"
 BROWSER_PREVIEW_RESULT_FILE = BROWSER_PREVIEW_RUNTIME_DIR / "last-result.json"
+DESKTOP_HOST_RUNTIME_DIR = ROOT_PATH / "runtime" / "desktop-host"
+DESKTOP_HOST_STATE_FILE = DESKTOP_HOST_RUNTIME_DIR / "state.json"
+DESKTOP_HOST_RESULT_FILE = DESKTOP_HOST_RUNTIME_DIR / "last-result.json"
 STORAGE_BRIDGE_SCRIPT = ROOT_PATH / "tools" / "ensure_local_storage_bridge.ps1"
+_BROWSER_PREVIEW_MODULE = None
 
 
 # ── subprocess helpers ──────────────────────────────────────────────
 def run_process(args, timeout: int = 90):
+    env = os.environ.copy()
+    system_root = env.get("SystemRoot") or env.get("WINDIR") or r"C:\Windows"
+    env["SystemRoot"] = system_root
+
+    ps_module_path = env.get("PSModulePath", "")
+    system_ps_modules = str(Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "Modules")
+    existing_module_paths = [part for part in ps_module_path.split(";") if part]
+    if system_ps_modules not in existing_module_paths:
+        existing_module_paths.append(system_ps_modules)
+        env["PSModulePath"] = ";".join(existing_module_paths)
+
     kwargs: dict = {
         "args": args,
         "cwd": str(ROOT_PATH),
         "capture_output": True,
+        "env": env,
         "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
         "timeout": timeout,
     }
     if os.name == "nt":
@@ -106,7 +136,7 @@ def run_powershell_script(script_path: Path, *extra_args, timeout: int = 90):
 
 
 def parse_json_output(output: str):
-    text = (output or "").strip()
+    text = (output or "").lstrip("\ufeff").strip()
     if not text:
         return None
     try:
@@ -119,7 +149,7 @@ def read_json_file(path: Path):
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
         return None
 
@@ -304,6 +334,18 @@ def download_and_launch_update(manifest: dict) -> dict:
 def is_pid_running(pid: int) -> bool:
     if pid <= 0:
         return False
+    if os.name == "nt":
+        still_active = 259
+        process_query_limited_information = 0x1000
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(process_query_limited_information, False, int(pid))
+        if handle:
+            try:
+                exit_code = ctypes.c_ulong()
+                if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    return exit_code.value == still_active
+            finally:
+                kernel32.CloseHandle(handle)
     result = run_process(["tasklist", "/FI", f"PID eq {pid}"], timeout=10)
     output = (result.stdout or "") + (result.stderr or "")
     return result.returncode == 0 and str(pid) in output
@@ -339,6 +381,45 @@ def read_browser_status_payload():
     )
 
 
+def normalize_wallpaper_status_payload(state: dict | None, last_result: dict | None):
+    if state:
+        payload = dict(state)
+        payload["host_running"] = is_pid_running(int(state.get("host_pid") or 0))
+        payload["server_running"] = is_pid_running(int(state.get("server_pid") or 0))
+        payload["server_launcher_running"] = is_pid_running(int(state.get("server_launcher_pid") or 0))
+        payload["running"] = payload["host_running"]
+        if last_result:
+            payload["last_result"] = last_result
+        return payload
+
+    if last_result:
+        return {
+            "running": False,
+            "host_running": False,
+            "server_running": False,
+            "server_launcher_running": False,
+            "last_result": last_result,
+        }
+
+    return {
+        "running": False,
+        "host_running": False,
+        "server_running": False,
+        "server_launcher_running": False,
+        "last_result": {
+            "status": "stopped",
+            "message": "Local wallpaper host is not running.",
+        },
+    }
+
+
+def read_wallpaper_status_payload():
+    return normalize_wallpaper_status_payload(
+        read_json_file(DESKTOP_HOST_STATE_FILE),
+        read_json_file(DESKTOP_HOST_RESULT_FILE),
+    )
+
+
 def make_completed_process(args, returncode: int, stdout_payload=None, stderr: str = ""):
     stdout = ""
     if stdout_payload is not None:
@@ -362,10 +443,84 @@ def get_browser_preview_python() -> Path:
 
 def get_browser_preview_command(command: str) -> list[str]:
     browser_preview_exe = get_browser_preview_executable()
+    python_path = get_browser_preview_python()
+    if python_path.exists() and BROWSER_PREVIEW_SCRIPT.exists():
+        return [str(python_path), str(BROWSER_PREVIEW_SCRIPT), command]
     if browser_preview_exe is not None:
         return [str(browser_preview_exe), command]
-    python_path = get_browser_preview_python()
     return [str(python_path), str(BROWSER_PREVIEW_SCRIPT), command]
+
+
+def load_browser_preview_module():
+    global _BROWSER_PREVIEW_MODULE
+
+    if _BROWSER_PREVIEW_MODULE is not None:
+        return _BROWSER_PREVIEW_MODULE
+
+    if BROWSER_PREVIEW_SCRIPT.exists():
+        try:
+            spec = importlib.util.spec_from_file_location("livelysam_browser_preview_host", BROWSER_PREVIEW_SCRIPT)
+            if spec is None or spec.loader is None:
+                raise RuntimeError(f"브라우저 미리보기 스크립트를 불러오지 못했습니다: {BROWSER_PREVIEW_SCRIPT}")
+
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            _BROWSER_PREVIEW_MODULE = module
+            return module
+        except Exception:
+            if _browser_preview_host_static is None:
+                raise
+
+    if _browser_preview_host_static is not None:
+        _BROWSER_PREVIEW_MODULE = _browser_preview_host_static
+        return _BROWSER_PREVIEW_MODULE
+
+    raise RuntimeError(f"브라우저 미리보기 스크립트를 불러오지 못했습니다: {BROWSER_PREVIEW_SCRIPT}")
+
+
+def run_browser_preview_module(command: str):
+    module = load_browser_preview_module()
+    command_map = {
+        "start": module.start_preview,
+        "stop": module.stop_preview,
+        "status": module.show_status,
+    }
+    handler = command_map[command]
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+    returncode = 0
+
+    with contextlib.redirect_stdout(stdout_buffer), contextlib.redirect_stderr(stderr_buffer):
+        try:
+            returncode = int(handler())
+        except SystemExit as exc:  # pragma: no cover - defensive
+            raw_code = exc.code
+            returncode = int(raw_code) if isinstance(raw_code, int) else 1
+        except Exception as exc:  # noqa: BLE001
+            returncode = 1
+            print(str(exc), file=sys.stderr)
+
+    payload = parse_json_output(stdout_buffer.getvalue()) or read_browser_status_payload()
+    return make_completed_process(
+        [str(BROWSER_PREVIEW_SCRIPT), command],
+        returncode,
+        payload,
+        stderr_buffer.getvalue().strip(),
+    )
+
+
+def run_browser_preview(command: str, *, timeout: int):
+    if getattr(sys, "frozen", False):
+        result = run_process(get_browser_preview_command(command), timeout=timeout)
+        payload = parse_json_output(result.stdout) or read_browser_status_payload()
+        return make_completed_process(result.args, result.returncode, payload, result.stderr or "")
+
+    if _browser_preview_host_static is not None or BROWSER_PREVIEW_SCRIPT.exists():
+        return run_browser_preview_module(command)
+
+    result = run_process(get_browser_preview_command(command), timeout=timeout)
+    payload = parse_json_output(result.stdout) or read_browser_status_payload()
+    return make_completed_process(result.args, result.returncode, payload, result.stderr or "")
 
 
 # ── settings ────────────────────────────────────────────────────────
@@ -486,9 +641,13 @@ def ensure_storage_bridge():
 
 
 def get_storage_bridge_health():
+    endpoint = read_json_file(BRIDGE_ENDPOINT_FILE) or {}
+    bridge_port = int(endpoint.get("port") or 0)
+    if bridge_port <= 0:
+        bridge_port = 58671
     try:
         with urllib.request.urlopen(
-            "http://127.0.0.1:58671/__livelysam__/health", timeout=1.5
+            f"http://127.0.0.1:{bridge_port}/__livelysam__/health", timeout=1.5
         ) as response:
             return json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
@@ -497,8 +656,7 @@ def get_storage_bridge_health():
 
 # ── wallpaper ───────────────────────────────────────────────────────
 def get_wallpaper_status() -> dict:
-    result = run_powershell_script(WALLPAPER_STATUS_SCRIPT, "status", "-Root", str(ROOT_PATH), timeout=20)
-    return parse_json_output(result.stdout) or {"running": False}
+    return read_wallpaper_status_payload()
 
 
 def start_wallpaper(
@@ -536,12 +694,8 @@ def get_browser_status() -> dict:
 
 
 def start_browser_preview():
-    result = run_process(get_browser_preview_command("start"), timeout=40)
-    payload = parse_json_output(result.stdout) or read_browser_status_payload()
-    return make_completed_process(result.args, result.returncode, payload, result.stderr or "")
+    return run_browser_preview("start", timeout=40)
 
 
 def stop_browser_preview():
-    result = run_process(get_browser_preview_command("stop"), timeout=30)
-    payload = parse_json_output(result.stdout) or read_browser_status_payload()
-    return make_completed_process(result.args, result.returncode, payload, result.stderr or "")
+    return run_browser_preview("stop", timeout=30)

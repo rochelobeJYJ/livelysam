@@ -3,15 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Dino Jump 1</title>
+    <title>Dino Run</title>
+    <meta name="livelysam:minigame:id" content="dino-run-1">
+    <meta name="livelysam:minigame:title" content="Dino Run">
+    <meta name="livelysam:minigame:icon" content="🦖">
+    <meta name="livelysam:minigame:status" content="ready">
+    <meta name="livelysam:minigame:series-id" content="dino-run">
+    <meta name="livelysam:minigame:series-title" content="Dino Run">
+    <meta name="livelysam:minigame:series-description" content="기본, 확장, 하드 모드를 순서대로 즐길 수 있습니다.">
+    <meta name="livelysam:minigame:series-icon" content="🦖">
+    <meta name="livelysam:minigame:description" content="기본 규칙으로 달리는 클래식 Dino Run입니다.">
+    <meta name="livelysam:minigame:score-label" content="생존 점수">
+    <meta name="livelysam:minigame:leaderboard-mode" content="personal-best">
+    <meta name="livelysam:minigame:tags" content="firebase,hall-of-fame">
+    <meta name="livelysam:minigame:sort-order" content="10">
     <style>
-        /* --- 1. 글로벌 스타일 --- */
         html {
             font-size: clamp(12px, calc(10px + 0.5vw), 16px);
         }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-                Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+                Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
             background: linear-gradient(-45deg, #e6f7ff, #fff0f0, #f0f8ff, #f0fff0);
             background-size: 400% 400%;
             animation: gradientBG 20s ease infinite;
@@ -20,25 +33,24 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            flex-direction: column;
             margin: 0;
-            touch-action: none; 
+            padding: 24px;
+            box-sizing: border-box;
+            touch-action: none;
             transition: background 0.5s ease;
-            overflow: hidden; 
+            overflow: hidden;
         }
+
+        body * {
+            box-sizing: border-box;
+        }
+
         @keyframes gradientBG {
             0% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
             100% { background-position: 0% 50%; }
         }
-        body.night-mode {
-            background: #222;
-            color: #ccc;
-        }
-        body.night-mode h1,
-        body.night-mode h2 {
-            color: #eee;
-        }
+
         @keyframes dazzlingBG {
             0% { background-position: 0% 50%; filter: hue-rotate(0deg) saturate(1.5); }
             25% { background-position: 50% 50%; filter: hue-rotate(90deg) saturate(2); }
@@ -46,107 +58,407 @@
             75% { background-position: 50% 50%; filter: hue-rotate(270deg) saturate(2); }
             100% { background-position: 0% 50%; filter: hue-rotate(360deg) saturate(1.5); }
         }
+
+        body.night-mode {
+            background: #222;
+            color: #ccc;
+        }
+
         body.dazzling {
-            animation: dazzlingBG 5s ease infinite; 
+            animation: dazzlingBG 5s ease infinite;
             background: linear-gradient(-45deg, #e6f7ff, #fff0f0, #f0f8ff, #f0fff0);
             background-size: 400% 400%;
         }
-        
-        h1 { font-size: 2.5rem; color: #333; margin-bottom: 10px; transition: color 0.5s ease; }
-        h2 { font-size: 3rem; color: #333; margin: 0 0 10px 0; }
-        h3 { font-size: 1.5rem; color: #333; margin: 10px 0; border-bottom: 2px solid #ccc; padding-bottom: 5px;}
-        body.night-mode h3 { color: #eee; border-color: #555;}
 
-        /* --- 버튼 공통 스타일 --- */
-        .restart-btn, .back-btn {
-            font-size: 1.2rem;
-            font-weight: bold;
+        body.preview-mode #game-1-wrapper > h1,
+        body.preview-mode #game-1-wrapper .info-panel,
+        body.preview-mode #start-overlay-g1,
+        body.preview-mode #game-over-overlay-g1 {
+            display: none !important;
+        }
+
+        body.preview-mode #game-container-g1 {
+            width: min(600px, 100vw);
+            max-width: 100vw;
+            max-height: none;
+        }
+
+        body.preview-mode {
+            justify-content: flex-start;
+            align-items: center;
+            padding: 0;
+        }
+
+        body.preview-mode #game-1-wrapper {
+            width: 100%;
+            transform: translateY(-32px);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            color: #333;
+            margin: 0 0 10px 0;
+            transition: color 0.5s ease;
+        }
+
+        body.night-mode h1 {
+            color: #eee;
+        }
+
+        .restart-btn,
+        .back-btn {
+            font-size: 1.05rem;
+            font-weight: 700;
             color: #fff;
             border: none;
             padding: 14px 0;
-            width: 100%; 
-            border-radius: 12px;
+            width: 100%;
+            border-radius: 14px;
             cursor: pointer;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
-            margin-bottom: 15px; 
             line-height: 1.3;
         }
-        .restart-btn:hover, .back-btn:hover {
+
+        .restart-btn:hover,
+        .back-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
         }
-        
+
         .restart-btn {
             background: linear-gradient(145deg, #007aff, #0056b3);
-            margin-top: 15px;
-            margin-bottom: 5px; 
-            width: 80%;
-            max-width: 280px;
         }
-        
+
         .back-btn {
-            background: #888;
-            margin-top: 5px;
-            margin-bottom: 0;
-            width: 80%;
-            max-width: 280px;
+            background: #94a3b8;
         }
-        .back-btn:hover { background: #666; }
 
+        .back-btn:hover {
+            background: #64748b;
+        }
 
-        /* --- 2. Game 1 (DinoGame_1) 스타일 --- */
-        #game-1-wrapper { 
+        #game-1-wrapper {
             display: flex;
-            flex-direction: column; 
-            align-items: center; 
+            flex-direction: column;
+            align-items: center;
         }
-        #game-1-wrapper .info-panel {
-            display: flex; justify-content: space-between;
-            width: 600px; max-width: 90vw; margin-bottom: 5px;
-            font-size: 1.5rem; font-weight: bold;
-        }
-        #score-display-g1 { color: #333; transition: color 0.5s ease; }
-        #highscore-display-g1 { color: #888; text-align: right; transition: color 0.5s ease; }
-        body.night-mode #score-display-g1 { color: #eee; }
-        body.night-mode #highscore-display-g1 { color: #aaa; }
 
-        #game-container-g1 {
-            position: relative; width: 600px; height: 200px;
-            max-width: 90vw; max-height: 40vh;
+        body.is-ready-screen #game-1-wrapper > h1 {
+            width: 600px;
+            max-width: 90vw;
+            margin: 0 0 10px 0;
+            font-size: 1.15rem;
+            letter-spacing: 0.24em;
+            color: #475569;
         }
-        #game-canvas-g1 {
-            background-color: transparent;
-            border-bottom: 3px solid #555; 
-            width: 100%; height: 100%;
-            transition: border-color 0.5s ease;
+
+        #game-1-wrapper > h1 {
+            width: 600px;
+            max-width: 90vw;
+            margin: 0 0 10px 0;
+            font-size: 1.15rem;
+            letter-spacing: 0.24em;
+            color: #475569;
         }
-        .night-mode #game-canvas-g1 { border-color: #aaa; }
-        
-        #game-1-wrapper .overlay {
-            position: absolute; top: 0; left: 0;
-            width: 100%; height: 100%;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            z-index: 100; 
-            font-weight: bold; color: #333;
-            text-align: center; font-size: 2rem;
+
+        #game-1-wrapper .info-panel {
+            display: flex;
+            justify-content: space-between;
+            width: 600px;
+            max-width: 90vw;
+            margin-bottom: 6px;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        body.is-ready-screen #game-1-wrapper .info-panel {
+            justify-content: flex-start;
+            gap: 10px;
+            margin-bottom: 12px;
+            font-size: 1rem;
+        }
+
+        body.is-ready-screen #game-1-wrapper .info-panel > div {
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.78);
+            box-shadow: 0 12px 28px rgba(148, 163, 184, 0.22);
+        }
+
+        #game-1-wrapper .info-panel {
+            justify-content: flex-start;
+            gap: 10px;
+            margin-bottom: 12px;
+            font-size: 1rem;
+        }
+
+        #game-1-wrapper .info-panel > div {
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.78);
+            box-shadow: 0 12px 28px rgba(148, 163, 184, 0.22);
+        }
+
+        body.night-mode #game-1-wrapper .info-panel > div {
+            background: rgba(15, 23, 42, 0.52);
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.32);
+        }
+
+        #score-display-g1 {
+            color: #333;
             transition: color 0.5s ease;
         }
-        body.night-mode #game-1-wrapper .overlay { color: #eee; }
-        body.night-mode #game-1-wrapper .overlay p { color: #aaa; }
-        #start-overlay-g1 { display: none; }
-        #game-over-overlay-g1 { display: none; }
-        #global-highscore-display-g1 {
-            font-size: 1.2rem; color: #007aff;
-            margin-top: 10px; font-weight: bold;
-        }
-        body.night-mode #global-highscore-display-g1 { color: #33aaff; }
 
+        #highscore-display-g1 {
+            color: #888;
+            text-align: right;
+            transition: color 0.5s ease;
+        }
+
+        body.is-ready-screen #highscore-display-g1 {
+            text-align: left;
+        }
+
+        body.night-mode #score-display-g1 {
+            color: #eee;
+        }
+
+        body.night-mode #highscore-display-g1 {
+            color: #aaa;
+        }
+
+        #game-container-g1 {
+            position: relative;
+            width: 600px;
+            height: 252px;
+            max-width: 90vw;
+            max-height: 52vh;
+        }
+
+        body.is-ready-screen #game-container-g1 {
+            border-radius: 28px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.14);
+            background:
+                radial-gradient(120px 46px at 16% 100%, rgba(190, 141, 84, 0.9) 98%, transparent 100%),
+                radial-gradient(180px 58px at 54% 100%, rgba(202, 155, 95, 0.92) 98%, transparent 100%),
+                radial-gradient(140px 52px at 84% 100%, rgba(182, 132, 76, 0.88) 98%, transparent 100%),
+                radial-gradient(circle at 78% 18%, rgba(255, 255, 255, 0.88) 0 22px, transparent 23px),
+                radial-gradient(circle at 16% 22%, rgba(255, 255, 255, 0.52) 0 16px, transparent 17px),
+                radial-gradient(circle at 22% 19%, rgba(255, 255, 255, 0.34) 0 12px, transparent 13px),
+                linear-gradient(180deg, #f9f2ec 0%, #ecd8d2 48%, #e8c99f 49%, #d5aa74 100%);
+        }
+
+        #game-container-g1 {
+            border-radius: 28px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.14);
+            background:
+                radial-gradient(120px 46px at 16% 100%, rgba(190, 141, 84, 0.9) 98%, transparent 100%),
+                radial-gradient(180px 58px at 54% 100%, rgba(202, 155, 95, 0.92) 98%, transparent 100%),
+                radial-gradient(140px 52px at 84% 100%, rgba(182, 132, 76, 0.88) 98%, transparent 100%),
+                radial-gradient(circle at 78% 18%, rgba(255, 255, 255, 0.88) 0 22px, transparent 23px),
+                radial-gradient(circle at 16% 22%, rgba(255, 255, 255, 0.52) 0 16px, transparent 17px),
+                radial-gradient(circle at 22% 19%, rgba(255, 255, 255, 0.34) 0 12px, transparent 13px),
+                linear-gradient(180deg, #f9f2ec 0%, #ecd8d2 48%, #e8c99f 49%, #d5aa74 100%);
+        }
+
+        body.night-mode #game-container-g1 {
+            border-color: rgba(148, 163, 184, 0.35);
+            box-shadow: 0 28px 72px rgba(2, 6, 23, 0.42);
+            background:
+                radial-gradient(circle at 78% 18%, rgba(248, 250, 252, 0.75) 0 18px, transparent 19px),
+                radial-gradient(circle at 16% 22%, rgba(226, 232, 240, 0.18) 0 14px, transparent 15px),
+                linear-gradient(180deg, #101829 0%, #22304a 48%, #4f413f 49%, #7a5b51 100%);
+        }
+
+        #game-canvas-g1 {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background-color: transparent;
+            border-bottom: 3px solid #555;
+            transition: border-color 0.5s ease;
+        }
+
+        #game-canvas-g1 {
+            border-bottom-color: rgba(107, 70, 42, 0.45);
+        }
+
+        body.is-ready-screen #game-canvas-g1 {
+            border-bottom-color: rgba(107, 70, 42, 0.45);
+        }
+
+        body.night-mode #game-canvas-g1 {
+            border-color: #aaa;
+        }
+
+        #game-1-wrapper .overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            color: #333;
+            text-align: center;
+            padding: 18px;
+            transition: color 0.5s ease;
+        }
+
+        #game-1-wrapper .ready-card {
+            width: min(370px, calc(100% - 40px));
+            padding: 18px 22px 20px;
+            border-radius: 28px;
+            background: rgba(255, 255, 255, 0.86);
+            box-shadow: 0 18px 38px rgba(148, 163, 184, 0.26);
+            backdrop-filter: blur(10px);
+        }
+
+        #game-1-wrapper .result-card {
+            width: min(350px, calc(100% - 32px));
+            padding: 16px 16px 14px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+            backdrop-filter: blur(14px);
+        }
+
+        #game-1-wrapper .ready-chip {
+            display: inline-flex;
+            margin-bottom: 10px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: rgba(37, 99, 235, 0.1);
+            color: #2563eb;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+        }
+
+        #game-1-wrapper .ready-card strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 1.15rem;
+            color: #1f2937;
+        }
+
+        #game-1-wrapper .result-card strong {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 1.16rem;
+            color: #0f172a;
+        }
+
+        #game-1-wrapper .ready-card p,
+        #game-1-wrapper .result-card p {
+            margin: 0;
+            font-size: 0.95rem;
+            line-height: 1.55;
+            color: #475569;
+        }
+
+        #game-1-wrapper .ready-controls {
+            display: inline-block;
+            margin-top: 12px;
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            color: #64748b;
+        }
+
+        #game-1-wrapper .result-score {
+            margin: 8px 0 10px;
+            padding: 8px 12px;
+            border-radius: 14px;
+            background: rgba(37, 99, 235, 0.08);
+            color: #1d4ed8;
+            font-size: 0.98rem;
+            font-weight: 700;
+        }
+
+        #game-1-wrapper .result-actions {
+            margin-top: 10px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            width: 100%;
+        }
+
+        #game-1-wrapper .result-actions .restart-btn,
+        #game-1-wrapper .result-actions .back-btn {
+            width: 100%;
+            margin: 0;
+            padding: 12px 0;
+            border-radius: 14px;
+            font-size: 0.98rem;
+        }
+
+        #game-1-wrapper .result-hint {
+            margin-top: 8px;
+            font-size: 0.76rem;
+            font-weight: 600;
+            color: #64748b;
+            letter-spacing: 0.03em;
+        }
+
+        body.night-mode #game-1-wrapper .overlay {
+            color: #eee;
+        }
+
+        body.night-mode #game-1-wrapper .overlay p {
+            color: #cbd5e1;
+        }
+
+        #start-overlay-g1,
+        #game-over-overlay-g1 {
+            display: none;
+        }
+
+        #global-highscore-display-g1 {
+            font-size: 0.86rem;
+            color: #475569;
+            margin-top: 0;
+            font-weight: 600;
+            line-height: 1.35;
+            letter-spacing: -0.02em;
+        }
+
+        body.night-mode #global-highscore-display-g1 {
+            color: #93c5fd;
+        }
+
+        @media (max-width: 680px) {
+            body {
+                padding: 16px;
+            }
+
+            #game-container-g1 {
+                height: 228px;
+            }
+
+            body.is-ready-screen #game-1-wrapper > h1 {
+                letter-spacing: 0.18em;
+                font-size: 1rem;
+            }
+
+            #game-1-wrapper .ready-card,
+            #game-1-wrapper .result-card {
+                width: calc(100% - 24px);
+                padding: 16px 18px;
+            }
+
+            #game-1-wrapper .result-actions {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
-
     <div id="game-1-wrapper">
         <h1>DINO RUN</h1>
         <div class="info-panel">
@@ -155,21 +467,31 @@
         </div>
         <div id="game-container-g1">
             <div id="start-overlay-g1" class="overlay">
-                <div>JUMP!</div>
-                <p>Spacebar를 눌러 시작(터치, 클릭 가능)</p>
+                <div class="ready-card">
+                    <span class="ready-chip">CLASSIC RUN</span>
+                    <strong>기본 점프 코스</strong>
+                    <p>첫 타이밍만 익히면 바로 달릴 수 있는 클래식 Dino Run입니다.</p>
+                    <span class="ready-controls">SPACE · CLICK · TOUCH</span>
+                </div>
             </div>
             <div id="game-over-overlay-g1" class="overlay">
-                <div>게임 오버</div>
-                <p id="global-highscore-display-g1"></p>
-                <button class="restart-btn">재시작 (Spacebar)</button>
-                <button class="back-btn">로비로 돌아가기</button> </div>
-            <canvas id="game-canvas-g1" width="600" height="200"></canvas>
+                <div class="result-card">
+                    <span class="ready-chip">RUN OVER</span>
+                    <strong>한 번 더 달려보세요</strong>
+                    <div id="final-score-display-g1" class="result-score">이번 점수: 0</div>
+                    <p id="global-highscore-display-g1"></p>
+                    <div class="result-actions">
+                        <button class="restart-btn" type="button">다시 시작 (Spacebar)</button>
+                        <button class="back-btn" type="button">목록으로 돌아가기</button>
+                    </div>
+                </div>
+            </div>
+            <canvas id="game-canvas-g1" width="600" height="252"></canvas>
         </div>
     </div>
 
-
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener("DOMContentLoaded", () => {
             function returnToMinigameHub() {
                 try {
                     if (window.parent && window.parent !== window && window.parent.LivelySam?.MinigamesHub?.closeRunner) {
@@ -177,148 +499,336 @@
                         return;
                     }
                 } catch {}
-                window.location.href = 'index.html';
+
+                window.location.href = "index.html";
             }
 
-	    // --- 0. Game 1 URL ---
-            const MINIGAME_ID = 'dino-run-1';
-            const IS_PREVIEW_MODE = new URLSearchParams(window.location.search).get('preview') === '1';
+            const MINIGAME_ID = "dino-run-1";
+            const IS_PREVIEW_MODE = new URLSearchParams(window.location.search).get("preview") === "1";
 
             function getLeaderboardBridge() {
                 if (IS_PREVIEW_MODE) {
                     return null;
                 }
+
                 try {
                     if (window.parent && window.parent !== window && window.parent.LivelySam?.Leaderboard) {
                         return window.parent.LivelySam.Leaderboard;
                     }
                 } catch {}
+
                 return window.LivelySam?.Leaderboard || null;
             }
-            
-            // --- 1. 글로벌 변수 및 공통 요소 ---
-            let game1Instance = null; 
-            const body = document.body;
-            const game1Wrapper = document.getElementById('game-1-wrapper');
 
-            // --- 3. Game 1 (DinoGame_1) 실행 함수 ---
-            function launchGame1(username) {
-                if (game1Instance) {
-                    // 이전 인스턴스 정리 (필요시)
-                    if (game1Instance.loop) cancelAnimationFrame(game1Instance.loop);
-                    document.removeEventListener('keydown', game1Instance.keyHandler);
-                    document.removeEventListener('mousedown', game1Instance.mouseHandler);
-                    document.removeEventListener('touchstart', game1Instance.touchHandler);
+            let game1Instance = null;
+            const body = document.body;
+            const game1Wrapper = document.getElementById("game-1-wrapper");
+
+            if (IS_PREVIEW_MODE) {
+                body.classList.add("preview-mode");
+            }
+
+            function cleanupGame1Instance() {
+                if (!game1Instance) {
+                    return;
                 }
-                game1Instance = {}; 
-                const gameUsername = username; 
-                
-                const canvas = game1Wrapper.querySelector('#game-canvas-g1');
-                const ctx = canvas.getContext('2d');
-                
-                const scoreDisplay = game1Wrapper.querySelector('#score-display-g1');
-                const highscoreDisplay = game1Wrapper.querySelector('#highscore-display-g1');
-                const startOverlay = game1Wrapper.querySelector('#start-overlay-g1');
-                const gameOverOverlay = game1Wrapper.querySelector('#game-over-overlay-g1');
-                const globalHighscoreDisplay = game1Wrapper.querySelector('#global-highscore-display-g1');
-                
-                // (수정) 뒤로가기 버튼 리스너 -> 허브로 복귀
-                const backBtnG1 = game1Wrapper.querySelector('.back-btn');
-                backBtnG1.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
+                if (game1Instance.loop) {
+                    cancelAnimationFrame(game1Instance.loop);
+                    game1Instance.loop = 0;
+                }
+                document.removeEventListener("keydown", game1Instance.keyHandler);
+                document.removeEventListener("mousedown", game1Instance.mouseHandler);
+                document.removeEventListener("touchstart", game1Instance.touchHandler);
+            }
+
+            function launchGame1(username) {
+                cleanupGame1Instance();
+
+                game1Instance = {};
+                const gameUsername = username;
+
+                const canvas = game1Wrapper.querySelector("#game-canvas-g1");
+                const ctx = canvas.getContext("2d");
+                const scoreDisplay = game1Wrapper.querySelector("#score-display-g1");
+                const highscoreDisplay = game1Wrapper.querySelector("#highscore-display-g1");
+                const startOverlay = game1Wrapper.querySelector("#start-overlay-g1");
+                const gameOverOverlay = game1Wrapper.querySelector("#game-over-overlay-g1");
+                startOverlay.innerHTML = `
+                    <div class="ready-card">
+                        <span class="ready-chip">CLASSIC RUN</span>
+                        <strong>\uAE30\uBCF8 \uC810\uD504 \uCF54\uC2A4</strong>
+                        <p>\uCCAB \uD0C0\uC774\uBC0D\uB9CC \uC775\uD788\uBA74 \uBC14\uB85C \uB2EC\uB9B4 \uC218 \uC788\uB294 \uD074\uB798\uC2DD Dino Run\uC785\uB2C8\uB2E4.</p>
+                        <span class="ready-controls">SPACE / CLICK / TOUCH</span>
+                    </div>
+                `;
+                gameOverOverlay.innerHTML = `
+                    <div class="result-card">
+                        <span class="ready-chip">RUN OVER</span>
+                        <strong>\uD55C \uBC88 \uB354 \uB2EC\uB824\uBCF4\uC138\uC694</strong>
+                        <div id="final-score-display-g1" class="result-score">\uC774\uBC88 \uC810\uC218: 0</div>
+                        <p id="global-highscore-display-g1"></p>
+                        <div class="result-actions">
+                            <button class="restart-btn" type="button">\uB2E4\uC2DC \uC2DC\uC791</button>
+                            <button class="back-btn" type="button">\uBAA9\uB85D \uB3CC\uC544\uAC00\uAE30</button>
+                        </div>
+                        <div class="result-hint">SPACEBAR \uB85C \uBC14\uB85C \uC7AC\uC2DC\uC791</div>
+                    </div>
+                `;
+                const finalScoreDisplay = game1Wrapper.querySelector("#final-score-display-g1");
+                const globalHighscoreDisplay = game1Wrapper.querySelector("#global-highscore-display-g1");
+                const backBtnG1 = game1Wrapper.querySelector(".back-btn");
+
+                backBtnG1.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
                     returnToMinigameHub();
                 });
 
-                const dinoIcon = '🦖';
-                const cactusIcons = ['🌵', '🌵🌵'];
+                const dinoIcon = "🦖";
+                const cactusIcons = ["🌵", "🌵🌵"];
                 const iconSize = 30;
-                const groundY = canvas.height - 2; 
-                const playerX = 50;
+                const groundY = canvas.height - 2;
+                const playerX = IS_PREVIEW_MODE ? 92 : 50;
                 const jumpForce = 12;
                 const gravity = 0.7;
                 const initialSpeed = 5;
                 const speedIncrease = 0.001;
                 const nightModeThreshold = 200;
+                const ambientClouds = [
+                    { baseX: 108, y: 34, scale: 1, alpha: 0.58, depth: 0.1 },
+                    { baseX: 328, y: 26, scale: 0.76, alpha: 0.44, depth: 0.07 },
+                    { baseX: 526, y: 42, scale: 0.92, alpha: 0.5, depth: 0.13 }
+                ];
+                const backgroundCacti = [
+                    { baseX: 124, scale: 0.72, depth: 0.24 },
+                    { baseX: 448, scale: 0.88, depth: 0.35 },
+                    { baseX: 564, scale: 0.74, depth: 0.42 }
+                ];
 
                 let player;
                 let obstacles = [];
-                let stars = []; 
+                let stars = [];
                 let score = 0;
-                let localHighScore = 0; 
-                let globalHighScoreData = { score: 0, name: 'N/A' }; 
+                let localHighScore = 0;
+                let globalHighScoreData = { score: 0, name: "N/A" };
                 let gameSpeed = initialSpeed;
-                let gameState = 'lobby'; 
+                let gameState = "lobby";
                 let obstacleSpawnTimer = 0;
-                let gameLoop; 
                 let isNightMode = false;
-                let isSubmitting = false; 
+                let isSubmitting = false;
+                let sceneTick = 0;
 
-                // --- 클래스 정의 (Player, Obstacle, Star) ---
                 class Player {
                     constructor(x, y) {
-                        this.x = x; this.y = y; 
-                        this.width = iconSize; this.height = iconSize;
-                        this.dy = 0; this.isJumping = false;
+                        this.x = x;
+                        this.y = y;
+                        this.width = iconSize;
+                        this.height = iconSize;
+                        this.dy = 0;
+                        this.isJumping = false;
                     }
+
                     draw() {
-                        ctx.save(); 
-                        ctx.translate(this.x + (this.width / 2), this.y); 
+                        ctx.save();
+                        ctx.translate(this.x + (this.width / 2), this.y);
                         ctx.scale(-1, 1);
-                        ctx.fillStyle = isNightMode ? '#eee' : '#555';
                         ctx.font = `${iconSize}px Arial`;
-                        ctx.textBaseline = 'bottom'; ctx.textAlign = 'center'; 
-                        ctx.fillText(dinoIcon, 0, 5); 
-                        ctx.restore(); 
+                        ctx.textBaseline = "bottom";
+                        ctx.textAlign = "center";
+                        ctx.shadowColor = isNightMode ? "rgba(15, 23, 42, 0.45)" : "rgba(148, 101, 56, 0.2)";
+                        ctx.shadowBlur = 8;
+                        ctx.fillText(dinoIcon, 0, 5);
+                        ctx.restore();
                     }
+
                     update() {
-                        this.dy += gravity; this.y += this.dy;
-                        if (this.y > groundY) { this.y = groundY; this.dy = 0; this.isJumping = false; }
+                        this.dy += gravity;
+                        this.y += this.dy;
+
+                        if (this.y > groundY) {
+                            this.y = groundY;
+                            this.dy = 0;
+                            this.isJumping = false;
+                        }
                     }
-                    jump() { if (!this.isJumping) { this.dy = -jumpForce; this.isJumping = true; } }
+
+                    jump() {
+                        if (!this.isJumping) {
+                            this.dy = -jumpForce;
+                            this.isJumping = true;
+                        }
+                    }
                 }
+
                 class Obstacle {
                     constructor(x, y, icon) {
-                        this.x = x; this.y = y; this.icon = icon;
-                        this.width = iconSize * (icon.length / 2); this.height = iconSize;
+                        this.x = x;
+                        this.y = y;
+                        this.icon = icon;
+                        this.width = iconSize * (icon.length / 2);
+                        this.height = iconSize;
                     }
+
                     draw() {
-                        ctx.fillStyle = isNightMode ? '#eee' : '#555';
                         ctx.font = `${iconSize}px Arial`;
-                        ctx.textBaseline = 'bottom'; ctx.textAlign = 'start';
-                        ctx.fillText(this.icon, this.x, this.y+4);
+                        ctx.textBaseline = "bottom";
+                        ctx.textAlign = "start";
+                        ctx.shadowColor = isNightMode ? "rgba(15, 23, 42, 0.35)" : "rgba(148, 101, 56, 0.16)";
+                        ctx.shadowBlur = 6;
+                        ctx.fillText(this.icon, this.x, this.y + 4);
+                        ctx.shadowBlur = 0;
                     }
-                    update() { this.x -= gameSpeed; }
+
+                    update() {
+                        this.x -= gameSpeed;
+                    }
                 }
+
                 class Star {
                     constructor() {
                         this.x = Math.random() * canvas.width;
                         this.y = Math.random() * (canvas.height - 50);
                         this.radius = Math.random() * 1.5;
                         this.opacity = Math.random();
-                        this.fadeDirection = (Math.random() > 0.5) ? 'in' : 'out';
+                        this.fadeDirection = Math.random() > 0.5 ? "in" : "out";
                     }
+
                     draw() {
                         ctx.beginPath();
                         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
                         ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
                         ctx.fill();
                     }
-                    update() { 
-                        this.x -= (gameSpeed * 0.2);
-                        if (this.x < 0) this.x = canvas.width;
-                        if (this.fadeDirection === 'in') {
-                            this.opacity += 0.005; if (this.opacity > 1) this.fadeDirection = 'out';
+
+                    update() {
+                        this.x -= gameSpeed * 0.2;
+                        if (this.x < 0) {
+                            this.x = canvas.width;
+                        }
+
+                        if (this.fadeDirection === "in") {
+                            this.opacity += 0.005;
+                            if (this.opacity > 1) {
+                                this.fadeDirection = "out";
+                            }
                         } else {
-                            this.opacity -= 0.005; if (this.opacity < 0) this.fadeDirection = 'in';
+                            this.opacity -= 0.005;
+                            if (this.opacity < 0) {
+                                this.fadeDirection = "in";
+                            }
                         }
                     }
                 }
-                // --- 핵심 함수 ---
+
+                function drawCloud(x, y, scale, alpha = 0.55) {
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = isNightMode ? "rgba(226, 232, 240, 0.14)" : "rgba(255, 255, 255, 0.5)";
+                    ctx.beginPath();
+                    ctx.arc(x, y, 10 * scale, Math.PI * 0.5, Math.PI * 1.5);
+                    ctx.arc(x + 12 * scale, y - 6 * scale, 13 * scale, Math.PI, Math.PI * 1.85);
+                    ctx.arc(x + 26 * scale, y, 11 * scale, Math.PI * 1.5, Math.PI * 0.5);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                function drawMiniCactus(x, y, scale, color, alpha = 1) {
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = color;
+                    ctx.fillRect(-4 * scale, -24 * scale, 8 * scale, 24 * scale);
+                    ctx.fillRect(-11 * scale, -17 * scale, 7 * scale, 6 * scale);
+                    ctx.fillRect(4 * scale, -20 * scale, 7 * scale, 6 * scale);
+                    ctx.fillRect(-11 * scale, -24 * scale, 4 * scale, 14 * scale);
+                    ctx.fillRect(7 * scale, -27 * scale, 4 * scale, 13 * scale);
+                    ctx.restore();
+                }
+
+                function drawDuneBand(baseY, amplitude, color, speed, alpha = 1) {
+                    const offset = sceneTick * speed;
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.moveTo(0, canvas.height);
+                    for (let x = 0; x <= canvas.width + 24; x += 24) {
+                        const y = baseY + Math.sin((x + offset) / 85) * amplitude;
+                        ctx.lineTo(x, y);
+                    }
+                    ctx.lineTo(canvas.width, canvas.height);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                function drawBackdrop() {
+                    const skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                    if (isNightMode) {
+                        skyGradient.addColorStop(0, "#182131");
+                        skyGradient.addColorStop(0.55, "#2a3547");
+                        skyGradient.addColorStop(1, "#5b514c");
+                    } else {
+                        skyGradient.addColorStop(0, "#fbf8f4");
+                        skyGradient.addColorStop(0.5, "#f3ece5");
+                        skyGradient.addColorStop(0.51, "#ead6b7");
+                        skyGradient.addColorStop(1, "#d8b792");
+                    }
+
+                    ctx.fillStyle = skyGradient;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    if (isNightMode) {
+                        ctx.save();
+                        ctx.fillStyle = "rgba(248, 250, 252, 0.78)";
+                        ctx.beginPath();
+                        ctx.arc(canvas.width - 82, 34, 15, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.globalCompositeOperation = "destination-out";
+                        ctx.beginPath();
+                        ctx.arc(canvas.width - 75, 30, 14, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    } else {
+                        ctx.save();
+                        ctx.fillStyle = "rgba(255, 255, 255, 0.62)";
+                        ctx.beginPath();
+                        ctx.arc(canvas.width - 88, 40, 18, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+
+                        ambientClouds.forEach((cloud) => {
+                            const span = canvas.width + 100;
+                            const x = ((cloud.baseX - (sceneTick * cloud.depth)) % span + span) % span - 50;
+                            drawCloud(x, cloud.y, cloud.scale, cloud.alpha);
+                        });
+                    }
+
+                    drawDuneBand(canvas.height - 70, 8, isNightMode ? "#7f736d" : "#dbcdbd", 0.15, isNightMode ? 0.36 : 0.36);
+                    drawDuneBand(canvas.height - 52, 12, isNightMode ? "#6a5c58" : "#c49c76", 0.28, isNightMode ? 0.7 : 0.64);
+
+                    const cactusColor = isNightMode ? "#7b8490" : "#6f7f63";
+                    backgroundCacti.forEach((deco) => {
+                        const span = canvas.width + 90;
+                        const x = ((deco.baseX - (sceneTick * deco.depth)) % span + span) % span - 45;
+                        drawMiniCactus(x, groundY + 2, deco.scale, cactusColor, isNightMode ? 0.2 : 0.2);
+                    });
+
+                    ctx.save();
+                    ctx.strokeStyle = isNightMode ? "rgba(226, 232, 240, 0.58)" : "rgba(114, 88, 63, 0.34)";
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(0, groundY + 0.5);
+                    ctx.lineTo(canvas.width, groundY + 0.5);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
                 async function fetchGlobalHighScore() {
                     const leaderboard = getLeaderboardBridge();
                     if (!leaderboard?.getTopEntry) {
-                        return { score: 0, name: 'N/A' };
+                        return { score: 0, name: "N/A" };
                     }
 
                     try {
@@ -326,123 +836,229 @@
                         if (topEntry) {
                             return {
                                 score: topEntry.score || 0,
-                                name: topEntry.nickname || 'Unknown'
+                                name: topEntry.nickname || "Unknown"
                             };
                         }
                     } catch (error) {
-                        console.error("G1: 최고 점수 불러오기 실패:", error);
+                        console.error("Dino Run 1 최고 점수 조회 실패:", error);
                     }
 
-                    return { score: 0, name: 'N/A' }; 
+                    return { score: 0, name: "N/A" };
                 }
+
                 async function updateGlobalHighScore() {
                     globalHighScoreData = await fetchGlobalHighScore();
                 }
+
+                function seedPreviewScene() {
+                    obstacles = [
+                        new Obstacle(canvas.width - 168, groundY, cactusIcons[0])
+                    ];
+                    obstacleSpawnTimer = 84;
+                }
+
+                function setReadyPreviewScene() {
+                    obstacles = [
+                        new Obstacle(canvas.width - 220, groundY, cactusIcons[0]),
+                        new Obstacle(canvas.width - 126, groundY, cactusIcons[1])
+                    ];
+                }
+
                 function initGame() {
-      localHighScore = localStorage.getItem('minigameLocalHighScore:dino-run-1')
-        || localStorage.getItem('dinoLocalHighScore_g1')
-        || 0;
+                    localHighScore =
+                        localStorage.getItem("minigameLocalHighScore:dino-run-1") ||
+                        localStorage.getItem("dinoLocalHighScore_g1") ||
+                        0;
+
                     highscoreDisplay.textContent = `최고: ${Math.floor(localHighScore)}`;
                     player = new Player(playerX, groundY);
-                    obstacles = []; stars = [];
-                    score = 0; gameSpeed = initialSpeed;
-                    gameState = 'ready'; 
+                    obstacles = [];
+                    stars = [];
+                    score = 0;
+                    gameSpeed = initialSpeed;
+                    gameState = IS_PREVIEW_MODE ? "preview" : "ready";
                     obstacleSpawnTimer = 100;
-                    isNightMode = false; isSubmitting = false; 
-                    for (let i=0; i < 50; i++) stars.push(new Star());
+                    isNightMode = false;
+                    isSubmitting = false;
+                    sceneTick = 0;
+
+                    for (let i = 0; i < 50; i += 1) {
+                        stars.push(new Star());
+                    }
+
                     applyNightMode(false);
-                    startOverlay.style.display = 'flex'; 
-                    gameOverOverlay.style.display = 'none';
-                    if (!game1Instance.loop) { game1Instance.loop = requestAnimationFrame(animate); }
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    if (IS_PREVIEW_MODE) {
+                        seedPreviewScene();
+                        body.classList.remove("is-ready-screen");
+                        startOverlay.style.display = "none";
+                    } else {
+                        setReadyPreviewScene();
+                        body.classList.add("is-ready-screen");
+                        startOverlay.style.display = "flex";
+                    }
+
+                    gameOverOverlay.style.display = "none";
+
+                    if (!game1Instance.loop) {
+                        game1Instance.loop = requestAnimationFrame(animate);
+                    }
+
+                    drawBackdrop();
+                    obstacles.forEach((obstacle) => obstacle.draw());
                     player.draw();
-                    scoreDisplay.textContent = `점수: 0`;
+                    scoreDisplay.textContent = "점수: 0";
                 }
+
                 function startGame() {
-                    if ((gameState === 'ready' || gameState === 'gameOver') && !isSubmitting) {
-                        if (gameState === 'gameOver') initGame(); 
-                        gameState = 'playing'; 
-                        startOverlay.style.display = 'none';
-                        gameOverOverlay.style.display = 'none';
+                    if ((gameState === "ready" || gameState === "gameOver") && !isSubmitting) {
+                        if (gameState === "gameOver") {
+                            initGame();
+                        }
+
+                        body.classList.remove("is-ready-screen");
+                        obstacles = [];
+                        gameState = "playing";
+                        startOverlay.style.display = "none";
+                        gameOverOverlay.style.display = "none";
                     }
                 }
+
                 function spawnObstacle() {
                     const icon = cactusIcons[Math.floor(Math.random() * cactusIcons.length)];
                     obstacles.push(new Obstacle(canvas.width + 50, groundY, icon));
                     obstacleSpawnTimer = (Math.random() * 100 + 50) * (initialSpeed / gameSpeed);
                 }
+
                 function applyNightMode(enable) {
                     isNightMode = enable;
-                    if (enable) body.classList.add('night-mode');
-                    else body.classList.remove('night-mode');
+                    if (enable) {
+                        body.classList.add("night-mode");
+                    } else {
+                        body.classList.remove("night-mode");
+                    }
                 }
+
+                function updateObstacleField() {
+                    obstacleSpawnTimer -= 1;
+                    if (obstacleSpawnTimer <= 0) {
+                        spawnObstacle();
+                    }
+
+                    for (let i = obstacles.length - 1; i >= 0; i -= 1) {
+                        const obstacle = obstacles[i];
+                        obstacle.update();
+                        obstacle.draw();
+                        if (obstacle.x + obstacle.width < 0) {
+                            obstacles.splice(i, 1);
+                        }
+                    }
+                }
+
+                function runPreviewAutoplay() {
+                    const nextObstacle = obstacles.find((obstacle) => obstacle.x + obstacle.width >= player.x + 8);
+                    if (!player.isJumping && nextObstacle) {
+                        const distance = nextObstacle.x - player.x;
+                        if (distance <= 90 && distance >= 42) {
+                            player.jump();
+                        }
+                    }
+                }
+
                 function animate() {
-                    if (!game1Instance) return; 
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    if (isNightMode) { stars.forEach(star => { star.update(); star.draw(); }); }
-                    if (gameState === 'playing') {
-                        score += 0.1; gameSpeed += speedIncrease;
+                    if (!game1Instance) {
+                        return;
+                    }
+
+                    sceneTick += (gameState === "playing" || gameState === "preview") ? gameSpeed * 0.45 : 0.35;
+                    drawBackdrop();
+
+                    if (isNightMode) {
+                        stars.forEach((star) => {
+                            star.update();
+                            star.draw();
+                        });
+                    }
+
+                    if (gameState === "playing") {
+                        score += 0.1;
+                        gameSpeed += speedIncrease;
                         scoreDisplay.textContent = `점수: ${Math.floor(score)}`;
+
                         const scoreBlock = Math.floor(score / nightModeThreshold);
-                        const shouldBeNight = (scoreBlock % 2 === 1); 
-                        if (shouldBeNight && !isNightMode) applyNightMode(true);
-                        else if (!shouldBeNight && isNightMode) applyNightMode(false);
-                        obstacleSpawnTimer--;
-                        if (obstacleSpawnTimer <= 0) spawnObstacle();
-                        for (let i = obstacles.length - 1; i >= 0; i--) {
-                            let obs = obstacles[i]; obs.update(); obs.draw();
-                            if (obs.x + obs.width < 0) obstacles.splice(i, 1);
+                        const shouldBeNight = scoreBlock % 2 === 1;
+                        if (shouldBeNight && !isNightMode) {
+                            applyNightMode(true);
+                        } else if (!shouldBeNight && isNightMode) {
+                            applyNightMode(false);
                         }
-                        player.update(); player.draw();
-                        checkCollisions();
-                    } else { 
+
+                        updateObstacleField();
+                        player.update();
                         player.draw();
-                        obstacles.forEach(obs => obs.draw());
+                        checkCollisions();
+                    } else if (gameState === "preview") {
+                        runPreviewAutoplay();
+                        updateObstacleField();
+                        player.update();
+                        player.draw();
+                    } else {
+                        player.draw();
+                        obstacles.forEach((obstacle) => obstacle.draw());
                     }
-                    game1Instance.loop = requestAnimationFrame(animate); 
+
+                    game1Instance.loop = requestAnimationFrame(animate);
                 }
+
                 function checkCollisions() {
-                    for (let obs of obstacles) {
-                        const padding = 5; 
-                        let playerTop = player.y - player.height;
-                        let playerBottom = player.y;
-                        let obsTop = obs.y - obs.height;
-                        let obsBottom = obs.y;
-                        if (player.x < obs.x + obs.width - padding &&
-                            player.x + player.width - padding > obs.x &&
-                            playerTop < obsBottom && 
-                            playerBottom > obsTop)   
-                        {
-                            triggerGameOver(); break;
+                    for (const obstacle of obstacles) {
+                        const padding = 5;
+                        const playerTop = player.y - player.height;
+                        const playerBottom = player.y;
+                        const obstacleTop = obstacle.y - obstacle.height;
+                        const obstacleBottom = obstacle.y;
+
+                        if (
+                            player.x < obstacle.x + obstacle.width - padding &&
+                            player.x + player.width - padding > obstacle.x &&
+                            playerTop < obstacleBottom &&
+                            playerBottom > obstacleTop
+                        ) {
+                            triggerGameOver();
+                            break;
                         }
                     }
                 }
+
                 function triggerGameOver() {
-                    gameState = 'gameOver';
-                    gameOverOverlay.style.display = 'flex';
+                    gameState = "gameOver";
+                    gameOverOverlay.style.display = "flex";
                     const finalScore = Math.floor(score);
+
+                    finalScoreDisplay.textContent = `이번 점수: ${finalScore}`;
+
                     if (finalScore > localHighScore) {
                         localHighScore = finalScore;
-          localStorage.setItem('minigameLocalHighScore:dino-run-1', localHighScore);
+                        localStorage.setItem("minigameLocalHighScore:dino-run-1", localHighScore);
                         highscoreDisplay.textContent = `최고: ${localHighScore}`;
                     }
-                    
-                    const pElement = gameOverOverlay.querySelector('p#global-highscore-display-g1');
-                    pElement.textContent = ''; 
+
+                    globalHighscoreDisplay.textContent = "";
 
                     if (finalScore >= 200) {
-                        isSubmitting = true; 
-                        pElement.textContent = '200점 이상! 점수 전송 중...';
-                        submitAndFetchScores(finalScore, pElement); 
+                        isSubmitting = true;
+                        globalHighscoreDisplay.textContent = "200점 이상 기록, 점수 전송 중...";
+                        submitAndFetchScores(finalScore, globalHighscoreDisplay);
                     } else {
-                        isSubmitting = false; 
-                        pElement.textContent = '200점 미만은 기록되지 않습니다.';
+                        isSubmitting = false;
+                        globalHighscoreDisplay.textContent = "200점 미만 기록은 저장되지 않습니다.";
                     }
                 }
+
                 async function submitScore(finalScore) {
                     const leaderboard = getLeaderboardBridge();
                     if (!leaderboard?.submitScore) {
-                        throw new Error('Firebase leaderboard bridge unavailable');
+                        throw new Error("Firebase leaderboard bridge unavailable");
                     }
 
                     await leaderboard.submitScore({
@@ -451,10 +1067,11 @@
                         score: finalScore
                     });
                 }
-                async function fetchAndDisplayGlobalScore(pElement, prefixText = '') {
+
+                async function fetchAndDisplayGlobalScore(targetElement, prefixText = "") {
                     const leaderboard = getLeaderboardBridge();
                     if (!leaderboard?.getTopEntry) {
-                        pElement.textContent = prefixText + '명예의 전당 연결을 사용할 수 없습니다.';
+                        targetElement.textContent = `${prefixText}명예의 전당 연결을 사용할 수 없습니다.`;
                         return;
                     }
 
@@ -467,92 +1084,107 @@
                             const rawName = topEntry.nickname || gameUsername;
                             const maskedName = leaderboard.maskNickname
                                 ? leaderboard.maskNickname(rawName)
-                                : (rawName.substring(0, 2) + '*'.repeat(Math.max(0, rawName.length - 2)));
+                                : `${rawName.substring(0, 2)}${"*".repeat(Math.max(0, rawName.length - 2))}`;
 
-                            pElement.textContent = prefixText + `역대 최고 점수: ${globalHighScoreData.score} (${maskedName})`;
+                            targetElement.textContent = `${prefixText}전체 최고 점수: ${globalHighScoreData.score} (${maskedName})`;
                         } else {
-                            pElement.textContent = prefixText + '아직 등록된 기록이 없습니다.';
+                            targetElement.textContent = `${prefixText}아직 등록된 기록이 없습니다.`;
                         }
                     } catch (error) {
-                        console.error("G1 최고 점수 불러오기 실패:", error);
-                        pElement.textContent = prefixText + '최고 점수 연결 오류';
+                        console.error("Dino Run 1 최고 점수 조회 실패:", error);
+                        targetElement.textContent = `${prefixText}최고 점수 연결 오류`;
                     }
                 }
-                async function submitAndFetchScores(finalScore, pElement) {
-                    let prefixText = '';
+
+                async function submitAndFetchScores(finalScore, targetElement) {
+                    let prefixText = "";
 
                     try {
                         await submitScore(finalScore);
-                        prefixText = '점수 등록 완료! ';
+                        prefixText = "점수 등록 완료! ";
                     } catch (error) {
-                        console.error("G1 점수 전송 중 오류:", error);
-                        prefixText = '점수 등록 실패. ';
+                        console.error("Dino Run 1 점수 전송 실패:", error);
+                        prefixText = "점수 등록 실패. ";
                     } finally {
-                        await fetchAndDisplayGlobalScore(pElement, prefixText);
+                        await fetchAndDisplayGlobalScore(targetElement, prefixText);
                         isSubmitting = false;
                     }
                 }
-                
-                // --- 이벤트 리스너 ---
+
                 function handleGameAction() {
-                    if (gameState === 'playing') player.jump();
-                    else startGame(); 
-                }
-                function handleInput(e) {
-                    if (e.key === ' ' || e.code === 'Space') {
-                        e.preventDefault(); handleGameAction(); 
+                    if (gameState === "playing") {
+                        player.jump();
+                    } else {
+                        startGame();
                     }
                 }
-                function handleMouseInput(e) {
-                    if (e.target.closest('.back-btn')) { // (수정)
+
+                function handleInput(event) {
+                    if (event.key === " " || event.code === "Space") {
+                        event.preventDefault();
+                        handleGameAction();
+                    }
+                }
+
+                function handleMouseInput(event) {
+                    if (event.target.closest(".back-btn")) {
                         return;
                     }
-                    e.preventDefault(); handleGameAction();
+
+                    event.preventDefault();
+                    handleGameAction();
                 }
-                function handleTouchInput(e) {
-                    if (e.target.closest('.back-btn')) { // (수정)
+
+                function handleTouchInput(event) {
+                    if (event.target.closest(".back-btn")) {
                         return;
                     }
-                    e.preventDefault(); handleGameAction(); 
+
+                    event.preventDefault();
+                    handleGameAction();
                 }
-                
+
                 game1Instance.keyHandler = handleInput;
                 game1Instance.mouseHandler = handleMouseInput;
                 game1Instance.touchHandler = handleTouchInput;
 
-                document.addEventListener('keydown', game1Instance.keyHandler);
-                document.addEventListener('mousedown', game1Instance.mouseHandler); 
-                document.addEventListener('touchstart', game1Instance.touchHandler, { passive: false }); 
-                
-                updateGlobalHighScore(); 
-                initGame(); 
+                document.addEventListener("keydown", game1Instance.keyHandler);
+                document.addEventListener("mousedown", game1Instance.mouseHandler);
+                document.addEventListener("touchstart", game1Instance.touchHandler, { passive: false });
+
+                updateGlobalHighScore();
+                initGame();
             }
-            
+
+            window.addEventListener("beforeunload", cleanupGame1Instance);
+
             function resolveGameNickname() {
                 try {
                     const parentNickname = window.parent && window.parent !== window && window.parent.LivelySam?.MinigamesHub?.getNickname?.();
-                    if (parentNickname) return String(parentNickname).trim();
+                    if (parentNickname) {
+                        return String(parentNickname).trim();
+                    }
                 } catch {}
+
                 try {
-                    const nickname = localStorage.getItem('minigameNickname');
-                    if (nickname) return String(nickname).trim();
+                    const nickname = localStorage.getItem("minigameNickname");
+                    if (nickname) {
+                        return String(nickname).trim();
+                    }
                 } catch {}
+
                 try {
-                    const legacyNickname = localStorage.getItem('j_game_username');
-                    if (legacyNickname) return String(legacyNickname).trim();
+                    const legacyNickname = localStorage.getItem("j_game_username");
+                    if (legacyNickname) {
+                        return String(legacyNickname).trim();
+                    }
                 } catch {}
-                return 'Guest';
+
+                return "Guest";
             }
 
-            // --- (수정) 5. 자동 실행 로직 ---
-            // 허브 닉네임 원문을 우선 사용합니다.
-            const gameUsername = resolveGameNickname();
-            console.log(gameUsername + "님이 Game 1을 시작합니다.");
-
-            // launchGame1 함수를 즉시 호출합니다.
-            launchGame1(gameUsername);
-
-        }); 
+            launchGame1(resolveGameNickname());
+        });
     </script>
 </body>
 </html>

@@ -18,6 +18,14 @@
     return LS.Helpers.escapeHtml(String(value || '')).replace(/\n/g, '<br>');
   }
 
+  function renderSectionAction(action, icon, title, active = false) {
+    return `<button class="record-section-icon-btn ${active ? 'is-active' : ''}" type="button" data-toolbar-action="${action}" title="${LS.Helpers.escapeHtml(title)}" aria-label="${LS.Helpers.escapeHtml(title)}">${icon}</button>`;
+  }
+
+  function renderSectionHeader(title, actions = '') {
+    return `<div class="record-section-row"><div class="record-section-title">${LS.Helpers.escapeHtml(title)}</div>${actions ? `<div class="record-section-actions">${actions}</div>` : ''}</div>`;
+  }
+
   function getMemoRecords(query, archivedOnly) {
     if (query) {
       return LS.Records.search(query, { facets: ['note'], archived: archivedOnly ? true : false });
@@ -62,27 +70,27 @@
       const pinned = this._showArchived ? [] : memos.filter((record) => record.pinned);
       const regular = this._showArchived ? memos : memos.filter((record) => !record.pinned);
 
-      let html = '<div class="widget-toolbar">';
-      html += `<input class="widget-search" id="memo-search" type="text" placeholder="메모 검색" value="${LS.Helpers.escapeHtml(this._query)}">`;
-      html += '<div class="widget-filter-group">';
-      html += `<button class="widget-filter-btn ${this._showArchived ? '' : 'active'}" data-filter="active">사용 중</button>`;
-      html += `<button class="widget-filter-btn ${this._showArchived ? 'active' : ''}" data-filter="archived">보관함</button>`;
-      html += '</div></div>';
-
+      let html = '';
       html += '<div class="memo-list">';
+      const toolbarActions = [
+        renderSectionAction('search', '⌕', this._query ? `검색어 변경 (${this._query})` : '검색', Boolean(this._query)),
+        renderSectionAction('toggle-archive', '🗃', this._showArchived ? '사용 중 메모 보기' : '보관함 보기', this._showArchived)
+      ].join('');
 
       if (!memos.length) {
+        html += renderSectionHeader(this._showArchived ? '보관된 메모' : '메모 목록', toolbarActions);
         html += `<div class="memo-empty">${this._showArchived ? '보관된 메모가 없습니다.' : '+ 버튼으로 메모를 추가해 보세요'}</div>`;
       } else {
         if (pinned.length) {
-          html += '<div class="record-section-title">고정 메모</div>';
+          html += renderSectionHeader('고정 메모', !regular.length && !this._showArchived ? toolbarActions : '');
           pinned.forEach((record) => {
             html += this._renderMemoCard(record, colors);
           });
         }
 
         if (regular.length) {
-          html += `<div class="record-section-title">${this._showArchived ? '보관된 메모' : '메모 목록'}</div>`;
+          const regularTitle = this._showArchived ? '보관된 메모' : '메모 목록';
+          html += renderSectionHeader(regularTitle, this._showArchived || regular.length ? toolbarActions : '');
           regular.forEach((record) => {
             html += this._renderMemoCard(record, colors);
           });
@@ -92,15 +100,9 @@
       html += '</div>';
       container.innerHTML = html;
 
-      container.querySelector('#memo-search')?.addEventListener('input', (event) => {
-        this._query = event.target.value || '';
-        this.render();
-      });
-
-      container.querySelectorAll('[data-filter]').forEach((button) => {
+      container.querySelectorAll('[data-toolbar-action]').forEach((button) => {
         button.addEventListener('click', () => {
-          this._showArchived = button.dataset.filter === 'archived';
-          this.render();
+          void this._handleToolbarAction(button.dataset.toolbarAction || '');
         });
       });
 
@@ -180,6 +182,33 @@
 
     async addMemo() {
       await LS.Records.openRecordEditor({ mode: 'note' });
+    },
+
+    async _handleToolbarAction(action) {
+      if (action === 'toggle-archive') {
+        this._showArchived = !this._showArchived;
+        this.render();
+        return;
+      }
+
+      if (action !== 'search') return;
+
+      const result = await LS.Helpers.promptModal('메모 검색', [
+        {
+          id: 'query',
+          type: 'text',
+          label: '검색어',
+          value: this._query,
+          placeholder: '제목, 내용, 체크리스트'
+        }
+      ], {
+        confirmText: '적용',
+        cancelText: '취소'
+      });
+      if (!result) return;
+
+      this._query = String(result.query || '').trim();
+      this.render();
     },
 
     async _handleCardClick(event, recordId) {

@@ -4,6 +4,7 @@ Dim shell, fso, rootPath
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 rootPath = fso.GetParentFolderName(WScript.ScriptFullName)
+shell.CurrentDirectory = rootPath
 
 Dim launchType, launchCommand, windowStyle
 launchType = ""

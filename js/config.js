@@ -62,6 +62,7 @@
     calendarAstronomyLevel: 'basic',
     calendarAstronomyKoreaOnly: true,
     googleClientId: '',
+    localLauncherOrigin: 'http://localhost:58672',
     googleCalendarSyncEnabled: true,
     googleTasksSyncEnabled: true,
     googleCalendarId: 'primary',
@@ -397,15 +398,6 @@
       const schoolAddress = normalizeText(this._config.schoolAddress, '');
       const schoolLat = this._config.weatherSchoolLat ?? this._config.weatherLat;
       const schoolLon = this._config.weatherSchoolLon ?? this._config.weatherLon;
-
-      if (false) return {
-        key: 'school',
-        label: schoolLabel,
-        address: schoolAddress,
-        lat: schoolLat ?? null,
-        lon: schoolLon ?? null,
-        hasCoordinates: schoolLat !== null && schoolLon !== null
-      };
 
       const key = this.getWeatherPresetKey(preset);
       const isHome = key === 'home';

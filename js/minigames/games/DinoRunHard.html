@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Dino Jump 1</title>
+    <meta name="livelysam:minigame:id" content="dino-run-hard">
+    <meta name="livelysam:minigame:title" content="Dino Run Hard">
+    <meta name="livelysam:minigame:icon" content="🌋">
+    <meta name="livelysam:minigame:status" content="ready">
+    <meta name="livelysam:minigame:series-id" content="dino-run">
+    <meta name="livelysam:minigame:series-title" content="Dino Run">
+    <meta name="livelysam:minigame:series-description" content="기본, 확장, 하드 모드를 순서대로 즐길 수 있습니다.">
+    <meta name="livelysam:minigame:series-icon" content="🦖">
+    <meta name="livelysam:minigame:description" content="속도와 장애물이 강화된 하드 모드입니다.">
+    <meta name="livelysam:minigame:score-label" content="하드 모드 점수">
+    <meta name="livelysam:minigame:leaderboard-mode" content="personal-best">
+    <meta name="livelysam:minigame:tags" content="firebase,hall-of-fame,hard">
+    <meta name="livelysam:minigame:sort-order" content="30">
     <style>
         /* --- 1. 글로벌 스타일 --- */
         html {
@@ -50,6 +63,26 @@
             animation: dazzlingBG 5s ease infinite; 
             background: linear-gradient(-45deg, #e6f7ff, #fff0f0, #f0f8ff, #f0fff0);
             background-size: 400% 400%;
+        }
+        body.preview-mode #game-1-wrapper > h1,
+        body.preview-mode #game-1-wrapper .info-panel,
+        body.preview-mode #start-overlay-g1,
+        body.preview-mode #game-over-overlay-g1 {
+            display: none !important;
+        }
+        body.preview-mode #game-container-g1 {
+            width: min(600px, 100vw);
+            max-width: 100vw;
+            max-height: none;
+        }
+        body.preview-mode {
+            justify-content: flex-start;
+            align-items: center;
+            padding: 0;
+        }
+        body.preview-mode #game-1-wrapper {
+            width: 100%;
+            transform: translateY(-32px);
         }
         
         h1 { font-size: 2.5rem; color: #cc0000; margin-bottom: 10px; transition: color 0.5s ease; }
@@ -101,25 +134,72 @@
             flex-direction: column; 
             align-items: center; 
         }
-        #game-1-wrapper .info-panel {
-            display: flex; justify-content: space-between;
-            width: 600px; max-width: 90vw; margin-bottom: 5px;
-            font-size: 1.5rem; font-weight: bold;
+        body.is-ready-screen #game-1-wrapper > h1,
+        #game-1-wrapper > h1 {
+            width: 600px;
+            max-width: 90vw;
+            margin: 0 0 10px 0;
+            font-size: 1.15rem;
+            letter-spacing: 0.24em;
+            color: #991b1b;
         }
-        #score-display-g1 { color: #333; transition: color 0.5s ease; }
-        #highscore-display-g1 { color: #888; text-align: right; transition: color 0.5s ease; }
-        body.night-mode #score-display-g1 { color: #eee; }
-        body.night-mode #highscore-display-g1 { color: #aaa; }
+        body.is-ready-screen #game-1-wrapper .info-panel,
+        #game-1-wrapper .info-panel {
+            display: flex;
+            justify-content: flex-start;
+            gap: 10px;
+            width: 600px;
+            max-width: 90vw;
+            margin-bottom: 12px;
+            font-size: 1rem;
+            font-weight: 700;
+        }
+        body.is-ready-screen #game-1-wrapper .info-panel > div,
+        #game-1-wrapper .info-panel > div {
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(255, 245, 245, 0.88);
+            color: #991b1b;
+            box-shadow: 0 12px 28px rgba(127, 29, 29, 0.12);
+        }
+        body.is-ready-screen #highscore-display-g1,
+        #highscore-display-g1 {
+            text-align: left;
+        }
+        #score-display-g1 { color: #991b1b; transition: color 0.5s ease; }
+        #highscore-display-g1 { color: #b45309; transition: color 0.5s ease; }
+        body.night-mode #game-1-wrapper .info-panel > div {
+            background: rgba(22, 18, 25, 0.72);
+            color: #fecaca;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+        }
+        body.night-mode #score-display-g1 { color: #fecaca; }
+        body.night-mode #highscore-display-g1 { color: #fda4af; }
 
         #game-container-g1 {
             position: relative; width: 600px; height: 200px;
             max-width: 90vw; max-height: 40vh;
+        }
+        body.is-ready-screen #game-container-g1 {
+            border-radius: 28px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+            background:
+                radial-gradient(circle at 80% 18%, rgba(255, 170, 120, 0.28) 0 24px, transparent 25px),
+                radial-gradient(120px 48px at 16% 100%, rgba(72, 26, 26, 0.92) 98%, transparent 100%),
+                radial-gradient(180px 60px at 54% 100%, rgba(98, 33, 33, 0.94) 98%, transparent 100%),
+                radial-gradient(140px 52px at 86% 100%, rgba(59, 20, 20, 0.92) 98%, transparent 100%),
+                linear-gradient(180deg, #1f0d18 0%, #5d1327 42%, #9a3412 43%, #2f1414 100%);
         }
         #game-canvas-g1 {
             background-color: transparent;
             border-bottom: 3px solid #555; 
             width: 100%; height: 100%;
             transition: border-color 0.5s ease;
+        }
+        body.is-ready-screen #game-canvas-g1 {
+            border-bottom-color: rgba(254, 202, 202, 0.34);
         }
         .night-mode #game-canvas-g1 { border-color: #aaa; }
         
@@ -131,7 +211,49 @@
             z-index: 100; 
             font-weight: bold; color: #333;
             text-align: center; font-size: 2rem;
+            padding: 18px;
+            box-sizing: border-box;
             transition: color 0.5s ease;
+        }
+        body.is-ready-screen #start-overlay-g1 {
+            justify-content: flex-end;
+        }
+        #game-1-wrapper .ready-card {
+            width: min(270px, calc(100% - 36px));
+            padding: 16px 18px;
+            border-radius: 24px;
+            background: rgba(21, 18, 25, 0.72);
+            box-shadow: 0 20px 42px rgba(0, 0, 0, 0.32);
+            backdrop-filter: blur(10px);
+        }
+        #game-1-wrapper .ready-chip {
+            display: inline-flex;
+            margin-bottom: 10px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: rgba(248, 113, 113, 0.14);
+            color: #fca5a5;
+            font-size: 0.72rem;
+            letter-spacing: 0.14em;
+        }
+        #game-1-wrapper .ready-card strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 1.15rem;
+            color: #fff1f2;
+        }
+        #game-1-wrapper .ready-card p {
+            margin: 0;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: #fecdd3;
+        }
+        #game-1-wrapper .ready-controls {
+            display: inline-block;
+            margin-top: 12px;
+            font-size: 0.74rem;
+            letter-spacing: 0.12em;
+            color: #fda4af;
         }
         body.night-mode #game-1-wrapper .overlay { color: #eee; }
         body.night-mode #game-1-wrapper .overlay p { color: #aaa; }
@@ -142,6 +264,124 @@
             margin-top: 10px; font-weight: bold;
         }
         body.night-mode #global-highscore-display-g1 { color: #33aaff; }
+
+        body {
+            padding: 24px;
+            box-sizing: border-box;
+        }
+
+        body * {
+            box-sizing: border-box;
+        }
+
+        #game-container-g1 {
+            height: 252px;
+            max-height: 52vh;
+        }
+
+        #game-canvas-g1 {
+            display: block;
+            border-bottom: 3px solid rgba(120, 76, 62, 0.42);
+            transition: border-color 0.5s ease;
+        }
+
+        body.is-ready-screen #game-canvas-g1 {
+            border-bottom-color: rgba(120, 76, 62, 0.42);
+        }
+
+        body.night-mode #game-canvas-g1 {
+            border-bottom-color: rgba(226, 232, 240, 0.54);
+        }
+
+        #game-1-wrapper .result-card {
+            width: min(350px, calc(100% - 32px));
+            padding: 16px 16px 14px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+            backdrop-filter: blur(14px);
+        }
+
+        #game-1-wrapper .result-card strong {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 1.16rem;
+            color: #7f1d1d;
+        }
+
+        #game-1-wrapper .result-score {
+            margin: 8px 0 10px;
+            padding: 8px 12px;
+            border-radius: 14px;
+            background: rgba(220, 38, 38, 0.08);
+            color: #b91c1c;
+            font-size: 0.98rem;
+            font-weight: 700;
+        }
+
+        #game-1-wrapper .result-actions {
+            margin-top: 10px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            width: 100%;
+        }
+
+        #game-1-wrapper .result-actions .restart-btn,
+        #game-1-wrapper .result-actions .back-btn {
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            padding: 12px 0;
+            border-radius: 14px;
+            font-size: 0.98rem;
+        }
+
+        #game-1-wrapper .result-hint {
+            margin-top: 8px;
+            font-size: 0.76rem;
+            font-weight: 600;
+            color: #7c6369;
+            letter-spacing: 0.03em;
+        }
+
+        #global-highscore-display-g1 {
+            font-size: 0.86rem;
+            color: #6b4f57;
+            margin-top: 0;
+            font-weight: 600;
+            line-height: 1.35;
+            letter-spacing: -0.02em;
+        }
+
+        body.night-mode #global-highscore-display-g1 {
+            color: #fecaca;
+        }
+
+        @media (max-width: 680px) {
+            body {
+                padding: 16px;
+            }
+
+            #game-container-g1 {
+                height: 228px;
+            }
+
+            body.is-ready-screen #game-1-wrapper > h1 {
+                letter-spacing: 0.18em;
+                font-size: 1rem;
+            }
+
+            #game-1-wrapper .ready-card,
+            #game-1-wrapper .result-card {
+                width: calc(100% - 24px);
+                padding: 16px 18px;
+            }
+
+            #game-1-wrapper .result-actions {
+                grid-template-columns: 1fr;
+            }
+        }
 
     </style>
 </head>
@@ -155,15 +395,19 @@
         </div>
         <div id="game-container-g1">
             <div id="start-overlay-g1" class="overlay">
-                <div>JUMP!</div>
-                <p>Spacebar를 눌러 시작(터치, 클릭 가능)</p>
+                <div class="ready-card">
+                    <span class="ready-chip">HARD MODE</span>
+                    <strong>초고속 하드 코스</strong>
+                    <p>더 빠른 속도로 몰아치는 하드 모드의 시작 화면을 바로 보여줍니다.</p>
+                    <span class="ready-controls">SPACE · CLICK · TOUCH</span>
+                </div>
             </div>
             <div id="game-over-overlay-g1" class="overlay">
                 <div>게임 오버</div>
                 <p id="global-highscore-display-g1"></p>
                 <button class="restart-btn">재시작 (Spacebar)</button>
                 <button class="back-btn">로비로 돌아가기</button> </div>
-            <canvas id="game-canvas-g1" width="600" height="200"></canvas>
+            <canvas id="game-canvas-g1" width="600" height="252"></canvas>
         </div>
     </div>
 
@@ -200,16 +444,26 @@
             let game1Instance = null; 
             const body = document.body;
             const game1Wrapper = document.getElementById('game-1-wrapper');
+            if (IS_PREVIEW_MODE) {
+                body.classList.add('preview-mode');
+            }
+
+            function cleanupGame1Instance() {
+                if (!game1Instance) {
+                    return;
+                }
+                if (game1Instance.loop) {
+                    cancelAnimationFrame(game1Instance.loop);
+                    game1Instance.loop = 0;
+                }
+                document.removeEventListener('keydown', game1Instance.keyHandler);
+                document.removeEventListener('mousedown', game1Instance.mouseHandler);
+                document.removeEventListener('touchstart', game1Instance.touchHandler);
+            }
 
             // --- 3. Game 1 (DinoGame_1) 실행 함수 ---
             function launchGame1(username) {
-                if (game1Instance) {
-                    // 이전 인스턴스 정리 (필요시)
-                    if (game1Instance.loop) cancelAnimationFrame(game1Instance.loop);
-                    document.removeEventListener('keydown', game1Instance.keyHandler);
-                    document.removeEventListener('mousedown', game1Instance.mouseHandler);
-                    document.removeEventListener('touchstart', game1Instance.touchHandler);
-                }
+                cleanupGame1Instance();
                 game1Instance = {}; 
                 const gameUsername = username; 
                 
@@ -220,6 +474,28 @@
                 const highscoreDisplay = game1Wrapper.querySelector('#highscore-display-g1');
                 const startOverlay = game1Wrapper.querySelector('#start-overlay-g1');
                 const gameOverOverlay = game1Wrapper.querySelector('#game-over-overlay-g1');
+                startOverlay.innerHTML = `
+                    <div class="ready-card">
+                        <span class="ready-chip">HARD MODE</span>
+                        <strong>\uACE0\uC18D \uD558\uB4DC \uCF54\uC2A4</strong>
+                        <p>\uC18D\uB3C4\uC640 \uC7A5\uC560\uBB3C \uBC00\uB3C4\uAC00 \uD55C\uCC38 \uAC15\uD654\uB41C \uD558\uB4DC Dino Run\uC785\uB2C8\uB2E4.</p>
+                        <span class="ready-controls">SPACE / CLICK / TOUCH</span>
+                    </div>
+                `;
+                gameOverOverlay.innerHTML = `
+                    <div class="result-card">
+                        <span class="ready-chip">RUN OVER</span>
+                        <strong>\uD558\uB4DC \uD14C\uB9C8\uB97C \uB2E4\uC2DC \uB6AB\uC5B4\uBCF4\uC138\uC694</strong>
+                        <div id="final-score-display-g1" class="result-score">\uC774\uBC88 \uC810\uC218: 0</div>
+                        <p id="global-highscore-display-g1"></p>
+                        <div class="result-actions">
+                            <button class="restart-btn" type="button">\uB2E4\uC2DC \uC2DC\uC791</button>
+                            <button class="back-btn" type="button">\uBAA9\uB85D \uB3CC\uC544\uAC00\uAE30</button>
+                        </div>
+                        <div class="result-hint">SPACEBAR \uB85C \uBC14\uB85C \uC7AC\uC2DC\uC791</div>
+                    </div>
+                `;
+                const finalScoreDisplay = game1Wrapper.querySelector('#final-score-display-g1');
                 const globalHighscoreDisplay = game1Wrapper.querySelector('#global-highscore-display-g1');
                 
                 // (수정) 뒤로가기 버튼 리스너 -> 허브로 복귀
@@ -234,12 +510,22 @@
                 const cactusIcons = ['🌵', '🌵🌵'];
                 const iconSize = 30;
                 const groundY = canvas.height - 2; 
-                const playerX = 50;
+                const playerX = IS_PREVIEW_MODE ? 92 : 50;
                 const jumpForce = 12;
                 const gravity = 0.7;
                 const initialSpeed = 15;
                 const speedIncrease = 0.002;
                 const nightModeThreshold = 200;
+                const ambientClouds = [
+                    { baseX: 118, y: 34, scale: 0.92, alpha: 0.42, depth: 0.08 },
+                    { baseX: 322, y: 28, scale: 0.7, alpha: 0.28, depth: 0.06 },
+                    { baseX: 542, y: 42, scale: 0.84, alpha: 0.36, depth: 0.1 }
+                ];
+                const backgroundSpikes = [
+                    { baseX: 128, scale: 0.84, depth: 0.16 },
+                    { baseX: 362, scale: 1.04, depth: 0.24 },
+                    { baseX: 556, scale: 0.78, depth: 0.3 }
+                ];
 
                 let player;
                 let obstacles = [];
@@ -253,6 +539,7 @@
                 let gameLoop; 
                 let isNightMode = false;
                 let isSubmitting = false; 
+                let sceneTick = 0;
 
                 // --- 클래스 정의 (Player, Obstacle, Star) ---
                 class Player {
@@ -315,6 +602,114 @@
                     }
                 }
                 // --- 핵심 함수 ---
+                function drawCloud(x, y, scale, alpha = 0.4) {
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = isNightMode ? 'rgba(241, 245, 249, 0.12)' : 'rgba(255, 224, 214, 0.26)';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 10 * scale, Math.PI * 0.5, Math.PI * 1.5);
+                    ctx.arc(x + 12 * scale, y - 6 * scale, 13 * scale, Math.PI, Math.PI * 1.85);
+                    ctx.arc(x + 26 * scale, y, 11 * scale, Math.PI * 1.5, Math.PI * 0.5);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                function drawDuneBand(baseY, amplitude, color, speed, alpha = 1) {
+                    const offset = sceneTick * speed;
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.moveTo(0, canvas.height);
+                    for (let x = 0; x <= canvas.width + 24; x += 24) {
+                        const y = baseY + Math.sin((x + offset) / 88) * amplitude;
+                        ctx.lineTo(x, y);
+                    }
+                    ctx.lineTo(canvas.width, canvas.height);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                function drawRockSpire(x, y, scale, color, alpha = 1) {
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.moveTo(-12 * scale, 0);
+                    ctx.lineTo(-5 * scale, -26 * scale);
+                    ctx.lineTo(0, -18 * scale);
+                    ctx.lineTo(7 * scale, -34 * scale);
+                    ctx.lineTo(14 * scale, 0);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                function drawBackdrop() {
+                    const skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                    if (isNightMode) {
+                        skyGradient.addColorStop(0, '#120f1c');
+                        skyGradient.addColorStop(0.56, '#241b31');
+                        skyGradient.addColorStop(1, '#4b3436');
+                    } else {
+                        skyGradient.addColorStop(0, '#fbf4f1');
+                        skyGradient.addColorStop(0.46, '#edd8d1');
+                        skyGradient.addColorStop(0.47, '#d7b28b');
+                        skyGradient.addColorStop(1, '#b47154');
+                    }
+
+                    ctx.fillStyle = skyGradient;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    if (isNightMode) {
+                        ctx.save();
+                        ctx.fillStyle = 'rgba(248, 250, 252, 0.74)';
+                        ctx.beginPath();
+                        ctx.arc(canvas.width - 84, 34, 15, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.globalCompositeOperation = 'destination-out';
+                        ctx.beginPath();
+                        ctx.arc(canvas.width - 77, 30, 14, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    } else {
+                        ctx.save();
+                        ctx.fillStyle = 'rgba(255, 239, 231, 0.64)';
+                        ctx.beginPath();
+                        ctx.arc(canvas.width - 84, 38, 18, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+
+                        ambientClouds.forEach((cloud) => {
+                            const span = canvas.width + 100;
+                            const x = ((cloud.baseX - (sceneTick * cloud.depth)) % span + span) % span - 50;
+                            drawCloud(x, cloud.y, cloud.scale, cloud.alpha);
+                        });
+                    }
+
+                    drawDuneBand(canvas.height - 86, 8, isNightMode ? '#593f47' : '#b98362', 0.14, isNightMode ? 0.34 : 0.36);
+                    drawDuneBand(canvas.height - 62, 12, isNightMode ? '#402b32' : '#8f5a4c', 0.28, isNightMode ? 0.72 : 0.66);
+
+                    const spireColor = isNightMode ? '#7c6871' : '#7a503f';
+                    backgroundSpikes.forEach((spire) => {
+                        const span = canvas.width + 90;
+                        const x = ((spire.baseX - (sceneTick * spire.depth)) % span + span) % span - 45;
+                        drawRockSpire(x, groundY + 1, spire.scale, spireColor, isNightMode ? 0.22 : 0.16);
+                    });
+
+                    ctx.save();
+                    ctx.strokeStyle = isNightMode ? 'rgba(226, 232, 240, 0.58)' : 'rgba(104, 68, 55, 0.34)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(0, groundY + 0.5);
+                    ctx.lineTo(canvas.width, groundY + 0.5);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
                 async function fetchGlobalHighScore() {
                     const leaderboard = getLeaderboardBridge();
                     if (!leaderboard?.getTopEntry) {
@@ -338,27 +733,51 @@
                 async function updateGlobalHighScore() {
                     globalHighScoreData = await fetchGlobalHighScore();
                 }
+                function setThumbnailShowcaseScene() {
+                    obstacles = [
+                        new Obstacle(canvas.width - 176, groundY, cactusIcons[1])
+                    ];
+                    obstacleSpawnTimer = 84;
+                }
+                function setReadyPreviewScene() {
+                    obstacles = [
+                        new Obstacle(canvas.width - 232, groundY, cactusIcons[1]),
+                        new Obstacle(canvas.width - 134, groundY, cactusIcons[1])
+                    ];
+                    obstacleSpawnTimer = 102;
+                }
                 function initGame() {
       localHighScore = localStorage.getItem('minigameLocalHighScore:dino-run-hard') || 0;
                     highscoreDisplay.textContent = `최고: ${Math.floor(localHighScore)}`;
                     player = new Player(playerX, groundY);
                     obstacles = []; stars = [];
                     score = 0; gameSpeed = initialSpeed;
-                    gameState = 'ready'; 
+                    gameState = IS_PREVIEW_MODE ? 'preview' : 'ready';
                     obstacleSpawnTimer = 100;
-                    isNightMode = false; isSubmitting = false; 
+                    isNightMode = false; isSubmitting = false; sceneTick = 0;
                     for (let i=0; i < 50; i++) stars.push(new Star());
                     applyNightMode(false);
-                    startOverlay.style.display = 'flex'; 
+                    if (IS_PREVIEW_MODE) {
+                        setThumbnailShowcaseScene();
+                        body.classList.remove('is-ready-screen');
+                        startOverlay.style.display = 'none';
+                    } else {
+                        setReadyPreviewScene();
+                        body.classList.add('is-ready-screen');
+                        startOverlay.style.display = 'flex';
+                    }
                     gameOverOverlay.style.display = 'none';
                     if (!game1Instance.loop) { game1Instance.loop = requestAnimationFrame(animate); }
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    drawBackdrop();
+                    obstacles.forEach(obs => obs.draw());
                     player.draw();
                     scoreDisplay.textContent = `점수: 0`;
                 }
                 function startGame() {
                     if ((gameState === 'ready' || gameState === 'gameOver') && !isSubmitting) {
                         if (gameState === 'gameOver') initGame(); 
+                        body.classList.remove('is-ready-screen');
+                        obstacles = [];
                         gameState = 'playing'; 
                         startOverlay.style.display = 'none';
                         gameOverOverlay.style.display = 'none';
@@ -374,9 +793,27 @@
                     if (enable) body.classList.add('night-mode');
                     else body.classList.remove('night-mode');
                 }
+                function updateObstacleField() {
+                    obstacleSpawnTimer--;
+                    if (obstacleSpawnTimer <= 0) spawnObstacle();
+                    for (let i = obstacles.length - 1; i >= 0; i--) {
+                        let obs = obstacles[i]; obs.update(); obs.draw();
+                        if (obs.x + obs.width < 0) obstacles.splice(i, 1);
+                    }
+                }
+                function runPreviewAutoplay() {
+                    const nextObstacle = obstacles.find((obstacle) => obstacle.x + obstacle.width >= player.x + 8);
+                    if (!player.isJumping && nextObstacle) {
+                        const distance = nextObstacle.x - player.x;
+                        if (distance <= 90 && distance >= 42) {
+                            player.jump();
+                        }
+                    }
+                }
                 function animate() {
                     if (!game1Instance) return; 
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    sceneTick += (gameState === 'playing' || gameState === 'preview') ? gameSpeed * 0.48 : 0.32;
+                    drawBackdrop();
                     if (isNightMode) { stars.forEach(star => { star.update(); star.draw(); }); }
                     if (gameState === 'playing') {
                         score += 0.1; gameSpeed += speedIncrease;
@@ -385,14 +822,14 @@
                         const shouldBeNight = (scoreBlock % 2 === 1); 
                         if (shouldBeNight && !isNightMode) applyNightMode(true);
                         else if (!shouldBeNight && isNightMode) applyNightMode(false);
-                        obstacleSpawnTimer--;
-                        if (obstacleSpawnTimer <= 0) spawnObstacle();
-                        for (let i = obstacles.length - 1; i >= 0; i--) {
-                            let obs = obstacles[i]; obs.update(); obs.draw();
-                            if (obs.x + obs.width < 0) obstacles.splice(i, 1);
-                        }
+                        updateObstacleField();
                         player.update(); player.draw();
                         checkCollisions();
+                    } else if (gameState === 'preview') {
+                        runPreviewAutoplay();
+                        updateObstacleField();
+                        player.update();
+                        player.draw();
                     } else { 
                         player.draw();
                         obstacles.forEach(obs => obs.draw());
@@ -419,6 +856,7 @@
                     gameState = 'gameOver';
                     gameOverOverlay.style.display = 'flex';
                     const finalScore = Math.floor(score);
+                    finalScoreDisplay.textContent = `\uC774\uBC88 \uC810\uC218: ${finalScore}`;
                     if (finalScore > localHighScore) {
                         localHighScore = finalScore;
           localStorage.setItem('minigameLocalHighScore:dino-run-hard', localHighScore);
@@ -431,10 +869,15 @@
                     if (finalScore >= 200) {
                         isSubmitting = true; 
                         pElement.textContent = '200점 이상! 점수 전송 중...';
+                        pElement.textContent = '\uAE30\uB85D\uC744 \uC800\uC7A5\uD558\uB294 \uC911\uC785\uB2C8\uB2E4.';
                         submitAndFetchScores(finalScore, pElement); 
                     } else {
                         isSubmitting = false; 
+                        pElement.textContent = '\u0032\u0030\u0030\uC810 \uBBF8\uB9CC \uAE30\uB85D\uC740 \uC800\uC7A5\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.';
                         pElement.textContent = '200점 미만은 기록되지 않습니다.';
+                    }
+                    if (finalScore < 200) {
+                        pElement.textContent = '\u0032\u0030\u0030\uC810 \uBBF8\uB9CC \uAE30\uB85D\uC740 \uC800\uC7A5\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.';
                     }
                 }
                 async function submitScore(finalScore) {
@@ -486,6 +929,11 @@
                         console.error("G1 Hard: 점수 전송 중 오류:", error);
                         prefixText = '점수 등록 실패. ';
                     } finally {
+                        if (!prefixText.includes('\uC2E4\uD328')) {
+                            prefixText = '\uAE30\uB85D \uC800\uC7A5 \uC644\uB8CC. ';
+                        } else {
+                            prefixText = '\uAE30\uB85D \uC800\uC7A5 \uC2E4\uD328. ';
+                        }
                         await fetchAndDisplayGlobalScore(pElement, prefixText);
                         isSubmitting = false;
                     }
@@ -525,6 +973,8 @@
                 updateGlobalHighScore(); 
                 initGame(); 
             }
+
+            window.addEventListener('beforeunload', cleanupGame1Instance);
             
             function resolveGameNickname() {
                 try {

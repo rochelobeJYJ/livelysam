@@ -7,7 +7,34 @@
   const CACHE_STORAGE_KEY = 'googleWorkspaceCache';
   const DELETE_QUEUE_KEY = 'googleWorkspaceDeleteQueue';
   const GOOGLE_GSI_SRC = 'https://accounts.google.com/gsi/client';
-  const BRIDGE_ORIGIN = 'http://127.0.0.1:58671';
+
+  function getBridgeQueryParam(key) {
+    const helper = LS.Helpers?.getRuntimeQueryParam;
+    if (typeof helper === 'function') {
+      return helper(key, '');
+    }
+    try {
+      return new URLSearchParams(window.location.search || '').get(key) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function resolveBridgePort() {
+    const candidate = String(getBridgeQueryParam('bridgePort') || '').trim();
+    return /^\d{2,5}$/.test(candidate) ? candidate : '58671';
+  }
+
+  function buildBridgeHeaders(headers = {}) {
+    const token = String(getBridgeQueryParam('livelySamToken') || '').trim();
+    if (!token) return { ...(headers || {}) };
+    return {
+      ...(headers || {}),
+      'X-LivelySam-Token': token
+    };
+  }
+
+  const BRIDGE_ORIGIN = `http://127.0.0.1:${resolveBridgePort()}`;
   const BRIDGE_HEALTH_URL = `${BRIDGE_ORIGIN}/__livelysam__/health`;
   const NATIVE_STATUS_URL = `${BRIDGE_ORIGIN}/__livelysam__/google-auth/status`;
   const NATIVE_LOGIN_URL = `${BRIDGE_ORIGIN}/__livelysam__/google-auth/login`;
@@ -26,7 +53,16 @@
   };
   const CACHE_PAST_DAYS = 60;
   const CACHE_FUTURE_DAYS = 365;
-  const RECOMMENDED_ORIGIN = 'http://localhost:58672';
+  const DEFAULT_LOCAL_LAUNCHER_ORIGIN = 'http://localhost:58672';
+  const GOOGLE_TIMEOUTS = Object.freeze({
+    health: 2600,
+    short: 3200,
+    default: 6000,
+    openLocalTarget: 7000,
+    nativeLogin: 8000,
+    logout: 10000,
+    long: 15000
+  });
 
   let gisPromise = null;
   let authState = null;
@@ -42,6 +78,11 @@
     if (value === null || value === undefined) return fallback;
     const normalized = String(value).trim();
     return normalized || fallback;
+  }
+
+  function resolveTimeout(value, fallback) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
   }
 
   function nowIso() {
@@ -226,14 +267,15 @@
 
   async function fetchJson(url, options = {}) {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeout = Number(options.timeout || 6000);
+    const timeout = resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.default);
+    const headers = buildBridgeHeaders(options.headers || {});
     let timeoutId = null;
 
     try {
       const response = await Promise.race([
         fetch(url, {
           method: options.method || 'GET',
-          headers: options.headers || {},
+          headers,
           body: options.body,
           cache: 'no-store',
           signal: controller?.signal
@@ -302,7 +344,7 @@
   async function refreshNativeBridgeStatus(options = {}) {
     try {
       const payload = await fetchJson(NATIVE_STATUS_URL, {
-        timeout: options.timeout || 3200
+        timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.short)
       });
       return updateNativeBridgeStatus(payload?.status, {
         emit: options.emit,
@@ -317,10 +359,10 @@
     }
   }
 
-  async function probeBridgeHealth() {
+  async function probeBridgeHealth(options = {}) {
     try {
       return await fetchJson(BRIDGE_HEALTH_URL, {
-        timeout: 2600
+        timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.health)
       });
     } catch {
       return null;
@@ -355,6 +397,10 @@
       return value === undefined ? fallback : value;
     }
     return fallback;
+  }
+
+  function getRecommendedOrigin() {
+    return text(getConfigValue('localLauncherOrigin'), DEFAULT_LOCAL_LAUNCHER_ORIGIN);
   }
 
   function isValidationMode() {
@@ -445,7 +491,7 @@
 
     return {
       interactiveSupported: nativeConfigured || isInteractiveRuntime(),
-      recommendedOrigin: RECOMMENDED_ORIGIN,
+      recommendedOrigin: getRecommendedOrigin(),
       currentOrigin: getCurrentOrigin(),
       hasClientId: nativeConfigured || hasClientId,
       nativeConfigured,
@@ -530,7 +576,7 @@
         target: normalizedTarget,
         kind
       }),
-      timeout: 7000
+      timeout: GOOGLE_TIMEOUTS.openLocalTarget
     });
 
     if (!payload?.ok) {
@@ -696,7 +742,7 @@
       body: JSON.stringify({
         scopes: getEnabledScopes()
       }),
-      timeout: 8000
+      timeout: GOOGLE_TIMEOUTS.nativeLogin
     });
 
     updateNativeBridgeStatus(payload?.status, { emit: true });
@@ -740,7 +786,7 @@
       body: JSON.stringify({
         scopes: getEnabledScopes()
       }),
-      timeout: 15000
+      timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.long)
     });
 
     updateNativeBridgeStatus(payload?.status, { emit: false });
@@ -780,7 +826,7 @@
           body: options.body ?? null,
           headers: options.headers || {}
         }),
-        timeout: options.timeout || 15000
+        timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.long)
       });
 
       if (!proxyPayload?.ok) {
@@ -2553,7 +2599,7 @@
       await refreshNativeBridgeStatus({
         emit: options.emit !== false,
         clearLocalAuthWhenDisconnected: true,
-        timeout: options.timeout || 3200
+        timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.short)
       });
       return buildStatus();
     },
@@ -2577,10 +2623,12 @@
         await refreshNativeBridgeStatus({
           emit: false,
           clearLocalAuthWhenDisconnected: true,
-          timeout: options.timeout || 3200
+          timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.short)
         });
       }
-      const bridgeHealth = await probeBridgeHealth();
+      const bridgeHealth = await probeBridgeHealth({
+        timeout: options.healthTimeout
+      });
       return buildDiagnostics({
         bridgeStoragePath: text(bridgeHealth?.storage_path)
       });
@@ -2622,7 +2670,7 @@
               'Content-Type': 'application/json'
             },
             body: '{}',
-            timeout: 10000
+            timeout: GOOGLE_TIMEOUTS.logout
           });
           updateNativeBridgeStatus(payload?.status, {
             emit: false,

@@ -692,8 +692,18 @@
   }
 
   function getDefaultLocation(options) {
-    const lat = Number.isFinite(Number(options?.lat)) ? Number(options.lat) : SEOUL_LAT;
-    const lon = Number.isFinite(Number(options?.lon)) ? Number(options.lon) : SEOUL_LON;
+    let configuredLocation = null;
+    try {
+      configuredLocation = LS.Config?.getWeatherLocation?.() || null;
+    } catch {
+      configuredLocation = null;
+    }
+    const lat = Number.isFinite(Number(options?.lat))
+      ? Number(options.lat)
+      : (Number.isFinite(Number(configuredLocation?.lat)) ? Number(configuredLocation.lat) : SEOUL_LAT);
+    const lon = Number.isFinite(Number(options?.lon))
+      ? Number(options.lon)
+      : (Number.isFinite(Number(configuredLocation?.lon)) ? Number(configuredLocation.lon) : SEOUL_LON);
     return { lat, lon };
   }
 

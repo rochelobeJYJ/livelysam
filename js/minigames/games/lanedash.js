@@ -74,6 +74,8 @@
     messageColor: '#ffd86b',
     messageTimer: 0
   };
+  let animationFrameId = 0;
+  let isDisposed = false;
 
   if (IS_PREVIEW_MODE) {
     document.body.classList.add('preview-mode');
@@ -1081,6 +1083,7 @@
   }
 
   function frame(now) {
+    if (isDisposed) return;
     if (!state.lastFrameTime) {
       state.lastFrameTime = now;
     }
@@ -1092,7 +1095,7 @@
     updateHud();
     render();
 
-    window.requestAnimationFrame(frame);
+    animationFrameId = window.requestAnimationFrame(frame);
   }
 
   function roundRect(x, y, width, height, radius) {
@@ -1121,26 +1124,26 @@
     return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
   }
 
-  startButton.addEventListener('click', () => {
+  const handleStartButtonClick = () => {
     startRun();
-  });
+  };
 
-  restartButton.addEventListener('click', () => {
+  const handleRestartButtonClick = () => {
     resetRun('ready');
     startRun();
-  });
+  };
 
-  lobbyButton.addEventListener('click', () => {
+  const handleLobbyButtonClick = () => {
     if (state.isSubmitting) return;
     returnToMinigameHub();
-  });
+  };
 
-  canvas.addEventListener('pointerdown', (event) => {
+  const handleCanvasPointerDown = (event) => {
     event.preventDefault();
     onCanvasPress(event.clientX);
-  });
+  };
 
-  document.addEventListener('keydown', (event) => {
+  const handleDocumentKeydown = (event) => {
     const key = event.key;
     if (['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D', ' ', 'Enter', '1', '2', '3'].includes(key)) {
       event.preventDefault();
@@ -1181,9 +1184,31 @@
       }
       startRun();
     }
-  });
+  };
+
+  function cleanupGame() {
+    isDisposed = true;
+    if (animationFrameId) {
+      window.cancelAnimationFrame(animationFrameId);
+      animationFrameId = 0;
+    }
+
+    startButton.removeEventListener('click', handleStartButtonClick);
+    restartButton.removeEventListener('click', handleRestartButtonClick);
+    lobbyButton.removeEventListener('click', handleLobbyButtonClick);
+    canvas.removeEventListener('pointerdown', handleCanvasPointerDown);
+    document.removeEventListener('keydown', handleDocumentKeydown);
+    window.removeEventListener('beforeunload', cleanupGame);
+  }
+
+  startButton.addEventListener('click', handleStartButtonClick);
+  restartButton.addEventListener('click', handleRestartButtonClick);
+  lobbyButton.addEventListener('click', handleLobbyButtonClick);
+  canvas.addEventListener('pointerdown', handleCanvasPointerDown);
+  document.addEventListener('keydown', handleDocumentKeydown);
+  window.addEventListener('beforeunload', cleanupGame);
 
   resetRun();
   refreshTopEntry();
-  window.requestAnimationFrame(frame);
+  animationFrameId = window.requestAnimationFrame(frame);
 })();

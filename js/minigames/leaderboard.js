@@ -4,7 +4,7 @@
   const LS = window.LivelySam = window.LivelySam || {};
   const PROVIDER_FIREBASE = 'firebase';
   const DEFAULT_SEASON_ID = 'season-1';
-  const DEFAULT_LEADERBOARD_MODE = 'all-scores';
+  const DEFAULT_LEADERBOARD_MODE = 'personal-best';
   const DEFAULT_MAX_ENTRIES_PER_PLAYER = 3;
   const FIREBASE_APP_NAME = 'livelysam-minigames';
   const CONNECTIVITY_GAME_ID = 'connectivity-probe';
@@ -26,6 +26,19 @@
     firebaseMeasurementId: ''
   };
   const MAX_NICKNAME_LENGTH = 12;
+  const DEFAULT_MAX_SCORE = 999999;
+  const MAX_SCORE_BY_GAME_ID = Object.freeze({
+    'connectivity-probe': 0,
+    'dino-run-1': DEFAULT_MAX_SCORE,
+    'dino-run-2': DEFAULT_MAX_SCORE,
+    'dino-run-hard': DEFAULT_MAX_SCORE,
+    'lane-dash': DEFAULT_MAX_SCORE,
+    'ocean-tap': DEFAULT_MAX_SCORE,
+    'parcel-stack': DEFAULT_MAX_SCORE,
+    'wing-boss': DEFAULT_MAX_SCORE,
+    'wing-tap-1': DEFAULT_MAX_SCORE,
+    'wing-tap-2': DEFAULT_MAX_SCORE
+  });
 
   let firebaseApp = null;
   let firestoreDb = null;
@@ -59,6 +72,14 @@
   function normalizeScore(value, fallback = 0) {
     const numeric = Math.floor(Number(value));
     return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
+  }
+
+  function getMaxAllowedScore(gameId) {
+    return MAX_SCORE_BY_GAME_ID[text(gameId).toLowerCase()] ?? DEFAULT_MAX_SCORE;
+  }
+
+  function normalizeSubmittedScore(gameId, value, fallback = 0) {
+    return Math.min(normalizeScore(value, fallback), getMaxAllowedScore(gameId));
   }
 
   function normalizeLeaderboardMode(value) {
@@ -220,14 +241,14 @@
     }
   }
 
-  function normalizeEntry(row, index = 0) {
+  function normalizeEntry(row, index = 0, gameId = '') {
     return {
       rank: Math.max(1, parseInt(row?.rank, 10) || index + 1),
       entryId: text(row?.entryId),
       playerId: text(row?.playerId),
       nickname: text(row?.nickname || row?.name, '익명'),
       maskedNickname: text(row?.maskedNickname, maskNickname(row?.nickname || row?.name || '익명')),
-      score: normalizeScore(row?.score),
+      score: normalizeSubmittedScore(gameId, row?.score),
       updatedAt: text(row?.updatedAt),
       source: text(row?.source, PROVIDER_FIREBASE)
     };
@@ -244,12 +265,13 @@
   }) {
     const entriesCollection = buildEntriesCollection(db, seasonId, gameId);
     const entryRef = entriesCollection.doc(playerId);
+    const submittedScore = normalizeSubmittedScore(gameId, score);
 
     return db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(entryRef);
       const current = snapshot.exists ? snapshot.data() : {};
-      const previousScore = normalizeScore(current?.score);
-      const bestScore = Math.max(previousScore, score);
+      const previousScore = normalizeSubmittedScore(gameId, current?.score);
+      const bestScore = Math.max(previousScore, submittedScore);
 
       if (!snapshot.exists) {
         transaction.set(entryRef, {
@@ -282,7 +304,7 @@
         seasonId,
         leaderboardMode: 'personal-best',
         entryId: entryRef.id,
-        submittedScore: score,
+        submittedScore,
         personalBest: bestScore,
         improved: bestScore > previousScore
       };
@@ -300,6 +322,31 @@
       ? buildAllScoresCollection(db, seasonId, gameId)
       : buildEntriesCollection(db, seasonId, gameId);
     const snapshot = await queryLeaderboardCollection(collection, { limit });
+
+    const entries = snapshot.docs.map((doc, index) => normalizeEntry({
+      rank: index + 1,
+      entryId: doc.id,
+      playerId: text(doc.data()?.playerId, doc.id),
+      nickname: text(doc.data()?.nickname, '익명'),
+      score: doc.data()?.score,
+      updatedAt: toIsoString(doc.data()?.updatedAt),
+      source: text(doc.data()?.source, PROVIDER_FIREBASE)
+    }, index, gameId));
+
+    return {
+      provider: PROVIDER_FIREBASE,
+      gameId,
+      seasonId,
+      leaderboardMode,
+      entries,
+      topEntry: entries[0] || null
+    };
+  }
+
+  function getAlternateLeaderboardMode(mode) {
+    return normalizeLeaderboardMode(mode) === 'all-scores'
+      ? 'personal-best'
+      : 'all-scores';
   }
 
   function inspectSettings(overrides = {}) {
@@ -388,7 +435,7 @@
   async function submitScoreToFirebase(options = {}) {
     const gameId = text(options?.gameId);
     const nickname = normalizeNickname(options?.nickname);
-    const score = normalizeScore(options?.score);
+    const score = normalizeSubmittedScore(gameId, options?.score);
     const leaderboardMode = normalizeLeaderboardMode(options?.leaderboardMode);
     const maxEntriesPerPlayer = normalizeMaxEntriesPerPlayer(options?.maxEntriesPerPlayer);
     const allowModeFallback = options?.allowModeFallback !== false;
@@ -430,7 +477,7 @@
             const presentEntries = existingEntries.filter((entry) => entry.exists);
             const emptyEntry = existingEntries.find((entry) => !entry.exists) || null;
             const sortedExisting = [...presentEntries].sort((left, right) => {
-              const scoreGap = normalizeScore(left.data?.score) - normalizeScore(right.data?.score);
+              const scoreGap = normalizeSubmittedScore(gameId, left.data?.score) - normalizeSubmittedScore(gameId, right.data?.score);
               if (scoreGap !== 0) return scoreGap;
               return text(left.data?.updatedAt).localeCompare(text(right.data?.updatedAt));
             });
@@ -439,7 +486,7 @@
             let targetEntry = emptyEntry;
             let accepted = true;
             if (!targetEntry) {
-              if (score > normalizeScore(lowestEntry?.data?.score)) {
+              if (score > normalizeSubmittedScore(gameId, lowestEntry?.data?.score)) {
                 targetEntry = lowestEntry;
               } else {
                 accepted = false;
@@ -447,7 +494,7 @@
             }
 
             const currentTopScore = presentEntries.reduce((best, entry) => (
-              Math.max(best, normalizeScore(entry.data?.score))
+              Math.max(best, normalizeSubmittedScore(gameId, entry.data?.score))
             ), 0);
 
             if (!accepted || !targetEntry) {
@@ -608,53 +655,62 @@
     }
 
     const { db } = await ensureFirebaseConnection(options?.settings || {});
+    const fallbackMode = getAlternateLeaderboardMode(leaderboardMode);
+
     try {
-      return await fetchLeaderboardEntries({
+      const primaryResult = await fetchLeaderboardEntries({
         db,
         gameId,
         seasonId,
         leaderboardMode,
         limit
       });
-    } catch (error) {
-      if (leaderboardMode !== 'all-scores' || !allowModeFallback) {
-        throw error;
+
+      const primaryEntries = Array.isArray(primaryResult?.entries) ? primaryResult.entries : [];
+      if (primaryEntries.length || !allowModeFallback) {
+        return primaryResult;
       }
 
-      console.warn('[Leaderboard] all-scores fetch failed, falling back to personal-best:', error);
       const fallbackResult = await fetchLeaderboardEntries({
         db,
         gameId,
         seasonId,
-        leaderboardMode: 'personal-best',
+        leaderboardMode: fallbackMode,
+        limit
+      });
+      const fallbackEntries = Array.isArray(fallbackResult?.entries) ? fallbackResult.entries : [];
+
+      if (fallbackEntries.length) {
+        return {
+          ...fallbackResult,
+          requestedLeaderboardMode: leaderboardMode,
+          fallbackMode,
+          fallbackReason: 'empty-primary'
+        };
+      }
+
+      return primaryResult;
+    } catch (error) {
+      if (!allowModeFallback) {
+        throw error;
+      }
+
+      console.warn(`[Leaderboard] ${leaderboardMode} fetch failed, falling back to ${fallbackMode}:`, error);
+      const fallbackResult = await fetchLeaderboardEntries({
+        db,
+        gameId,
+        seasonId,
+        leaderboardMode: fallbackMode,
         limit
       });
 
       return {
         ...fallbackResult,
         requestedLeaderboardMode: leaderboardMode,
-        fallbackMode: 'personal-best'
+        fallbackMode,
+        fallbackReason: 'error-primary'
       };
     }
-
-    const entries = snapshot.docs.map((doc, index) => normalizeEntry({
-      rank: index + 1,
-      entryId: doc.id,
-      playerId: text(doc.data()?.playerId, doc.id),
-      nickname: text(doc.data()?.nickname, '익명'),
-      score: doc.data()?.score,
-      updatedAt: toIsoString(doc.data()?.updatedAt),
-      source: text(doc.data()?.source, PROVIDER_FIREBASE)
-    }, index));
-
-    return {
-      provider: PROVIDER_FIREBASE,
-      gameId,
-      seasonId,
-      leaderboardMode,
-      entries,
-      topEntry: entries[0] || null
-    };
   }
 
   async function runConnectivityProbe(options = {}) {

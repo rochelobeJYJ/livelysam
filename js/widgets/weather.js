@@ -2,6 +2,30 @@
   'use strict';
 
   const LS = window.LivelySam = window.LivelySam || {};
+  const WEATHER_REQUEST_TIMEOUT_MS = 10000;
+
+  function withTimeout(promise, timeoutMs, label = '요청') {
+    const ms = Number(timeoutMs);
+    if (!Number.isFinite(ms) || ms <= 0) {
+      return Promise.resolve(promise);
+    }
+
+    let timeoutId = 0;
+    return Promise.race([
+      Promise.resolve(promise),
+      new Promise((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          const error = new Error(`${label} 시간이 초과되었습니다. (${ms}ms)`);
+          error.name = 'TimeoutError';
+          reject(error);
+        }, ms);
+      })
+    ]).finally(() => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    });
+  }
 
   LS.WeatherWidget = {
     _updateInterval: null,
@@ -28,40 +52,47 @@
         ? LS.Config.getWeatherApiKeyForUse()
         : LS.Config.get('weatherApiKey');
       const providerLabel = weatherMode === 'custom' ? '개인 OpenWeather API 키' : '기본 날씨 서버';
+      let resolvedPreset = preset;
+      let stage = 'resolve';
 
       LS.WeatherAPI.setMode(weatherMode);
       LS.WeatherAPI.setApiKey(apiKey);
 
-      if (weatherMode === 'custom' && !apiKey) {
-        this._setConnectionState({
-          status: 'idle',
-          stage: 'idle',
-          presetKey: preset?.key || '',
-          message: '내 API 키 사용을 선택했습니다. OpenWeather API 키를 입력해 주세요.'
-        });
-        this._renderEmpty('설정에서 OpenWeather API 키를 입력해 주세요.');
-        return;
-      }
-
-      this._setConnectionState({
-        status: 'loading',
-        stage: 'resolve',
-        presetKey: preset?.key || '',
-        message: `${preset?.label || '선택한 위치'} 주소와 좌표를 ${providerLabel} 기준으로 확인하는 중입니다.`
-      });
-      const resolvedPreset = await this._ensurePresetLocation(preset, apiKey);
-      if (!resolvedPreset?.hasCoordinates) {
-        this._setConnectionState({
-          status: 'error',
-          stage: 'resolve',
-          presetKey: resolvedPreset?.key || preset?.key || '',
-          message: this._getPresetEmptyMessage(resolvedPreset || preset)
-        });
-        this._renderEmpty(this._getPresetEmptyMessage(resolvedPreset || preset));
-        return;
-      }
-
       try {
+        if (weatherMode === 'custom' && !apiKey) {
+          this._setConnectionState({
+            status: 'idle',
+            stage: 'idle',
+            presetKey: preset?.key || '',
+            message: '내 API 키 사용을 선택했습니다. OpenWeather API 키를 입력해 주세요.'
+          });
+          this._renderEmpty('설정에서 OpenWeather API 키를 입력해 주세요.');
+          return;
+        }
+
+        this._setConnectionState({
+          status: 'loading',
+          stage: 'resolve',
+          presetKey: preset?.key || '',
+          message: `${preset?.label || '선택한 위치'} 주소와 좌표를 ${providerLabel} 기준으로 확인하는 중입니다.`
+        });
+        resolvedPreset = await withTimeout(
+          this._ensurePresetLocation(preset, apiKey),
+          WEATHER_REQUEST_TIMEOUT_MS,
+          '좌표 해석 요청'
+        );
+        if (!resolvedPreset?.hasCoordinates) {
+          this._setConnectionState({
+            status: 'error',
+            stage: 'resolve',
+            presetKey: resolvedPreset?.key || preset?.key || '',
+            message: this._getPresetEmptyMessage(resolvedPreset || preset)
+          });
+          this._renderEmpty(this._getPresetEmptyMessage(resolvedPreset || preset));
+          return;
+        }
+
+        stage = 'fetch';
         this._setConnectionState({
           status: 'loading',
           stage: 'fetch',
@@ -70,7 +101,11 @@
           message: `${resolvedPreset.resolvedName || resolvedPreset.label || '선택한 위치'} 좌표 확인 완료. ${providerLabel} 기준 실제 날씨와 미세먼지를 불러오는 중입니다.`
         });
         LS.WeatherAPI.setLocation(resolvedPreset.lat, resolvedPreset.lon);
-        const data = await LS.WeatherAPI.fetchAll();
+        const data = await withTimeout(
+          LS.WeatherAPI.fetchAll(),
+          WEATHER_REQUEST_TIMEOUT_MS,
+          '날씨 정보 요청'
+        );
         this._lastData = {
           ...data,
           preset: resolvedPreset
@@ -86,14 +121,31 @@
         this.render(this._lastData);
       } catch (error) {
         console.error('[Weather] Update failed:', error);
+        const isResolveStage = stage === 'resolve';
+        const displayPreset = resolvedPreset || preset || {};
+        const displayLabel = displayPreset.resolvedName || displayPreset.label || '선택한 위치';
+        const isTimeout = error?.name === 'TimeoutError';
+        const failureMessage = isTimeout
+          ? (isResolveStage
+            ? '위치 좌표 확인이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.'
+            : '날씨 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.')
+          : (isResolveStage
+            ? '날씨 위치 정보를 확인하지 못했습니다.'
+            : '날씨 정보를 불러오지 못했습니다.');
         this._setConnectionState({
           status: 'error',
-          stage: 'fetch',
-          presetKey: resolvedPreset.key || '',
-          locationName: resolvedPreset.resolvedName || '',
-          message: `${resolvedPreset.resolvedName || resolvedPreset.label || '선택한 위치'} 기준 ${providerLabel} 호출에 실패했습니다.`
+          stage,
+          presetKey: displayPreset.key || preset?.key || '',
+          locationName: displayPreset.resolvedName || displayPreset.label || '',
+          message: isTimeout
+            ? (isResolveStage
+              ? `${displayLabel} 기준 ${providerLabel} 좌표 확인 시간이 초과되었습니다.`
+              : `${displayLabel} 기준 ${providerLabel} 응답 시간이 초과되었습니다.`)
+            : (isResolveStage
+              ? `${displayLabel} 기준 ${providerLabel} 위치 확인에 실패했습니다.`
+              : `${displayLabel} 기준 ${providerLabel} 호출에 실패했습니다.`)
         });
-        this._renderEmpty('날씨 정보를 불러오지 못했습니다.');
+        this._renderEmpty(failureMessage);
       }
     },
 
@@ -212,12 +264,18 @@
 
       if (!location) return preset;
 
-      const nextConfig = {
-        weatherLat: location.lat,
-        weatherLon: location.lon,
-        weatherSchoolLat: location.lat,
-        weatherSchoolLon: location.lon
-      };
+      const isHome = preset?.key === 'home';
+      const nextConfig = isHome
+        ? {
+            weatherHomeLat: location.lat,
+            weatherHomeLon: location.lon
+          }
+        : {
+            weatherLat: location.lat,
+            weatherLon: location.lon,
+            weatherSchoolLat: location.lat,
+            weatherSchoolLon: location.lon
+          };
       LS.Config.setMultiple(nextConfig);
 
       return {
@@ -983,7 +1041,10 @@
         this._wheelBridgeHandler = null;
         this._wheelBridgeTarget = null;
       }
-      if (this._updateInterval) clearInterval(this._updateInterval);
+      if (this._updateInterval) {
+        clearInterval(this._updateInterval);
+        this._updateInterval = null;
+      }
     }
   };
 })();

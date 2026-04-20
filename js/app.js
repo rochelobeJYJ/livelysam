@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   'use strict';
   const LS = window.LivelySam = window.LivelySam || {};
   const VERSION_INFO = window.LivelySamVersion || LS.VERSION_INFO || { version: '0.0.0-dev', defaultChannel: 'dev' };
@@ -7,32 +7,27 @@
 
   const GRID_COLUMNS = 24;
   const GRID_CELL_HEIGHT = 40;
-  const GRID_MARGIN = 5;
+  const GRID_MARGIN = 6;
   const GRID_WIDTH_UNIT_SCALE = 2;
   const GRID_COLUMN_STYLE_ID = 'ls-grid-column-style';
   const GRID_LAYOUT_STORAGE_KEY = 'gridLayout';
   const GRID_LAYOUT_STATE_STORAGE_KEY = 'gridLayoutState';
   const GRID_LAYOUT_BACKUP_STORAGE_KEY = 'gridLayoutBackup';
   const GRID_LAYOUT_STATE_VERSION = 2;
-  /* 기본 위젯 레이아웃 (24컬럼 4단 구성, cellHeight=40 기준) */
+  /* 현재 사용자 배치를 반영한 기본 위젯 레이아웃 (24컬럼, cellHeight=40 기준) */
   const DEFAULT_LAYOUT = [
-    { id: 'clock',     x: 0,  y: 0,  w: 3, h: 10, minW: 1, minH: 2 },
-    { id: 'timetable', x: 3,  y: 0,  w: 3, h: 12, minW: 2, minH: 6 },
-    { id: 'calendar',  x: 6,  y: 0,  w: 3, h: 12, minW: 3, minH: 10 },
-    { id: 'weather',   x: 9,  y: 0,  w: 3, h: 6,  minW: 1, minH: 2 },
-    { id: 'meal',      x: 0,  y: 10, w: 3, h: 8,  minW: 2, minH: 6 },
-    { id: 'timer',     x: 9,  y: 6,  w: 3, h: 6,  minW: 1, minH: 2 },
-    { id: 'dday',      x: 9,  y: 12, w: 3, h: 4,  minW: 1, minH: 2 },
-    { id: 'memo',      x: 3,  y: 12, w: 3, h: 6,  minW: 2, minH: 4 },
-    { id: 'todo',      x: 6,  y: 12, w: 3, h: 6,  minW: 2, minH: 4 },
-    { id: 'bookmarks', x: 0,  y: 18, w: 3, h: 4,  minW: 2, minH: 4 },
-    { id: 'shortcuts', x: 3,  y: 18, w: 3, h: 4,  minW: 2, minH: 3 }
-  ].map((item) => ({
-    ...item,
-    x: (Number(item.x) || 0) * GRID_WIDTH_UNIT_SCALE,
-    w: Math.max(1, (Number(item.w) || 1) * GRID_WIDTH_UNIT_SCALE),
-    minW: Math.max(1, (Number(item.minW) || 1) * GRID_WIDTH_UNIT_SCALE)
-  }));
+    { id: 'clock',     x: 0,  y: 3,  w: 5, h: 7,  minW: 2, minH: 2 },
+    { id: 'timetable', x: 5,  y: 0,  w: 6, h: 12, minW: 4, minH: 6 },
+    { id: 'calendar',  x: 11, y: 0,  w: 7, h: 12, minW: 6, minH: 10 },
+    { id: 'weather',   x: 18, y: 0,  w: 6, h: 13, minW: 2, minH: 2 },
+    { id: 'meal',      x: 0,  y: 10, w: 5, h: 6,  minW: 4, minH: 6 },
+    { id: 'timer',     x: 0,  y: 0,  w: 3, h: 3,  minW: 2, minH: 2 },
+    { id: 'dday',      x: 3,  y: 0,  w: 2, h: 3,  minW: 2, minH: 2 },
+    { id: 'memo',      x: 5,  y: 12, w: 6, h: 8,  minW: 4, minH: 4 },
+    { id: 'todo',      x: 11, y: 12, w: 7, h: 8,  minW: 4, minH: 4 },
+    { id: 'bookmarks', x: 18, y: 13, w: 6, h: 7,  minW: 4, minH: 4 },
+    { id: 'shortcuts', x: 0,  y: 16, w: 5, h: 4,  minW: 4, minH: 3 }
+  ];
   const WIDGET_VISIBILITY_FIELDS = [
     ['clock', 'widget-visible-clock'],
     ['timetable', 'widget-visible-timetable'],
@@ -78,10 +73,14 @@
     _debouncedWeatherResolution: null,
     _viewportMetricsBound: false,
     _viewportMetricsUpdater: null,
+    _runtimeChangedHandler: null,
+    _beforeUnloadHandler: null,
     _widgetResizeObserver: null,
     _widgetMetricsFrame: 0,
     _widgetSettingsFocusTimer: 0,
     _widgetSummarySyncFrame: 0,
+    _appRefreshIntervalId: 0,
+    _startupQuickstartTimer: 0,
     _activeSettingsTab: 'quickstart',
     _layoutEditMode: false,
     _lastSafeVisibleLayout: null,
@@ -96,10 +95,18 @@
     _floatingDockCollapseTimer: 0,
     _googleAutoSyncTimer: 0,
     _googleAutoSyncBound: false,
+    _googleRecordsChangedHandler: null,
+    _googleSyncChangedHandler: null,
     _googlePassiveSyncTimer: 0,
+    _googleInitialSyncTimer: 0,
+    _googleSettingsResyncTimer: 0,
     _googleRealtimeSyncBound: false,
     _googleRealtimeSyncIntervalId: 0,
+    _googleFocusSyncHandler: null,
+    _googleOnlineSyncHandler: null,
+    _googleVisibilitySyncHandler: null,
     _googleProgressBound: false,
+    _googleProgressHandler: null,
     _googleSyncPromise: null,
     _googleSyncSuppressUntil: 0,
     _googleStatusRefreshPromise: null,
@@ -139,11 +146,19 @@
       await this._initWidgets();
       this._initResponsiveWidgetMetrics();
       this._initSettingsModal();
-      LS.MinigamesHub?.init?.();
+      try {
+        LS.MinigamesHub?.init?.();
+      } catch (error) {
+        console.warn('[LivelySam] 미니게임 허브 초기화 실패:', error);
+      }
       LS.Leaderboard?.warmup?.().then(() => {
         this._refreshLeaderboardSettingsStatus();
-        LS.MinigamesHub?.invalidateHallOfFameCache?.();
-        LS.MinigamesHub?.render?.();
+        try {
+          LS.MinigamesHub?.invalidateHallOfFameCache?.();
+          LS.MinigamesHub?.render?.();
+        } catch (error) {
+          console.warn('[LivelySam] 미니게임 허브 갱신 실패:', error);
+        }
       }).catch((error) => {
         console.warn('[LivelySam] 리더보드 초기화 실패:', error);
         this._refreshLeaderboardSettingsStatus();
@@ -196,16 +211,19 @@
       this._queueWeatherResolution();
       this._refreshLivelySetupNotice();
       this._refreshGoogleSyncDockButton();
+      this._bindAppLifecycle();
 
       // 주기적 데이터 갱신 (30분)
-      setInterval(() => this._refreshData(), 30 * 60 * 1000);
+      window.clearInterval(this._appRefreshIntervalId);
+      this._appRefreshIntervalId = window.setInterval(() => this._refreshData(), 30 * 60 * 1000);
 
       // 첫 실행 체크
       if (!LS.Config.get('atptCode')) {
         if (this._isHostedWallpaper()) {
           this._refreshLivelySetupNotice();
         } else {
-          setTimeout(() => this._openSettings('quickstart'), 500);
+          window.clearTimeout(this._startupQuickstartTimer);
+          this._startupQuickstartTimer = window.setTimeout(() => this._openSettings('quickstart'), 500);
         }
       }
 
@@ -217,6 +235,14 @@
       if (versionNode) {
         versionNode.textContent = LS.VERSION;
       }
+    },
+
+    _bindAppLifecycle() {
+      if (this._beforeUnloadHandler) return;
+      this._beforeUnloadHandler = () => {
+        this.destroy();
+      };
+      window.addEventListener('beforeunload', this._beforeUnloadHandler);
     },
 
     _initEnvironment() {
@@ -237,13 +263,14 @@
           this._updateViewportMetrics();
           this._queueResponsiveWidgetMetrics();
         }, 80);
-        window.addEventListener('resize', this._viewportMetricsUpdater, { passive: true });
-        window.addEventListener('livelysam:runtimeChanged', () => {
+        this._runtimeChangedHandler = () => {
           this._syncEnvironmentClasses();
           this._updateViewportMetrics();
           this._queueResponsiveWidgetMetrics();
           this._refreshLivelySetupNotice();
-        });
+        };
+        window.addEventListener('resize', this._viewportMetricsUpdater, { passive: true });
+        window.addEventListener('livelysam:runtimeChanged', this._runtimeChangedHandler);
       }
     },
 
@@ -832,11 +859,54 @@
         source,
         version,
         updatedAt,
+        reason: Array.isArray(candidate) ? '' : String(candidate?.reason || '').trim(),
         layout,
         widgetVisibility: candidate && !Array.isArray(candidate) && candidate.widgetVisibility && typeof candidate.widgetVisibility === 'object'
           ? { ...candidate.widgetVisibility }
           : null
       };
+    },
+
+    _isAutoGeneratedLayoutReason(reason = '') {
+      const normalized = String(reason || '').trim().toLowerCase();
+      if (!normalized) {
+        return false;
+      }
+      return normalized === 'seed'
+        || normalized === 'repair'
+        || normalized === 'fit-layout'
+        || normalized === 'fit-layout-noop'
+        || normalized === 'stabilize-visibility'
+        || normalized.startsWith('migrate-');
+    },
+
+    _getPersistedLayoutSourcePriority(source = '') {
+      if (source === GRID_LAYOUT_STATE_STORAGE_KEY) return 3;
+      if (source === GRID_LAYOUT_BACKUP_STORAGE_KEY) return 2;
+      if (source === GRID_LAYOUT_STORAGE_KEY) return 1;
+      return 0;
+    },
+
+    _comparePersistedLayoutCandidates(left, right) {
+      const leftManual = this._isAutoGeneratedLayoutReason(left?.reason) ? 0 : 1;
+      const rightManual = this._isAutoGeneratedLayoutReason(right?.reason) ? 0 : 1;
+      if (rightManual !== leftManual) {
+        return rightManual - leftManual;
+      }
+
+      if ((right?.updatedAt || 0) !== (left?.updatedAt || 0)) {
+        return (right?.updatedAt || 0) - (left?.updatedAt || 0);
+      }
+
+      if ((right?.layout?.length || 0) !== (left?.layout?.length || 0)) {
+        return (right?.layout?.length || 0) - (left?.layout?.length || 0);
+      }
+
+      if ((right?.version || 0) !== (left?.version || 0)) {
+        return (right?.version || 0) - (left?.version || 0);
+      }
+
+      return this._getPersistedLayoutSourcePriority(right?.source) - this._getPersistedLayoutSourcePriority(left?.source);
     },
 
     _getPersistedLayoutState() {
@@ -850,12 +920,7 @@
         return null;
       }
 
-      candidates.sort((a, b) => {
-        if (b.layout.length !== a.layout.length) {
-          return b.layout.length - a.layout.length;
-        }
-        return b.updatedAt - a.updatedAt;
-      });
+      candidates.sort((a, b) => this._comparePersistedLayoutCandidates(a, b));
 
       return candidates[0];
     },
@@ -1151,7 +1216,7 @@
       });
       LS.Config.set('widgetVisibility', { ...snapshot.widgetVisibility });
       LS.Storage.set('layoutEditMode', true);
-      window.setTimeout(() => location.reload(), 120);
+      this._reloadAfterStorageFlush(120);
     },
 
     _getNormalizedLayout() {
@@ -1327,6 +1392,8 @@
       const scaleMin = isTimetable ? 0.94 : 0.96;
       const spaceScaleMin = isTimetable ? 0.64 : 0.92;
       const compactScaleMin = isTimetable ? 0.9 : 0.9;
+      const widthMode = width < 240 ? 'xs' : width < 420 ? 'sm' : width < 760 ? 'md' : 'lg';
+      const heightMode = height < 220 ? 'xs' : height < 360 ? 'sm' : height < 760 ? 'md' : 'lg';
       const scale = clamp(Math.min(width / 360, effectiveHeight / 290), scaleMin, sizeCapActive ? scaleMax : 1.16);
       const spaceScale = clamp(Math.min(width / 360, effectiveHeight / 280), spaceScaleMin, sizeCapActive ? spaceScaleMax : 1.18);
       const compactScale = clamp(Math.min(width / 340, effectiveHeight / 250), compactScaleMin, sizeCapActive ? compactScaleMax : 1.16);
@@ -1344,6 +1411,8 @@
       widgetEl.style.setProperty('--widget-table-row-height', `${rowHeight}px`);
       widgetEl.style.setProperty('--widget-calendar-cell-height', `${calendarCellHeight}px`);
       widgetEl.style.setProperty('--widget-calendar-week-height', `${calendarWeekHeight}px`);
+      widgetEl.dataset.widthMode = widthMode;
+      widgetEl.dataset.heightMode = heightMode;
     },
 
     _saveLayout() {
@@ -1373,12 +1442,33 @@
       return true;
     },
 
+    _reloadAfterStorageFlush(delay = 0) {
+      const safeDelay = Math.max(0, Number(delay) || 0);
+      const scheduleReload = () => {
+        window.setTimeout(() => location.reload(), safeDelay);
+      };
+
+      try {
+        const pending = LS.Storage.flushPending?.();
+        if (pending && typeof pending.then === 'function') {
+          void pending.catch((error) => {
+            console.warn('[LivelySam] Storage flush before reload failed:', error);
+          }).finally(scheduleReload);
+          return;
+        }
+      } catch (error) {
+        console.warn('[LivelySam] Storage flush before reload threw:', error);
+      }
+
+      scheduleReload();
+    },
+
     resetLayout() {
       LS.Storage.remove(GRID_LAYOUT_STORAGE_KEY);
       LS.Storage.remove(GRID_LAYOUT_STATE_STORAGE_KEY);
       LS.Storage.remove(GRID_LAYOUT_BACKUP_STORAGE_KEY);
       LS.Storage.remove(LAYOUT_EDIT_ORIGIN_STORAGE_KEY);
-      location.reload();
+      this._reloadAfterStorageFlush();
     },
 
     _bindLayoutEditInteractions() {
@@ -1488,7 +1578,7 @@
 
       if (options.reload !== false) {
         LS.Storage.set('layoutEditMode', this._layoutEditMode);
-        window.setTimeout(() => location.reload(), options.reloadDelay || 180);
+        this._reloadAfterStorageFlush(options.reloadDelay || 180);
       }
 
       return true;
@@ -1543,7 +1633,7 @@
         toastTone: 'success'
       });
       LS.Storage.set('layoutEditMode', this._layoutEditMode);
-      window.setTimeout(() => location.reload(), 160);
+      this._reloadAfterStorageFlush(160);
       return true;
     },
 
@@ -1787,13 +1877,16 @@
       if (this._googleAutoSyncBound) return;
       this._googleAutoSyncBound = true;
 
-      window.addEventListener('livelysam:recordsChanged', () => {
+      this._googleRecordsChangedHandler = () => {
         this._scheduleGoogleAutoSync();
-      });
-      window.addEventListener('livelysam:googleSyncChanged', () => {
+      };
+      this._googleSyncChangedHandler = () => {
         this._refreshGoogleSettingsStatus();
         this._refreshGoogleSyncDockButton();
-      });
+      };
+
+      window.addEventListener('livelysam:recordsChanged', this._googleRecordsChangedHandler);
+      window.addEventListener('livelysam:googleSyncChanged', this._googleSyncChangedHandler);
     },
 
     _scheduleGoogleAutoSync() {
@@ -1825,7 +1918,7 @@
       if (this._googleProgressBound) return;
       this._googleProgressBound = true;
 
-      window.addEventListener('livelysam:googleSyncProgress', (event) => {
+      this._googleProgressHandler = (event) => {
         const cached = LS.GoogleWorkspace?.getCachedDiagnostics?.() || {};
         const detail = event?.detail && typeof event.detail === 'object'
           ? event.detail
@@ -1838,7 +1931,9 @@
         };
         this._refreshGoogleSettingsStatus();
         this._refreshGoogleSyncDockButton();
-      });
+      };
+
+      window.addEventListener('livelysam:googleSyncProgress', this._googleProgressHandler);
     },
 
     _bindGoogleRealtimeSync() {
@@ -1850,16 +1945,20 @@
         this._scheduleGooglePassiveSync({ reason, minAgeMs, delayMs });
       };
 
-      window.addEventListener('focus', () => {
+      this._googleFocusSyncHandler = () => {
         scheduleVisibleSync('focus', GOOGLE_FOCUS_SYNC_STALE_MS, 350);
-      });
-      window.addEventListener('online', () => {
+      };
+      this._googleOnlineSyncHandler = () => {
         scheduleVisibleSync('online', GOOGLE_FOCUS_SYNC_STALE_MS, 800);
-      });
-      document.addEventListener('visibilitychange', () => {
+      };
+      this._googleVisibilitySyncHandler = () => {
         if (document.visibilityState !== 'visible') return;
         scheduleVisibleSync('visible', GOOGLE_FOCUS_SYNC_STALE_MS, 500);
-      });
+      };
+
+      window.addEventListener('focus', this._googleFocusSyncHandler);
+      window.addEventListener('online', this._googleOnlineSyncHandler);
+      document.addEventListener('visibilitychange', this._googleVisibilitySyncHandler);
 
       this._googleRealtimeSyncIntervalId = window.setInterval(() => {
         scheduleVisibleSync('poll', GOOGLE_REALTIME_SYNC_STALE_MS, 0);
@@ -2051,6 +2150,21 @@
       document.getElementById('google-config-file-btn')?.addEventListener('click', () => this._openGoogleLocalTarget('config'));
       document.getElementById('google-data-folder-btn')?.addEventListener('click', () => this._openGoogleLocalTarget('data'));
       document.getElementById('google-debug-btn')?.addEventListener('click', () => this._showGoogleDiagnostics());
+      document.querySelectorAll('#settings-modal [data-copy-text]').forEach((button) => {
+        if (button.dataset.copyBound === '1') return;
+        button.dataset.copyBound = '1';
+        button.addEventListener('click', async (event) => {
+          const copyTarget = event.currentTarget;
+          const text = String(copyTarget.dataset.copyText || '').trim();
+          if (!text) return;
+          const copied = await this._copyTextToClipboard(text);
+          LS.Helpers.showToast(
+            copied ? '버그 신고 메일 주소를 복사했습니다.' : `메일 주소: ${text}`,
+            copied ? 'success' : 'warning',
+            copied ? 2200 : 3600
+          );
+        });
+      });
       document.getElementById('firebase-guide-btn')?.addEventListener('click', () => this._openExternalUrl('https://firebase.google.com/docs/web/setup'));
       document.getElementById('firebase-console-btn')?.addEventListener('click', () => this._openExternalUrl('https://console.firebase.google.com/'));
 
@@ -2526,17 +2640,25 @@
 
       titleEl.textContent = meta.title || '';
       descriptionEl.textContent = meta.description || '';
-      chipsEl.innerHTML = (meta.chips || []).map((chip, index) => `
-        <span class="settings-panel-chip${chip.primary || index === 0 ? ' is-primary' : ''}">${LS.Helpers.escapeHtml(chip.text)}</span>
-      `).join('');
-      actionsEl.innerHTML = (meta.actions || []).map((action, index) => `
-        <button type="button"
-          class="settings-panel-action-btn${action.primary || index === 0 ? ' is-primary' : ''}"
-          data-intro-target-tab="${LS.Helpers.escapeHtml(action.tab || '')}"
-          ${action.widgetFocus ? `data-widget-focus="${LS.Helpers.escapeHtml(action.widgetFocus)}"` : ''}>
-          ${LS.Helpers.escapeHtml(action.label || '')}
-        </button>
-      `).join('');
+      chipsEl.replaceChildren();
+      (meta.chips || []).forEach((chip, index) => {
+        const chipEl = document.createElement('span');
+        chipEl.className = `settings-panel-chip${chip.primary || index === 0 ? ' is-primary' : ''}`;
+        chipEl.textContent = String(chip.text || '');
+        chipsEl.appendChild(chipEl);
+      });
+      actionsEl.replaceChildren();
+      (meta.actions || []).forEach((action, index) => {
+        const actionBtn = document.createElement('button');
+        actionBtn.type = 'button';
+        actionBtn.className = `settings-panel-action-btn${action.primary || index === 0 ? ' is-primary' : ''}`;
+        actionBtn.dataset.introTargetTab = String(action.tab || '');
+        if (action.widgetFocus) {
+          actionBtn.dataset.widgetFocus = String(action.widgetFocus);
+        }
+        actionBtn.textContent = String(action.label || '');
+        actionsEl.appendChild(actionBtn);
+      });
     },
 
     _setActivePanelSectionNav(sectionName = '') {
@@ -2571,6 +2693,38 @@
       document.querySelectorAll('#settings-widgets .widget-settings-summary').forEach((button) => {
         button.classList.toggle('is-active', Boolean(sectionName) && button.dataset.widgetFocus === sectionName);
       });
+    },
+
+    async _copyTextToClipboard(text) {
+      const value = String(text || '').trim();
+      if (!value) return false;
+
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(value);
+          return true;
+        }
+      } catch {
+        // fall through to the legacy copy path
+      }
+
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '-9999px';
+        textarea.style.left = '-9999px';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const copied = document.execCommand('copy');
+        textarea.remove();
+        return copied;
+      } catch {
+        return false;
+      }
     },
 
     _refreshWidgetSettingsSummary() {
@@ -3371,11 +3525,11 @@
       const status = LS.GoogleWorkspace?.getStatus?.() || {};
       const clientId = String(draft.googleClientId || '').trim();
       const currentOrigin = String(window.location.origin || '').trim();
-      const recommendedOrigin = String(status.recommendedOrigin || 'http://localhost:58672').trim();
+      const recommendedOrigin = String(status.recommendedOrigin || LS.Config?.get?.('localLauncherOrigin') || '').trim();
       const looksLikeClientId = /^[0-9]+-[a-z0-9._-]+\.apps\.googleusercontent\.com$/i.test(clientId);
       const nativeConfigured = Boolean(status.nativeConfigured);
       const interactiveSupported = Boolean(status.interactiveSupported);
-      const originMatches = nativeConfigured || !interactiveSupported || currentOrigin === recommendedOrigin;
+      const originMatches = nativeConfigured || !interactiveSupported || !recommendedOrigin || currentOrigin === recommendedOrigin;
       const issues = [];
 
       if (!nativeConfigured) {
@@ -3762,19 +3916,26 @@
       if (!selectEl) return;
 
       const items = Array.isArray(options) ? options : [];
+      selectEl.replaceChildren();
       if (!items.length) {
-        selectEl.innerHTML = `<option value="${LS.Helpers.escapeHtml(selectedValue || '')}">${LS.Helpers.escapeHtml(fallbackLabel)}</option>`;
+        const fallbackOption = document.createElement('option');
+        fallbackOption.value = String(selectedValue || '');
+        fallbackOption.textContent = String(fallbackLabel || '');
+        selectEl.appendChild(fallbackOption);
         selectEl.value = selectedValue || '';
         selectEl.disabled = true;
         return;
       }
 
       selectEl.disabled = false;
-      selectEl.innerHTML = items.map((item) => {
+      items.forEach((item) => {
         const label = item.summary || item.title || item.name || item.id;
         const suffix = item.primary ? ' (기본)' : (!item.writable ? ' (읽기 전용)' : '');
-        return `<option value="${LS.Helpers.escapeHtml(item.id)}">${LS.Helpers.escapeHtml(label + suffix)}</option>`;
-      }).join('');
+        const optionEl = document.createElement('option');
+        optionEl.value = String(item.id || '');
+        optionEl.textContent = String(label + suffix);
+        selectEl.appendChild(optionEl);
+      });
 
       const resolved = this._resolveGoogleOptionSelection(items, selectedValue, kind);
       selectEl.value = resolved?.id || items[0].id;
@@ -4365,7 +4526,9 @@
         LS.Helpers.showToast('Google 연결을 시작합니다. 버튼과 상태 카드에서 진행 상황을 확인해 주세요.', 'info', 2600);
         await this._runGoogleSync({ interactive: true, silent: false, force: true });
         await this._refreshDataWithOptions({ syncGoogle: false });
-        await this._reloadGoogleSettingsStatus().catch(() => {});
+        await this._reloadGoogleSettingsStatus().catch((error) => {
+          console.warn('[Settings] Failed to reload Google settings status after connect:', error);
+        });
         const status = LS.GoogleWorkspace?.getStatus?.() || {};
         this._setSettingsSaveState('saved', 'Google 연결됨');
         LS.Helpers.showToast(`Google 연결 완료: 일정 ${status.calendarCount || 0}건 / 할 일 ${status.taskCount || 0}건`, 'success', 2800);
@@ -4399,7 +4562,9 @@
           force: true
         });
         await this._refreshDataWithOptions({ syncGoogle: false });
-        await this._reloadGoogleSettingsStatus().catch(() => {});
+        await this._reloadGoogleSettingsStatus().catch((error) => {
+          console.warn('[Settings] Failed to reload Google settings status after manual sync:', error);
+        });
         this._setSettingsSaveState('saved', 'Google 동기화됨');
 
         if (!status.connected && !canInteractive) {
@@ -4442,7 +4607,9 @@
 
         const inspection = await LS.GoogleWorkspace?.inspectDuplicates?.();
         if (!inspection || !inspection.totalGroups) {
-          await this._reloadGoogleSettingsStatus().catch(() => {});
+          await this._reloadGoogleSettingsStatus().catch((error) => {
+            console.warn('[Settings] Failed to reload Google settings status after duplicate inspection:', error);
+          });
           this._setSettingsSaveState('saved', 'Google 중복 없음');
           LS.Helpers.showToast('Google 중복 후보를 찾지 못했습니다.', 'success', 2400);
           return;
@@ -4495,7 +4662,9 @@
         const queuedTaskDeleteCount = Number(cleanup?.queuedTaskDeleteCount || 0);
 
         if (!deletedLocalCount) {
-          await this._reloadGoogleSettingsStatus().catch(() => {});
+          await this._reloadGoogleSettingsStatus().catch((error) => {
+            console.warn('[Settings] Failed to reload Google settings status after duplicate cleanup check:', error);
+          });
           this._setSettingsSaveState('warning', 'Google 중복 정리 대상 없음');
           LS.Helpers.showToast('정리할 중복 기록이 더 이상 없습니다.', 'info', 2400);
           return;
@@ -4513,7 +4682,9 @@
           force: true
         });
         await this._refreshDataWithOptions({ syncGoogle: false });
-        await this._reloadGoogleSettingsStatus().catch(() => {});
+        await this._reloadGoogleSettingsStatus().catch((error) => {
+          console.warn('[Settings] Failed to reload Google settings status after duplicate cleanup:', error);
+        });
 
         const remaining = await LS.GoogleWorkspace?.inspectDuplicates?.();
         if (remaining?.totalGroups) {
@@ -4529,7 +4700,9 @@
         this._setSettingsSaveState('saved', 'Google 중복 정리됨');
         LS.Helpers.showToast('Google 중복 정리를 마쳤습니다. 남아 있는 중복 후보가 없습니다.', 'success', 3200);
       } catch (error) {
-        await this._reloadGoogleSettingsStatus().catch(() => {});
+        await this._reloadGoogleSettingsStatus().catch((error) => {
+          console.warn('[Settings] Failed to reload Google settings status after duplicate cleanup error:', error);
+        });
         const diagnostics = this._getGoogleDiagnosticsSnapshot();
         const pendingDeletes = Array.isArray(LS.Records?.getGoogleSyncDeleteQueue?.())
           ? LS.Records.getGoogleSyncDeleteQueue().length
@@ -4795,9 +4968,13 @@
       const profiles = LS.Config.getProfiles();
       const activeId = LS.Config.getActiveProfileId();
 
-      selectEl.innerHTML = profiles.map((profile) => (
-        `<option value="${LS.Helpers.escapeHtml(profile.id)}">${LS.Helpers.escapeHtml(profile.name)}</option>`
-      )).join('');
+      selectEl.replaceChildren();
+      profiles.forEach((profile) => {
+        const optionEl = document.createElement('option');
+        optionEl.value = String(profile.id || '');
+        optionEl.textContent = String(profile.name || '');
+        selectEl.appendChild(optionEl);
+      });
       selectEl.value = activeId;
 
       const deleteBtn = document.getElementById('profile-delete-btn');
@@ -5798,7 +5975,7 @@
         this._setSettingsSaveState('saved', '저장됨');
         this._refreshQuickStartOverview();
         LS.Helpers.showToast('위젯 표시 설정을 적용하기 위해 화면을 새로고침합니다.', 'info', 2600);
-        window.setTimeout(() => location.reload(), 240);
+        this._reloadAfterStorageFlush(240);
         return;
       }
 
@@ -5883,6 +6060,70 @@
           cancelText: '취소'
         }
       );
+    },
+
+    _clearAppTimers() {
+      window.clearInterval(this._appRefreshIntervalId);
+      this._appRefreshIntervalId = 0;
+      window.clearTimeout(this._startupQuickstartTimer);
+      this._startupQuickstartTimer = 0;
+      window.clearTimeout(this._googleAutoSyncTimer);
+      this._googleAutoSyncTimer = 0;
+      window.clearTimeout(this._googlePassiveSyncTimer);
+      this._googlePassiveSyncTimer = 0;
+      window.clearTimeout(this._googleInitialSyncTimer);
+      this._googleInitialSyncTimer = 0;
+      window.clearTimeout(this._googleSettingsResyncTimer);
+      this._googleSettingsResyncTimer = 0;
+      window.clearTimeout(this._floatingDockCollapseTimer);
+      this._floatingDockCollapseTimer = 0;
+      window.clearTimeout(this._settingsTimetableRefreshTimer);
+      this._settingsTimetableRefreshTimer = 0;
+      window.clearTimeout(this._widgetSettingsFocusTimer);
+      this._widgetSettingsFocusTimer = 0;
+      window.clearInterval(this._googleRealtimeSyncIntervalId);
+      this._googleRealtimeSyncIntervalId = 0;
+      if (this._widgetMetricsFrame) {
+        window.cancelAnimationFrame(this._widgetMetricsFrame);
+        this._widgetMetricsFrame = 0;
+      }
+      if (this._widgetSummarySyncFrame) {
+        window.cancelAnimationFrame(this._widgetSummarySyncFrame);
+        this._widgetSummarySyncFrame = 0;
+      }
+    },
+
+    destroy() {
+      this._clearAppTimers();
+      this._widgetResizeObserver?.disconnect?.();
+      this._widgetResizeObserver = null;
+      if (this._viewportMetricsUpdater) {
+        window.removeEventListener('resize', this._viewportMetricsUpdater);
+      }
+      if (this._runtimeChangedHandler) {
+        window.removeEventListener('livelysam:runtimeChanged', this._runtimeChangedHandler);
+      }
+      if (this._googleRecordsChangedHandler) {
+        window.removeEventListener('livelysam:recordsChanged', this._googleRecordsChangedHandler);
+      }
+      if (this._googleSyncChangedHandler) {
+        window.removeEventListener('livelysam:googleSyncChanged', this._googleSyncChangedHandler);
+      }
+      if (this._googleProgressHandler) {
+        window.removeEventListener('livelysam:googleSyncProgress', this._googleProgressHandler);
+      }
+      if (this._googleFocusSyncHandler) {
+        window.removeEventListener('focus', this._googleFocusSyncHandler);
+      }
+      if (this._googleOnlineSyncHandler) {
+        window.removeEventListener('online', this._googleOnlineSyncHandler);
+      }
+      if (this._googleVisibilitySyncHandler) {
+        document.removeEventListener('visibilitychange', this._googleVisibilitySyncHandler);
+      }
+      if (this._beforeUnloadHandler) {
+        window.removeEventListener('beforeunload', this._beforeUnloadHandler);
+      }
     },
 
     async _importData() {

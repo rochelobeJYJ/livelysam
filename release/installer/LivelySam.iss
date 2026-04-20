@@ -15,7 +15,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-UninstallDisplayIcon={app}\LivelySamLauncher.exe
+UninstallDisplayIcon={app}\dist\launcher\LivelySamLauncher.exe
 OutputDir=..\..\dist\installer
 OutputBaseFilename={#MyInstallerOutputBaseName}
 Compression=lzma
@@ -25,6 +25,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 CloseApplicationsFilter=*.exe
 RestartApplications=no
+SetupIconFile=..\..\assets\icons\livelysam_launcher.ico
 
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
@@ -41,14 +42,12 @@ Source: "..\..\start_livelysam_launcher.cmd"; DestDir: "{app}"; Flags: ignorever
 Source: "..\..\start_livelysam_launcher.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\start_local_wallpaper.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\stop_local_wallpaper.cmd"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\LivelySamLauncher.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\BrowserPreviewHost.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\LocalStorageBridge.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\dist\launcher\LivelySamLauncher.exe"; DestDir: "{app}\dist\launcher"; Flags: ignoreversion
 Source: "..\..\dist\launcher\BrowserPreviewHost.exe"; DestDir: "{app}\dist\launcher"; Flags: ignoreversion
 Source: "..\..\dist\launcher\LocalStorageBridge.exe"; DestDir: "{app}\dist\launcher"; Flags: ignoreversion
+Source: "..\..\assets\icons\livelysam_launcher.ico"; DestDir: "{app}\assets\icons"; Flags: ignoreversion
 Source: "..\..\css\*"; DestDir: "{app}\css"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\js\*"; DestDir: "{app}\js"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\js\*"; DestDir: "{app}\js"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "minigames\games\*.py,minigames\games\scan*.txt"
 Source: "..\..\tools\start_local_wallpaper.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "..\..\tools\local_wallpaper_host.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "..\..\tools\ensure_local_storage_bridge.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
@@ -60,11 +59,14 @@ Name: "{localappdata}\LivelySam\runtime"
 Name: "{localappdata}\LivelySam\user-data"
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\start_livelysam_launcher.vbs"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\start_livelysam_launcher.vbs"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\start_livelysam_launcher.vbs"; IconFilename: "{app}\assets\icons\livelysam_launcher.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\start_livelysam_launcher.vbs"; Tasks: desktopicon; IconFilename: "{app}\assets\icons\livelysam_launcher.ico"
 
 [Run]
 Filename: "{app}\start_livelysam_launcher.vbs"; Description: "LivelySam 실행"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{localappdata}\LivelySam\runtime"
 
 [Code]
 procedure TryTerminateProcessByImageName(const ImageName: string);

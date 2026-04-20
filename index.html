@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@7.3.0/dist/gridstack.min.css">
 
   <!-- 앱 스타일 -->
-  <link rel="stylesheet" href="css/style.css?v=20260419-moon3">
+  <link rel="stylesheet" href="css/style.css?v=20260420-uiinfo1">
 </head>
 <body>
   <div class="app-container">
@@ -1142,9 +1142,22 @@
 
       <!-- 하단 버튼 -->
       <div class="settings-footer">
-        <div class="settings-footer-hint">
-          <span class="settings-footer-hint-dot" aria-hidden="true"></span>
-          <span id="settings-footer-hint-text">변경한 내용은 저장을 눌러야 적용됩니다.</span>
+        <div class="settings-footer-main">
+          <div class="settings-footer-hint">
+            <span class="settings-footer-hint-dot" aria-hidden="true"></span>
+            <span id="settings-footer-hint-text">변경한 내용은 저장을 눌러야 적용됩니다.</span>
+          </div>
+          <div class="settings-footer-support" role="note" aria-label="사용 안내">
+            <span class="settings-footer-support-item">듀얼 모니터 환경, 특히 세컨 모니터에서 사용하시는 편을 권장합니다.</span>
+            <button
+              type="button"
+              id="settings-bugreport-copy-btn"
+              class="settings-footer-copy-btn"
+              data-copy-text="gritiquol@naver.com"
+            >
+              버그 신고 메일 복사: gritiquol@naver.com
+            </button>
+          </div>
         </div>
         <div class="settings-footer-actions">
           <button id="settings-cancel" class="settings-footer-btn btn-secondary">취소</button>
@@ -1179,45 +1192,46 @@
   <script src="https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore-compat.js"></script>
 
   <!-- 유틸리티 (의존성 없음) -->
-  <script src="js/utils/helpers.js?v=20260419-moon2"></script>
-  <script src="js/utils/astronomy.js?v=20260417-astro6"></script>
-  <script src="js/utils/holidays.js?v=20260410-settingsfix6"></script>
-  <script src="js/utils/storage.js?v=20260417-layoutfix3"></script>
-  <script src="js/utils/records.js?v=20260416-input3"></script>
-  <script src="js/public-runtime-config.js?v=20260418-proxy2"></script>
-  <script src="js/minigames/leaderboard-public-config.js?v=20260417-public1"></script>
-  <script src="js/minigames/leaderboard.js?v=20260417-firebase1"></script>
-  <script src="js/minigames/hub.js?v=20260417-minigame5"></script>
-  <script src="js/minigames/registry.js?v=20260417-minigame2"></script>
+  <script src="js/utils/helpers.js?v=20260419-hotfix1"></script>
+  <script src="js/utils/astronomy.js?v=20260419-hotfix1"></script>
+  <script src="js/utils/holidays.js?v=20260419-hotfix1"></script>
+  <script src="js/utils/storage.js?v=20260419-storagefix1"></script>
+  <script src="js/utils/records.js?v=20260419-hotfix1"></script>
+  <script src="js/public-runtime-config.js?v=20260419-hotfix1"></script>
+  <script src="js/minigames/leaderboard-public-config.js?v=20260419-hotfix1"></script>
+  <script src="js/minigames/leaderboard.js?v=20260419-hotfix1"></script>
+  <script src="js/minigames/hub.js?v=20260419-hotfix4"></script>
+  <script src="js/minigames/games-catalog.js?v=20260419-hotfix4"></script>
+  <script src="js/minigames/registry.js?v=20260419-hotfix4"></script>
 
   <!-- API 모듈 -->
-  <script src="js/api/data-service.js?v=20260418-proxy3"></script>
-  <script src="js/api/neis.js?v=20260417-proxy1"></script>
-  <script src="js/api/openweather.js?v=20260417-proxy1"></script>
+  <script src="js/api/data-service.js?v=20260419-hotfix1"></script>
+  <script src="js/api/neis.js?v=20260419-hotfix1"></script>
+  <script src="js/api/openweather.js?v=20260419-hotfix1"></script>
 
   <!-- 설정 관리 -->
-  <script src="js/config.js?v=20260417-layoutfix2"></script>
-  <script src="js/api/google-workspace.js?v=20260416-google-sync6"></script>
+  <script src="js/config.js?v=20260419-hotfix1"></script>
+  <script src="js/api/google-workspace.js?v=20260419-hotfix1"></script>
 
   <!-- Lively 연동 -->
-  <script src="js/lively.js?v=20260410-settingsfix6"></script>
-  <script src="js/wallpaper-engine.js?v=20260410-we1"></script>
+  <script src="js/lively.js?v=20260419-hotfix1"></script>
+  <script src="js/wallpaper-engine.js?v=20260419-hotfix1"></script>
 
   <!-- 위젯 -->
-  <script src="js/widgets/clock.js?v=20260419-ui10"></script>
-  <script src="js/widgets/timetable.js?v=20260414-ui1"></script>
-  <script src="js/widgets/meal.js?v=20260414-ui1"></script>
-  <script src="js/widgets/weather.js?v=20260417-ui8"></script>
-  <script src="js/widgets/calendar.js?v=20260417-astro6"></script>
-  <script src="js/widgets/memo.js?v=20260413-phase2a"></script>
-  <script src="js/widgets/todo.js?v=20260417-ui8"></script>
-  <script src="js/widgets/timer.js?v=20260417-ui13"></script>
-  <script src="js/widgets/dday.js?v=20260417-ui13"></script>
-  <script src="js/widgets/bookmarks.js?v=20260413-phase1a"></script>
-  <script src="js/widgets/shortcuts.js?v=20260417-shortcuts11"></script>
+  <script src="js/widgets/clock.js?v=20260419-hotfix1"></script>
+  <script src="js/widgets/timetable.js?v=20260419-hotfix1"></script>
+  <script src="js/widgets/meal.js?v=20260419-mealui2"></script>
+  <script src="js/widgets/weather.js?v=20260419-hotfix1"></script>
+  <script src="js/widgets/calendar.js?v=20260419-hotfix1"></script>
+  <script src="js/widgets/memo.js?v=20260419-hotfix1"></script>
+  <script src="js/widgets/todo.js?v=20260419-hotfix1"></script>
+  <script src="js/widgets/timer.js?v=20260419-hotfix1"></script>
+  <script src="js/widgets/dday.js?v=20260419-hotfix1"></script>
+  <script src="js/widgets/bookmarks.js?v=20260419-hotfix1"></script>
+  <script src="js/widgets/shortcuts.js?v=20260419-hotfix2"></script>
 
   <!-- 메인 앱 (마지막 로드) -->
-  <script src="js/version.js?v=20260418-release1"></script>
-  <script src="js/app.js?v=20260417-layoutfix3"></script>
+  <script src="js/version.js?v=20260419-hotfix1"></script>
+  <script src="js/app.js?v=20260420-uiinfo1"></script>
 </body>
 </html>

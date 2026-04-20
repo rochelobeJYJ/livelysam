@@ -7,6 +7,37 @@
   const NICKNAME_STORAGE_KEY = 'minigameNickname';
   const LEGACY_NICKNAME_STORAGE_KEY = 'j_game_username';
   const NICKNAME_MAX_LENGTH = 12;
+  const CATALOG_STORAGE_KEY = 'minigameCatalogCacheV4';
+  const CATALOG_GLOBAL_KEY = 'LivelySamMinigameCatalog';
+  const CATALOG_SCHEMA_VERSION = 4;
+  const CATALOG_API_PATH = '/__livelysam__/minigames/catalog';
+  const CATALOG_FETCH_TIMEOUT_MS = 4000;
+  const DEFAULT_ALL_SCORES_HALL_NOTICE = '개인당 최고 점수 3개를 기록합니다.';
+  const safeParse = LS.Helpers?.safeParse || ((raw, fallback = null) => {
+    if (raw === null || raw === undefined || raw === '') {
+      return fallback;
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return fallback;
+    }
+  });
+  const safeWrite = LS.Helpers?.safeWrite || ((key, value, options = {}) => {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      if (options.log !== false) {
+        console.warn(options.scope || '[Minigames] localStorage write failed:', error);
+      }
+      if (options.throwOnError) {
+        throw error;
+      }
+      return false;
+    }
+  });
 
   const STATUS_ORDER = {
     ready: 0,
@@ -68,7 +99,7 @@
   }
 
   function normalizeLeaderboardMode(value) {
-    return text(value, 'all-scores').toLowerCase() === 'all-scores'
+    return text(value, 'personal-best').toLowerCase() === 'all-scores'
       ? 'all-scores'
       : 'personal-best';
   }
@@ -86,6 +117,12 @@
     if (!id) {
       throw new Error('미니게임 id가 필요합니다.');
     }
+
+    const leaderboardMode = normalizeLeaderboardMode(raw.leaderboardMode);
+    const hallNotice = text(
+      raw.hallNotice,
+      leaderboardMode === 'all-scores' ? DEFAULT_ALL_SCORES_HALL_NOTICE : ''
+    );
 
     return {
       id,
@@ -108,8 +145,8 @@
       author: text(raw.author),
       version: text(raw.version),
       updatedAt: text(raw.updatedAt),
-      leaderboardMode: normalizeLeaderboardMode(raw.leaderboardMode),
-      hallNotice: text(raw.hallNotice),
+      leaderboardMode,
+      hallNotice,
       previewDisabled: raw.previewDisabled === true,
       hallOfFamePreview: normalizeHallOfFamePreview(raw.hallOfFamePreview)
     };
@@ -124,6 +161,39 @@
       notes: [...(game.notes || [])],
       hallOfFamePreview: clone(game.hallOfFamePreview || [])
     };
+  }
+
+  function asGameList(value) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (Array.isArray(value?.games)) {
+      return value.games;
+    }
+
+    return [];
+  }
+
+  function serializeCatalogGame(game) {
+    if (!game || game.launchType !== 'iframe' || !text(game.entry)) {
+      return null;
+    }
+
+    const serialized = copyGame(game);
+    delete serialized.mount;
+    delete serialized.sortIndex;
+    return serialized;
+  }
+
+  function getEmbeddedCatalog() {
+    const catalog = window[CATALOG_GLOBAL_KEY];
+    return catalog && typeof catalog === 'object' ? catalog : null;
+  }
+
+  function canUseCatalogApi() {
+    return /^https?:$/i.test(text(window.location?.protocol))
+      && typeof window.fetch === 'function';
   }
 
   function canLaunch(game) {
@@ -142,15 +212,42 @@
       && game.previewDisabled !== true;
   }
 
-  function buildPreviewEntry(entry) {
-    const url = text(entry);
+  function getEntryCacheBust(game) {
+    const candidate = text(
+      game?.updatedAt
+      || game?.version
+      || getEmbeddedCatalog()?.generatedAt
+      || window.LivelySamVersion?.version
+      || LS.VERSION
+    );
+    return candidate ? encodeURIComponent(candidate) : '';
+  }
+
+  function buildGameEntry(game, options = {}) {
+    const preview = options.preview === true;
+    const url = text(game?.entry || game);
     if (!url) return '';
 
     const hashIndex = url.indexOf('#');
     const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
     const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
     const separator = base.includes('?') ? '&' : '?';
-    return `${base}${separator}preview=1${hash}`;
+    const params = [];
+
+    if (preview) {
+      params.push('preview=1');
+    }
+
+    const cacheBust = getEntryCacheBust(game);
+    if (cacheBust) {
+      params.push(`lsv=${cacheBust}`);
+    }
+
+    if (!params.length) {
+      return `${base}${hash}`;
+    }
+
+    return `${base}${separator}${params.join('&')}${hash}`;
   }
 
   function getStatusMeta(status) {
@@ -200,6 +297,11 @@
     _selectedGameId: '',
     _games: new Map(),
     _registrationCounter: 0,
+    _catalogLoading: false,
+    _catalogLoaded: false,
+    _catalogSource: '',
+    _catalogError: '',
+    _catalogLoadPromise: null,
     _hallCache: new Map(),
     _hallRequestSerialByGame: new Map(),
     _hallRefreshTimerByGame: new Map(),
@@ -221,10 +323,37 @@
       this._bindEvents();
       this.getNickname();
       this._initialized = true;
+
+      let embeddedCatalogLoaded = false;
+      const embeddedCatalog = getEmbeddedCatalog();
+      if (embeddedCatalog) {
+        try {
+          this.syncCatalog(embeddedCatalog, {
+            source: 'catalog',
+            replaceExisting: true,
+            render: false
+          });
+          embeddedCatalogLoaded = this._games.size > 0;
+        } catch (error) {
+          console.warn('[Minigames] Embedded catalog bootstrap failed:', error);
+          this._catalogError = text(error?.message, '게임 목록 초기화에 실패했습니다.');
+        }
+      }
+
+      if (this._games.size) {
+        this._catalogLoaded = true;
+        this._catalogSource = embeddedCatalogLoaded ? 'catalog' : (this._catalogSource || 'registry');
+        this._catalogError = '';
+        this._persistCatalogCache();
+      } else {
+        this.ensureCatalogLoaded().catch((error) => {
+          console.warn('[Minigames] Catalog bootstrap failed:', error);
+        });
+      }
       this.render();
     },
 
-    registerGame(rawGame) {
+    registerGame(rawGame, options = {}) {
       const normalized = normalizeGame(rawGame);
       const previous = this._games.get(normalized.id);
       const game = {
@@ -233,15 +362,216 @@
       };
       this._games.set(game.id, game);
 
+      this._catalogLoaded = true;
+      this._catalogSource = text(options.source, this._catalogSource || 'registry');
+      this._catalogError = '';
+
       if (!this._selectedGameId) {
         this._selectedGameId = game.id;
       }
 
-      if (this._initialized) {
+      if (options.persist !== false) {
+        this._persistCatalogCache();
+      }
+
+      if (this._initialized && options.render !== false) {
         this.render();
       }
 
       return copyGame(game);
+    },
+
+    registerGames(rawGames, options = {}) {
+      const games = asGameList(rawGames);
+      const errors = [];
+      let registeredCount = 0;
+
+      games.forEach((rawGame, index) => {
+        try {
+          this.registerGame(rawGame, {
+            ...options,
+            persist: false,
+            render: false
+          });
+          registeredCount += 1;
+        } catch (error) {
+          const gameId = text(rawGame?.id, `index:${index}`);
+          console.warn(`[Minigames] Failed to register game "${gameId}":`, error);
+          errors.push({
+            index,
+            gameId: text(rawGame?.id),
+            message: text(error?.message, '등록 실패')
+          });
+        }
+      });
+
+      if (registeredCount > 0) {
+        this._catalogLoaded = true;
+        this._catalogSource = text(options.source, this._catalogSource || 'registry');
+        this._catalogError = '';
+
+        if (options.persist !== false) {
+          this._persistCatalogCache();
+        }
+
+        if (this._initialized && options.render !== false) {
+          this.render();
+        }
+      } else if (errors.length) {
+        this._catalogError = '유효한 게임 목록을 등록하지 못했습니다.';
+        if (this._initialized && options.render !== false) {
+          this.render();
+        }
+      }
+
+      return { registeredCount, errors };
+    },
+
+    syncCatalog(rawGames, options = {}) {
+      const games = asGameList(rawGames);
+
+      if (options.replaceExisting) {
+        const nextIds = new Set(
+          games
+            .map((game) => text(game?.id))
+            .filter(Boolean)
+        );
+
+        Array.from(this._games.keys()).forEach((gameId) => {
+          if (nextIds.has(gameId)) return;
+
+          const timerId = this._hallRefreshTimerByGame.get(gameId);
+          if (timerId) {
+            window.clearTimeout(timerId);
+          }
+
+          this._games.delete(gameId);
+          this._hallCache.delete(gameId);
+          this._hallRequestSerialByGame.delete(gameId);
+          this._hallRefreshTimerByGame.delete(gameId);
+        });
+
+        if (this._selectedGameId && !nextIds.has(this._selectedGameId)) {
+          this._selectedGameId = '';
+        }
+      }
+
+      return this.registerGames(games, options);
+    },
+
+    async ensureCatalogLoaded(options = {}) {
+      const forceCatalog = options.forceCatalog === true;
+      const preferRemote = options.preferRemote !== false;
+
+      if (this._games.size && !forceCatalog) {
+        this._catalogLoaded = true;
+        this._catalogSource = this._catalogSource || 'registry';
+        this._catalogError = '';
+        return {
+          source: this._catalogSource,
+          restored: false,
+          count: this._games.size
+        };
+      }
+
+      if (this._catalogLoadPromise) {
+        return this._catalogLoadPromise;
+      }
+
+      this._catalogLoading = true;
+      this._catalogError = '';
+      if (this._initialized) {
+        this.render();
+      }
+
+      this._catalogLoadPromise = (async () => {
+        let lastError = null;
+
+        try {
+          if (preferRemote && canUseCatalogApi()) {
+            const apiResult = await this._loadCatalogFromApi({
+              replaceExisting: forceCatalog || this._games.size > 0
+            });
+
+            if (apiResult.registeredCount > 0) {
+              this._catalogLoaded = true;
+              this._catalogSource = 'api';
+              this._catalogError = '';
+              return {
+                source: 'api',
+                restored: false,
+                count: apiResult.registeredCount
+              };
+            }
+          }
+        } catch (error) {
+          lastError = error;
+          console.warn('[Minigames] Live catalog load failed:', error);
+        }
+
+        try {
+          const catalogResult = this._loadCatalogFromEmbedded({
+            replaceExisting: forceCatalog
+          });
+
+          if (catalogResult.registeredCount > 0) {
+            this._catalogLoaded = true;
+            this._catalogSource = 'catalog';
+            this._catalogError = '';
+            return {
+              source: 'catalog',
+              restored: false,
+              count: catalogResult.registeredCount
+            };
+          }
+        } catch (error) {
+          lastError = error;
+          console.warn('[Minigames] Embedded catalog load failed:', error);
+        }
+
+        if (this._games.size) {
+          this._catalogLoaded = true;
+          this._catalogSource = this._catalogSource || 'registry';
+          this._catalogError = '';
+          return {
+            source: this._catalogSource,
+            restored: false,
+            count: this._games.size
+          };
+        }
+
+        const restoredCount = this._restoreCatalogFromCache();
+        if (restoredCount > 0) {
+          this._catalogLoaded = true;
+          this._catalogSource = 'cache';
+          this._catalogError = '';
+          return {
+            source: 'cache',
+            restored: true,
+            count: restoredCount
+          };
+        }
+
+        this._catalogLoaded = false;
+        this._catalogSource = '';
+        this._catalogError = text(lastError?.message, '게임 목록을 불러오지 못했습니다.');
+        return {
+          source: '',
+          restored: false,
+          count: 0,
+          error: this._catalogError
+        };
+      })();
+
+      try {
+        return await this._catalogLoadPromise;
+      } finally {
+        this._catalogLoading = false;
+        this._catalogLoadPromise = null;
+        if (this._initialized) {
+          this.render();
+        }
+      }
     },
 
     unregisterGame(gameId) {
@@ -261,6 +591,133 @@
       }
 
       return true;
+    },
+
+    _loadCatalogFromEmbedded(options = {}) {
+      const payload = getEmbeddedCatalog();
+      const games = asGameList(payload).filter((game) => game && typeof game === 'object');
+      if (!games.length) {
+        throw new Error('게임 목록에 유효한 항목이 없습니다.');
+      }
+
+      const result = this.syncCatalog(games, {
+        source: 'catalog',
+        replaceExisting: options.replaceExisting === true,
+        persist: false,
+        render: false
+      });
+
+      if (!result.registeredCount) {
+        throw new Error('게임 목록 등록에 실패했습니다.');
+      }
+
+      this._persistCatalogCache();
+      return result;
+    },
+
+    async _loadCatalogFromApi(options = {}) {
+      if (!canUseCatalogApi()) {
+        throw new Error('Live catalog API is unavailable.');
+      }
+
+      let controller = null;
+      let timeoutId = 0;
+
+      try {
+        if (typeof window.AbortController === 'function') {
+          controller = new window.AbortController();
+          timeoutId = window.setTimeout(() => controller.abort(), CATALOG_FETCH_TIMEOUT_MS);
+        }
+
+        const separator = CATALOG_API_PATH.includes('?') ? '&' : '?';
+        const response = await window.fetch(`${CATALOG_API_PATH}${separator}ts=${Date.now()}`, {
+          cache: 'no-store',
+          signal: controller?.signal
+        });
+
+        if (!response.ok) {
+          throw new Error(`Live catalog request failed with HTTP ${response.status}.`);
+        }
+
+        const payload = await response.json();
+        const games = asGameList(payload).filter((game) => game && typeof game === 'object');
+        if (!games.length) {
+          throw new Error('Live catalog response did not include any games.');
+        }
+
+        const result = this.syncCatalog(games, {
+          source: 'api',
+          replaceExisting: options.replaceExisting !== false,
+          persist: false,
+          render: false
+        });
+
+        if (!result.registeredCount) {
+          throw new Error('Live catalog registration failed.');
+        }
+
+        this._persistCatalogCache();
+        return result;
+      } finally {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+        }
+      }
+    },
+
+    _restoreCatalogFromCache() {
+      try {
+        const raw = localStorage.getItem(CATALOG_STORAGE_KEY);
+        if (!raw) {
+          return 0;
+        }
+
+        const payload = safeParse(raw, null);
+        if (!payload || typeof payload !== 'object') {
+          return 0;
+        }
+        if ((parseInt(payload?.version, 10) || 0) !== CATALOG_SCHEMA_VERSION) {
+          return 0;
+        }
+
+        const games = asGameList(payload).filter((game) => game && typeof game === 'object');
+        if (!games.length) {
+          return 0;
+        }
+
+        const result = this.syncCatalog(games, {
+          source: 'cache',
+          persist: false,
+          render: false
+        });
+
+        return result.registeredCount;
+      } catch (error) {
+        console.warn('[Minigames] Cached catalog restore failed:', error);
+        return 0;
+      }
+    },
+
+    _persistCatalogCache() {
+      try {
+        const games = Array.from(this._games.values())
+          .map((game) => serializeCatalogGame(game))
+          .filter(Boolean);
+
+        if (!games.length) {
+          return;
+        }
+
+        safeWrite(CATALOG_STORAGE_KEY, JSON.stringify({
+          version: CATALOG_SCHEMA_VERSION,
+          updatedAt: new Date().toISOString(),
+          games
+        }), {
+          scope: '[Minigames] Catalog cache save failed:'
+        });
+      } catch (error) {
+        console.warn('[Minigames] Catalog cache save failed:', error);
+      }
     },
 
     getGames() {
@@ -370,6 +827,9 @@
       const leaderboardMode = normalizeLeaderboardMode(this._games.get(text(gameId))?.leaderboardMode);
 
       if (leaderboardMode === 'all-scores') {
+        const hasAllScoresEntries = entries.some((entry) => (
+          normalizeLeaderboardMode(entry?.storageMode || leaderboardMode) === 'all-scores'
+        ));
         const merged = new Map();
 
         entries.forEach((entry, index) => {
@@ -382,9 +842,11 @@
             score: Math.max(0, parseInt(entry?.score, 10) || 0),
             updatedAt: text(entry?.updatedAt),
             meta: text(entry?.meta),
-            source: text(entry?.source, 'firebase')
+            source: text(entry?.source, 'firebase'),
+            storageMode: normalizeLeaderboardMode(entry?.storageMode || leaderboardMode)
           };
 
+          if (hasAllScoresEntries && normalized.storageMode !== 'all-scores') return;
           if (!normalized.nickname && !normalized.entryId) return;
 
           const key = normalized.entryId || `fallback:${index}:${normalized.nickname}:${normalized.score}:${normalized.updatedAt}`;
@@ -431,7 +893,8 @@
           score: Math.max(0, parseInt(entry?.score, 10) || 0),
           updatedAt: text(entry?.updatedAt),
           meta: text(entry?.meta),
-          source: text(entry?.source, 'firebase')
+          source: text(entry?.source, 'firebase'),
+          storageMode: normalizeLeaderboardMode(entry?.storageMode || leaderboardMode)
         };
 
         const current = merged.get(key);
@@ -490,7 +953,8 @@
           score,
           updatedAt: submittedAt,
           meta: '방금 기록',
-          source: 'firebase'
+          source: 'firebase',
+          storageMode: leaderboardMode
         };
 
         if (existingIndex >= 0) {
@@ -532,7 +996,8 @@
         score,
         updatedAt: submittedAt,
         meta: '방금 갱신',
-        source: 'firebase'
+        source: 'firebase',
+        storageMode: leaderboardMode
       };
 
       if (existingIndex >= 0) {
@@ -644,6 +1109,12 @@
 
       const modal = document.getElementById('minigame-modal');
       if (!modal) return;
+
+      if (!this._games.size && !this._catalogLoading) {
+        this.ensureCatalogLoaded().catch((error) => {
+          console.warn('[Minigames] Catalog reload failed:', error);
+        });
+      }
 
       this.render();
       this.getGames().forEach((game) => this._scheduleHallRefresh(game.id, 0));
@@ -869,7 +1340,7 @@
 
       const iframe = document.createElement('iframe');
       iframe.className = 'minigame-runner-frame';
-      iframe.src = game.entry;
+      iframe.src = buildGameEntry(game);
       iframe.title = `${game.title} 실행 화면`;
       iframe.tabIndex = 0;
       iframe.setAttribute('loading', 'eager');
@@ -1046,7 +1517,7 @@
         return `
           <iframe
             class="minigame-gallery-frame"
-            src="${escapeHtml(buildPreviewEntry(game.entry))}"
+            src="${escapeHtml(buildGameEntry(game, { preview: true }))}"
             title="${escapeHtml(game.title)} 썸네일"
             loading="lazy"
             tabindex="-1"
@@ -1269,19 +1740,34 @@
       `;
     },
 
+    _renderCatalogEmptyPanel(kind = 'games') {
+      const isHall = kind === 'hall';
+      const isError = !this._catalogLoading && Boolean(this._catalogError);
+      const loadingTitle = isHall ? '명예의 전당을 준비 중입니다.' : '플레이할 게임을 불러오는 중입니다.';
+      const loadingText = isHall
+        ? '게임 목록이 준비되는 대로 게임별 기록을 자동으로 연결합니다.'
+        : '게임 목록이 준비되면 여기에서 바로 실행하실 수 있습니다.';
+      const errorTitle = isHall ? '명예의 전당을 준비하지 못했습니다.' : '게임 목록을 불러오지 못했습니다.';
+      const errorText = this._catalogError
+        ? `${this._catalogError} 마지막으로 저장된 게임 목록도 복구하지 못했습니다.`
+        : loadingText;
+
+      return `
+        <div class="minigame-empty-panel">
+          <div class="minigame-empty-panel-icon" aria-hidden="true">${isHall ? '🏆' : '🦖'}</div>
+          <h3>${escapeHtml(isError ? errorTitle : loadingTitle)}</h3>
+          <p>${escapeHtml(isError ? errorText : loadingText)}</p>
+        </div>
+      `;
+    },
+
     _renderGamesPanel() {
       const target = document.getElementById('minigame-gallery');
       if (!target) return;
 
       const games = this.getGames();
       if (!games.length) {
-        target.innerHTML = `
-          <div class="minigame-empty-panel">
-            <div class="minigame-empty-panel-icon" aria-hidden="true">🦖</div>
-            <h3>플레이할 게임을 준비 중입니다.</h3>
-            <p>게임이 등록되면 여기에서 바로 실행하실 수 있습니다.</p>
-          </div>
-        `;
+        target.innerHTML = this._renderCatalogEmptyPanel('games');
         return;
       }
 
@@ -1458,64 +1944,17 @@
       if (games.length) {
         games.forEach((gameItem) => this._ensureHallOfFameState(gameItem.id));
 
-        const sections = this.getGameSeries().map((series) => `
-          <section class="minigame-series-section">
-            ${this._renderSeriesHeader(series)}
-            <div class="minigame-hall-grid">
-              ${series.games.map((game) => this._renderHallCard(game)).join('')}
-            </div>
-          </section>
-        `).join('');
-
         target.innerHTML = `
-          <div class="minigame-series-stack">
-            ${sections}
+          <div class="minigame-hall-grid">
+            ${games.map((game) => this._renderHallCard(game)).join('')}
           </div>
         `;
         return;
       }
       if (!games.length) {
-        target.innerHTML = `
-          <div class="minigame-section-card">
-            <div class="minigame-section-title">명예의 전당 준비 중</div>
-            <p class="minigame-section-text">연결된 게임이 아직 없습니다. 게임을 등록하면 게임별 상위 기록이 여기에 표시됩니다.</p>
-          </div>
-        `;
+        target.innerHTML = this._renderCatalogEmptyPanel('hall');
         return;
       }
-
-      games.forEach((gameItem) => this._ensureHallOfFameState(gameItem.id));
-
-      const cards = games.map((gameItem) => {
-        const hallState = this._hallCache.get(gameItem.id) || {};
-        const hallRows = Array.isArray(hallState.entries) && hallState.entries.length
-          ? hallState.entries
-          : gameItem.hallOfFamePreview;
-        const isSelected = gameItem.id === this._selectedGameId;
-
-        return `
-          <div class="minigame-section-card minigame-hall-card ${isSelected ? 'is-selected' : ''}" data-minigame-hall-card="${escapeHtml(gameItem.id)}">
-            <div class="minigame-hall-card-head">
-              <div>
-                <div class="minigame-section-title">${escapeHtml(gameItem.title)}</div>
-                <p class="minigame-section-text">${escapeHtml(gameItem.rankingLabel)}</p>
-              </div>
-              <div class="minigame-hall-card-icon" aria-hidden="true">${escapeHtml(gameItem.icon)}</div>
-            </div>
-            ${hallState.loading ? '<p class="minigame-section-text">기록을 불러오는 중입니다.</p>' : ''}
-            ${hallState.error ? `<p class="minigame-section-text">${escapeHtml(hallState.error)}</p>` : ''}
-            <div class="minigame-hall-board">
-              ${this._renderHallRows(hallRows, `${gameItem.title} 명예의 전당 준비 중`)}
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      target.innerHTML = `
-        <div class="minigame-hall-grid">
-          ${cards}
-        </div>
-      `;
     },
 
     _persistNickname(nickname) {
@@ -1523,12 +1962,12 @@
       if (!normalized) return '';
 
       LS.Storage?.set?.(NICKNAME_STORAGE_KEY, normalized);
-      try {
-        localStorage.setItem(NICKNAME_STORAGE_KEY, normalized);
-        localStorage.setItem(LEGACY_NICKNAME_STORAGE_KEY, normalized);
-      } catch {
-        // ignore storage sync failures
-      }
+      safeWrite(NICKNAME_STORAGE_KEY, normalized, {
+        scope: '[Minigames] Nickname cache save failed:'
+      });
+      safeWrite(LEGACY_NICKNAME_STORAGE_KEY, normalized, {
+        scope: '[Minigames] Legacy nickname cache save failed:'
+      });
 
       return normalized;
     },

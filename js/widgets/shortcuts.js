@@ -4,11 +4,39 @@
   const LS = window.LivelySam = window.LivelySam || {};
 
   const STORAGE_KEY = 'shortcutItems';
-  const BRIDGE_ORIGIN = 'http://127.0.0.1:58671';
+
+  function getBridgeQueryParam(key) {
+    const helper = LS.Helpers?.getRuntimeQueryParam;
+    if (typeof helper === 'function') {
+      return helper(key, '');
+    }
+    try {
+      return new URLSearchParams(window.location.search || '').get(key) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function resolveBridgePort() {
+    const candidate = String(getBridgeQueryParam('bridgePort') || '').trim();
+    return /^\d{2,5}$/.test(candidate) ? candidate : '58671';
+  }
+
+  function buildBridgeHeaders(headers = {}) {
+    const token = String(getBridgeQueryParam('livelySamToken') || '').trim();
+    if (!token) return { ...(headers || {}) };
+    return {
+      ...(headers || {}),
+      'X-LivelySam-Token': token
+    };
+  }
+
+  const BRIDGE_ORIGIN = `http://127.0.0.1:${resolveBridgePort()}`;
   const SHELL_OPEN_URL = `${BRIDGE_ORIGIN}/__livelysam__/shell/open`;
   const SHELL_INSPECT_URL = `${BRIDGE_ORIGIN}/__livelysam__/shell/inspect`;
   const ICON_SCALES = new Set(['small', 'medium', 'large']);
   const DROP_WAIT_MS = 1200;
+  const BRIDGE_REQUEST_TIMEOUT_MS = 7000;
   const DROP_TEXT_TYPES = [
     'text/uri-list',
     'text/plain',
@@ -207,23 +235,57 @@
     return results;
   }
 
-  async function requestBridgeJson(url, body) {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body || {})
-    });
-    const payload = await response.json().catch(() => null);
+  async function requestBridgeJson(url, body, options = {}) {
+    const timeoutMs = Number(options.timeoutMs) > 0
+      ? Number(options.timeoutMs)
+      : BRIDGE_REQUEST_TIMEOUT_MS;
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let timeoutId = 0;
 
-    if (response.status === 404) {
-      throw new Error('로컬 실행 브리지가 실행 중이 아닙니다. 실행기를 다시 시작해 주세요.');
+    try {
+      const response = await Promise.race([
+        fetch(url, {
+          method: 'POST',
+          headers: buildBridgeHeaders({
+            'Content-Type': 'application/json'
+          }),
+          body: JSON.stringify(body || {}),
+          ...(controller ? { signal: controller.signal } : {})
+        }),
+        new Promise((_, reject) => {
+          timeoutId = window.setTimeout(() => {
+            try {
+              controller?.abort();
+            } catch {
+              // noop
+            }
+            const error = new Error(`로컬 실행 브리지 응답이 없습니다. (${timeoutMs}ms)`);
+            error.name = 'TimeoutError';
+            reject(error);
+          }, timeoutMs);
+        })
+      ]);
+      const payload = await response.json().catch(() => null);
+
+      if (response.status === 404) {
+        throw new Error('로컬 실행 브리지가 실행 중이 아닙니다. 실행기를 다시 시작해 주세요.');
+      }
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || '브리지 요청이 실패했습니다.');
+      }
+      return payload;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        const timeoutError = new Error(`로컬 실행 브리지 응답이 없습니다. (${timeoutMs}ms)`);
+        timeoutError.name = 'TimeoutError';
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
     }
-    if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.error || '브리지 요청이 실패했습니다.');
-    }
-    return payload;
   }
 
   function normalizeShortcut(item = {}) {
@@ -834,7 +896,8 @@
     async _handleDrop(dataTransfer) {
       const rawTargets = await this._extractDroppedTargets(dataTransfer);
       await this._appendDroppedTargets(rawTargets, {
-        dataTransfer
+        dataTransfer,
+        allowDirectFallback: true
       });
     },
 
@@ -849,6 +912,20 @@
           if (nativeDropArrived) {
             return;
           }
+
+          if (options.allowDirectFallback === true && options.dataTransfer) {
+            const fallbackTargets = await this._extractDroppedTargets(options.dataTransfer, {
+              ignoreNativeProxy: true
+            });
+            if (fallbackTargets.length) {
+              await this._appendDroppedTargets(fallbackTargets, {
+                ...options,
+                skipWait: true,
+                allowDirectFallback: false
+              });
+              return;
+            }
+          }
         }
 
         const types = Array.from(options.dataTransfer?.types || []).join(', ') || '없음';
@@ -858,21 +935,27 @@
       }
 
       const existingKeys = new Set(this._items.map((item) => dedupeKey(item.target)));
+      const seenRawKeys = new Set();
       const additions = [];
 
       for (const target of normalizedTargets) {
         const targetKey = dedupeKey(target);
-        if (!targetKey || existingKeys.has(targetKey)) {
+        if (!targetKey || seenRawKeys.has(targetKey) || existingKeys.has(targetKey)) {
           continue;
         }
+        seenRawKeys.add(targetKey);
 
         try {
           const shortcut = await this._buildShortcutFromTarget(target, {
             allowUnverified: true
           });
           if (!shortcut) continue;
+          const resolvedKey = dedupeKey(shortcut.target);
+          if (!resolvedKey || existingKeys.has(resolvedKey)) {
+            continue;
+          }
           additions.push(shortcut);
-          existingKeys.add(dedupeKey(shortcut.target));
+          existingKeys.add(resolvedKey);
         } catch (error) {
           console.warn('[Shortcuts] dropped target could not be registered:', target, error);
         }
@@ -889,7 +972,7 @@
       LS.Helpers.showToast(`바로가기 ${additions.length}개를 추가했습니다.`, 'success', 2200);
     },
 
-    async _extractDroppedTargets(dataTransfer) {
+    async _extractDroppedTargets(dataTransfer, options = {}) {
       const directValues = [];
       const fallbackValues = [];
       const pushValue = (bucket, value) => {
@@ -912,15 +995,16 @@
         pushValue(directValues, file?._path);
       });
 
+      const dragTypes = Array.from(dataTransfer?.types || []).map((type) => String(type || ''));
+      const hasNativeFilePayload = dragTypes.includes('Files');
+      const shouldPreferNativeProxy = hasNativeFilePayload && !options.ignoreNativeProxy && this._canUseNativeDropProxy();
+      if (shouldPreferNativeProxy) {
+        return [];
+      }
+
       const directTargets = [...new Set(directValues.map((value) => normalizeTargetText(value)).filter(Boolean))];
       if (directTargets.length) {
         return directTargets;
-      }
-
-      const dragTypes = Array.from(dataTransfer?.types || []).map((type) => String(type || ''));
-      const hasNativeFilePayload = dragTypes.includes('Files');
-      if (hasNativeFilePayload && this._canUseNativeDropProxy()) {
-        return [];
       }
 
       const stringValues = await Promise.all(items

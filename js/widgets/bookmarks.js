@@ -17,6 +17,14 @@
     return body ? LS.Helpers.escapeHtml(body).replace(/\n/g, '<br>') : '';
   }
 
+  function renderSectionAction(action, icon, title, active = false) {
+    return `<button class="record-section-icon-btn ${active ? 'is-active' : ''}" type="button" data-toolbar-action="${action}" title="${LS.Helpers.escapeHtml(title)}" aria-label="${LS.Helpers.escapeHtml(title)}">${icon}</button>`;
+  }
+
+  function renderSectionHeader(title, actions = '') {
+    return `<div class="record-section-row"><div class="record-section-title">${LS.Helpers.escapeHtml(title)}</div>${actions ? `<div class="record-section-actions">${actions}</div>` : ''}</div>`;
+  }
+
   LS.BookmarksWidget = {
     _bound: false,
     _query: '',
@@ -41,19 +49,19 @@
       const pinned = this._showArchived ? [] : bookmarks.filter((record) => record.pinned);
       const regular = this._showArchived ? bookmarks : bookmarks.filter((record) => !record.pinned);
 
-      let html = '<div class="widget-toolbar">';
-      html += `<input class="widget-search" id="bookmark-search" type="text" placeholder="북마크 검색" value="${LS.Helpers.escapeHtml(this._query)}">`;
-      html += '<div class="widget-filter-group">';
-      html += `<button class="widget-filter-btn ${this._showArchived ? '' : 'active'}" data-filter="active">사용 중</button>`;
-      html += `<button class="widget-filter-btn ${this._showArchived ? 'active' : ''}" data-filter="archived">보관함</button>`;
-      html += '</div></div>';
-
+      let html = '';
       html += '<div class="bm-list">';
+      const toolbarActions = [
+        renderSectionAction('search', '⌕', this._query ? `검색어 변경 (${this._query})` : '검색', Boolean(this._query)),
+        renderSectionAction('toggle-archive', '🗃', this._showArchived ? '사용 중 북마크 보기' : '보관함 보기', this._showArchived)
+      ].join('');
+
       if (!bookmarks.length) {
+        html += renderSectionHeader(this._showArchived ? '보관된 북마크' : '고정 북마크', toolbarActions);
         html += `<div class="bm-empty">${this._showArchived ? '보관된 북마크가 없습니다.' : '+ 버튼으로 북마크를 추가해 보세요'}</div>`;
       } else {
         if (pinned.length) {
-          html += '<div class="record-section-title">고정 북마크</div>';
+          html += renderSectionHeader('고정 북마크', !this._showArchived ? toolbarActions : '');
           html += '<div class="bm-grid">';
           pinned.forEach((record) => {
             html += this._renderCard(record);
@@ -62,7 +70,8 @@
         }
 
         if (regular.length) {
-          html += `<div class="record-section-title">${this._showArchived ? '보관된 북마크' : '북마크 목록'}</div>`;
+          const regularTitle = this._showArchived ? '보관된 북마크' : '북마크 목록';
+          html += renderSectionHeader(regularTitle, this._showArchived || !pinned.length ? toolbarActions : '');
           html += '<div class="bm-grid">';
           regular.forEach((record) => {
             html += this._renderCard(record);
@@ -74,15 +83,9 @@
 
       container.innerHTML = html;
 
-      container.querySelector('#bookmark-search')?.addEventListener('input', (event) => {
-        this._query = event.target.value || '';
-        this.render();
-      });
-
-      container.querySelectorAll('[data-filter]').forEach((button) => {
+      container.querySelectorAll('[data-toolbar-action]').forEach((button) => {
         button.addEventListener('click', () => {
-          this._showArchived = button.dataset.filter === 'archived';
-          this.render();
+          void this._handleToolbarAction(button.dataset.toolbarAction || '');
         });
       });
 
@@ -140,6 +143,33 @@
 
     async addBookmark() {
       await LS.Records.openRecordEditor({ mode: 'bookmark' });
+    },
+
+    async _handleToolbarAction(action) {
+      if (action === 'toggle-archive') {
+        this._showArchived = !this._showArchived;
+        this.render();
+        return;
+      }
+
+      if (action !== 'search') return;
+
+      const result = await LS.Helpers.promptModal('북마크 검색', [
+        {
+          id: 'query',
+          type: 'text',
+          label: '검색어',
+          value: this._query,
+          placeholder: '제목, URL, 설명'
+        }
+      ], {
+        confirmText: '적용',
+        cancelText: '취소'
+      });
+      if (!result) return;
+
+      this._query = String(result.query || '').trim();
+      this.render();
     },
 
     async _handleClick(event, recordId) {

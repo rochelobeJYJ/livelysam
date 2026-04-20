@@ -53,8 +53,38 @@ service cloud.firestore {
         ]);
     }
 
+    function getMaxScore(gameId) {
+      return gameId == 'connectivity-probe' ? 0 :
+        gameId == 'dino-run-1' ? 999999 :
+        gameId == 'dino-run-2' ? 999999 :
+        gameId == 'dino-run-hard' ? 999999 :
+        gameId == 'lane-dash' ? 999999 :
+        gameId == 'ocean-tap' ? 999999 :
+        gameId == 'parcel-stack' ? 999999 :
+        gameId == 'wing-boss' ? 999999 :
+        gameId == 'wing-tap-1' ? 999999 :
+        gameId == 'wing-tap-2' ? 999999 :
+        -1;
+    }
+
+    function isSupportedGameId(gameId) {
+      return getMaxScore(gameId) >= 0;
+    }
+
+    function hasServerCreateTimestamps() {
+      return request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.lastSubmittedAt == request.time;
+    }
+
+    function hasServerUpdateTimestamps() {
+      return request.resource.data.updatedAt == request.time &&
+        request.resource.data.lastSubmittedAt == request.time;
+    }
+
     function isValidCommon(seasonId, gameId, playerId) {
-      return request.resource.data.seasonId == seasonId &&
+      return isSupportedGameId(gameId) &&
+        request.resource.data.seasonId == seasonId &&
         request.resource.data.gameId == gameId &&
         request.resource.data.playerId == playerId &&
         request.resource.data.source == 'livelysam' &&
@@ -62,7 +92,8 @@ service cloud.firestore {
         request.resource.data.nickname.size() > 0 &&
         request.resource.data.nickname.size() <= 12 &&
         request.resource.data.score is int &&
-        request.resource.data.score >= 0;
+        request.resource.data.score >= 0 &&
+        request.resource.data.score <= getMaxScore(gameId);
     }
 
     function isAllowedRunSlot(entryId, playerId) {
@@ -77,7 +108,8 @@ service cloud.firestore {
       allow create: if request.auth != null &&
         request.auth.uid == playerId &&
         hasCreateFields() &&
-        isValidCommon(seasonId, gameId, playerId);
+        isValidCommon(seasonId, gameId, playerId) &&
+        hasServerCreateTimestamps();
 
       allow update: if request.auth != null &&
         request.auth.uid == playerId &&
@@ -88,6 +120,7 @@ service cloud.firestore {
           'lastSubmittedAt'
         ]) &&
         isValidCommon(seasonId, gameId, playerId) &&
+        hasServerUpdateTimestamps() &&
         request.resource.data.score >= resource.data.score &&
         request.resource.data.createdAt == resource.data.createdAt &&
         request.resource.data.source == resource.data.source;
@@ -103,7 +136,8 @@ service cloud.firestore {
         request.resource.data.entryId == entryId &&
         request.resource.data.playerId == request.auth.uid &&
         hasRunCreateFields() &&
-        isValidCommon(seasonId, gameId, request.auth.uid);
+        isValidCommon(seasonId, gameId, request.auth.uid) &&
+        hasServerCreateTimestamps();
 
       allow update: if request.auth != null &&
         isAllowedRunSlot(entryId, request.auth.uid) &&
@@ -122,6 +156,7 @@ service cloud.firestore {
           'lastSubmittedAt'
         ]) &&
         isValidCommon(seasonId, gameId, request.auth.uid) &&
+        hasServerUpdateTimestamps() &&
         request.resource.data.score >= resource.data.score &&
         request.resource.data.createdAt == resource.data.createdAt;
 

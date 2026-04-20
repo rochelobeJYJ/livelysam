@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Wing Tap 2</title>
+    <meta name="livelysam:minigame:id" content="wing-tap-2">
+    <meta name="livelysam:minigame:title" content="Wing Tap 2">
+    <meta name="livelysam:minigame:icon" content="🐤">
+    <meta name="livelysam:minigame:status" content="ready">
+    <meta name="livelysam:minigame:series-id" content="wing-tap">
+    <meta name="livelysam:minigame:series-title" content="Wing Tap">
+    <meta name="livelysam:minigame:series-description" content="기본, 확장, 보스전을 한 흐름으로 즐길 수 있습니다.">
+    <meta name="livelysam:minigame:series-icon" content="🐥">
+    <meta name="livelysam:minigame:description" content="난이도와 장애물이 강화된 확장 비행 모드입니다.">
+    <meta name="livelysam:minigame:score-label" content="비행 점수">
+    <meta name="livelysam:minigame:leaderboard-mode" content="personal-best">
+    <meta name="livelysam:minigame:tags" content="firebase,hall-of-fame">
+    <meta name="livelysam:minigame:sort-order" content="50">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -1545,12 +1558,15 @@
             drawMultilineTextWithShadow(ctx, serverStatusMessage, FONT_24, THRUST_YELLOW, WIDTH / 2, HEIGHT / 2 + 80, 'center', 'middle', 18);
             }
 
-            requestAnimationFrame(gameLoop);
+            if (gameDisposed) return;
+            animationFrameId = requestAnimationFrame(gameLoop);
         }
 
 
 
         // --- 이벤트 리스너 ---
+        let animationFrameId = 0;
+        let gameDisposed = false;
         const handleInput = (e) => {
      if (isSubmitting) return; // 전송 중일 땐 아무것도 안 함
 
@@ -1569,11 +1585,11 @@
         
 
 
-        window.addEventListener('mousemove', (e) => {
+        const handleWindowMousemove = (e) => {
             const rect = canvas.getBoundingClientRect();
             mouseX = (e.clientX - rect.left) * (WIDTH / rect.width);
             mouseY = (e.clientY - rect.top) * (HEIGHT / rect.height);
-        });
+        };
 
         const startNewGame = (e) => {
             gameState = 'playing';
@@ -1586,7 +1602,7 @@
             if(e) e.preventDefault();
         };
 
-        window.addEventListener('keydown', (e) => {
+        const handleWindowKeydown = (e) => {
             if (e.code === 'Space') {
                 if (gameState === 'menu') {
                     startNewGame(e);
@@ -1598,7 +1614,7 @@
                 if (e.code === 'ArrowLeft') changePlane(-1);
                 else if (e.code === 'ArrowRight') changePlane(1);
             }
-        });
+        };
         
         const handleMenuClick = (clickX, clickY) => {
             if (gameState !== 'menu') return false;
@@ -1622,7 +1638,7 @@
             return false; 
         };
 
-window.addEventListener('mousedown', (e) => {
+const handleWindowMousedown = (e) => {
             if (e) e.preventDefault();
             const rect = canvas.getBoundingClientRect();
             const clickX = (e.clientX - rect.left) * (WIDTH / rect.width);
@@ -1654,10 +1670,10 @@ window.addEventListener('mousedown', (e) => {
                     returnToMinigameHub();
                 }
             }
-        });
+        };
         
 
-	window.addEventListener('touchstart', (e) => {
+	const handleWindowTouchstart = (e) => {
             if (e) e.preventDefault(); 
 
             const rect = canvas.getBoundingClientRect();
@@ -1690,7 +1706,7 @@ window.addEventListener('mousedown', (e) => {
                     returnToMinigameHub();
                 }
             }
-        }, { passive: false });
+        };
 
 
         // 화면 크기 조정
@@ -1708,7 +1724,26 @@ window.addEventListener('mousedown', (e) => {
                 canvas.style.height = `${newWidth / aspectRatio}px`;
             }
         }
+        function cleanupGame() {
+            gameDisposed = true;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = 0;
+            }
+            window.removeEventListener('mousemove', handleWindowMousemove);
+            window.removeEventListener('keydown', handleWindowKeydown);
+            window.removeEventListener('mousedown', handleWindowMousedown);
+            window.removeEventListener('touchstart', handleWindowTouchstart);
+            window.removeEventListener('resize', resizeCanvas);
+            window.removeEventListener('beforeunload', cleanupGame);
+        }
+
+        window.addEventListener('mousemove', handleWindowMousemove);
+        window.addEventListener('keydown', handleWindowKeydown);
+        window.addEventListener('mousedown', handleWindowMousedown);
+        window.addEventListener('touchstart', handleWindowTouchstart, { passive: false });
         window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('beforeunload', cleanupGame);
         resizeCanvas(); 
 
         // --- 게임 시작 ---

@@ -2,13 +2,36 @@
   'use strict';
 
   const LS = window.LivelySam = window.LivelySam || {};
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  function parseDateOnly(dateText) {
+    const match = String(dateText || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const day = parseInt(match[3], 10);
+    const date = new Date(year, month - 1, day);
+    if (
+      !Number.isFinite(date.getTime())
+      || date.getFullYear() !== year
+      || date.getMonth() !== month - 1
+      || date.getDate() !== day
+    ) {
+      return null;
+    }
+    date.setHours(0, 0, 0, 0);
+    return date;
+  }
 
   function getDdayInfo(targetDate) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const target = new Date(`${targetDate}T00:00:00`);
-    const diff = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+    const target = parseDateOnly(targetDate);
+    if (!target) return { text: '날짜 오류', cls: 'dday-past' };
+
+    const diff = Math.round((target.getTime() - today.getTime()) / DAY_MS);
 
     if (diff > 0) return { text: `D-${diff}`, cls: 'dday-future' };
     if (diff === 0) return { text: 'D-Day', cls: 'dday-today' };

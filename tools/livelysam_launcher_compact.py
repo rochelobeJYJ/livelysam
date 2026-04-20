@@ -8,7 +8,6 @@ import os
 import sys
 import threading
 import tkinter as tk
-import webbrowser
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -49,7 +48,8 @@ P = {
 
 FONT = "Malgun Gothic"
 WINDOW_W = 492
-WINDOW_H = 508
+WINDOW_H = 548
+BUG_REPORT_EMAIL = "gritiquol@naver.com"
 
 
 def _configure_logger() -> tuple[logging.Logger, Path]:
@@ -57,26 +57,36 @@ def _configure_logger() -> tuple[logging.Logger, Path]:
         backend.APPDATA_DIR / "logs",
         ROOT_DIR / "runtime" / "launcher",
     ]
-    log_dir = None
+    log_paths: list[Path] = []
     for candidate in candidates:
         try:
             candidate.mkdir(parents=True, exist_ok=True)
-            log_dir = candidate
-            break
+            log_paths.append(candidate / "launcher.log")
+            log_paths.append(candidate / f"launcher-{os.getpid()}.log")
         except OSError:
             continue
-    if log_dir is None:
-        log_dir = ROOT_DIR
 
-    log_path = log_dir / "launcher.log"
+    if not log_paths:
+        log_paths.append(ROOT_DIR / f"launcher-{os.getpid()}.log")
+
     logger = logging.getLogger("livelysam.launcher")
-    if not logger.handlers:
-        logger.setLevel(logging.INFO)
-        handler = RotatingFileHandler(log_path, maxBytes=256 * 1024, backupCount=3, encoding="utf-8")
+    if logger.handlers:
+        existing_path = getattr(logger.handlers[0], "baseFilename", None)
+        return logger, Path(existing_path) if existing_path else ROOT_DIR / "launcher.log"
+
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    for log_path in log_paths:
+        try:
+            handler = RotatingFileHandler(log_path, maxBytes=256 * 1024, backupCount=3, encoding="utf-8")
+        except OSError:
+            continue
         handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
         logger.addHandler(handler)
-        logger.propagate = False
-    return logger, log_path
+        return logger, log_path
+
+    logger.addHandler(logging.NullHandler())
+    return logger, log_paths[0]
 
 
 LOGGER, LOG_PATH = _configure_logger()
@@ -191,11 +201,15 @@ class LauncherApp:
         self._apply_native_rounding()
 
         self.settings = backend.load_launcher_settings()
+        if not isinstance(self.settings, dict):
+            self.settings = {}
         self.monitors: list[dict] = []
         self.monitor_map: dict[str, dict] = {}
         self.monitor_var = tk.StringVar(value="모니터 불러오는 중...")
         self.status_var = tk.StringVar(value="상태를 불러오는 중입니다.")
         self.detail_var = tk.StringVar(value="실행기와 미리보기 상태를 확인하고 있습니다.")
+
+        self.update_channel_var = tk.StringVar()
 
         self._busy = False
         self._closed = False
@@ -209,11 +223,10 @@ class LauncherApp:
             self.settings.get("update_channel") or backend.get_default_update_channel()
         )
         self._update_info: dict = {}
-        self.footer_var = tk.StringVar(value="")
 
         self._setup_style()
-        self._refresh_footer_meta()
         self._build()
+        self._refresh_update_channel_link()
         self._set_update_state()
 
         self._run_async(self._ensure_bridge_startup, self._handle_startup_bridge)
@@ -221,60 +234,25 @@ class LauncherApp:
         self.root.after(700, lambda: self._start_update_check(prompt_install=False))
         self.root.after(5000, self._tick)
 
-    def _refresh_footer_meta(self, info: dict | None = None) -> None:
-        payload = info if info is not None else self._update_info
-        channel_label = backend.get_update_channel_label(self._update_channel)
-        status_text = "업데이트 확인 대기"
-
-        if payload:
-            if payload.get("checking"):
-                status_text = "업데이트 확인 중"
-            elif payload.get("installing"):
-                target_version = str(payload.get("latestVersion") or payload.get("version") or "").strip()
-                status_text = f"설치 시작 {target_version}".strip()
-            elif payload.get("error"):
-                status_text = "업데이트 확인 실패"
-            elif payload.get("available"):
-                target_version = str(payload.get("latestVersion") or "").strip()
-                status_text = f"새 버전 {target_version}".strip()
-            else:
-                status_text = "최신 버전"
-
-        self.footer_var.set(f"v{backend.get_current_version()} · {channel_label} 채널 · {status_text}")
-
     def _set_update_state(self, *, checking: bool = False, info: dict | None = None) -> None:
         payload = info if info is not None else self._update_info
         if checking:
             self._set_pill(self.pill_update, "info", "업데이트 확인")
-            self._refresh_footer_meta({"checking": True})
             return
 
         if payload.get("installing"):
             self._set_pill(self.pill_update, "info", "설치 시작")
-            self._refresh_footer_meta(payload)
             return
 
         if payload.get("error"):
             self._set_pill(self.pill_update, "warn", "확인 실패")
-            self._refresh_footer_meta(payload)
             return
 
         if payload.get("available"):
             self._set_pill(self.pill_update, "warn", "업데이트 가능")
-            self._refresh_footer_meta(payload)
             return
 
         self._set_pill(self.pill_update, "ok", "최신 버전")
-        self._refresh_footer_meta(payload)
-
-    def _save_update_channel(self) -> None:
-        self.settings["update_channel"] = self._update_channel
-        try:
-            backend.save_launcher_settings(self.settings)
-            self._last_settings_error = ""
-        except Exception as exc:  # noqa: BLE001
-            self._last_settings_error = str(exc)
-            self._log_exception("failed to save update channel setting", exc)
 
     def _start_update_check(self, *, prompt_install: bool) -> None:
         channel = self._update_channel
@@ -354,11 +332,39 @@ class LauncherApp:
     def on_check_updates(self) -> None:
         self._start_update_check(prompt_install=True)
 
+    def _refresh_update_channel_link(self) -> None:
+        channel_label = backend.get_update_channel_label(self._update_channel)
+        self.update_channel_var.set(f"\uc5c5\ub370\uc774\ud2b8 \ucc44\ub110: {channel_label}")
+
     def on_toggle_update_channel(self) -> None:
-        self._update_channel = "beta" if self._update_channel == "stable" else "stable"
-        self._save_update_channel()
+        next_channel = "beta" if self._update_channel == "stable" else "stable"
+        previous_channel = self._update_channel
+        self._update_channel = backend.normalize_update_channel(next_channel)
+        self.settings["update_channel"] = self._update_channel
+
+        try:
+            backend.save_launcher_settings(self.settings)
+            self._last_settings_error = ""
+        except Exception as exc:  # noqa: BLE001
+            self._update_channel = previous_channel
+            self.settings["update_channel"] = previous_channel
+            self._refresh_update_channel_link()
+            self._last_settings_error = str(exc)
+            self._log_exception("failed to save update channel", exc)
+            messagebox.showerror(
+                "\ucc44\ub110 \uc800\uc7a5 \uc2e4\ud328",
+                self._format_log_detail("\uc5c5\ub370\uc774\ud2b8 \ucc44\ub110 \uc124\uc815\uc744 \uc800\uc7a5\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4."),
+            )
+            return
+
         self._update_info = {"channel": self._update_channel}
+        self._refresh_update_channel_link()
         self._set_update_state()
+        channel_label = backend.get_update_channel_label(self._update_channel)
+        self.set_status(
+            f"\uc5c5\ub370\uc774\ud2b8 \ucc44\ub110\uc744 {channel_label} \ucc44\ub110\ub85c \ubcc0\uacbd\ud588\uc2b5\ub2c8\ub2e4.",
+            "\uc774\ud6c4 \uc5c5\ub370\uc774\ud2b8 \ud655\uc778\uc740 \uc120\ud0dd\ud55c \ucc44\ub110\uc744 \uae30\uc900\uc73c\ub85c \ub3d9\uc791\ud569\ub2c8\ub2e4.",
+        )
         self._start_update_check(prompt_install=False)
 
     def _apply_native_rounding(self) -> None:
@@ -379,7 +385,7 @@ class LauncherApp:
             return
         try:
             self.root.after(0, callback)
-        except tk.TclError as exc:
+        except (tk.TclError, RuntimeError) as exc:
             if not self._closed:
                 self._log_warning("failed to dispatch UI callback", exc)
 
@@ -469,9 +475,9 @@ class LauncherApp:
 
     def _build(self) -> None:
         wrapper = tk.Frame(self.root, bg=P["bg"])
-        wrapper.pack(fill="both", expand=True, padx=16, pady=16)
+        wrapper.pack(fill="both", expand=True, padx=14, pady=14)
 
-        card = RoundedCard(wrapper, radius=18, pad=22)
+        card = RoundedCard(wrapper, radius=18, pad=18)
         card.pack(fill="both", expand=True)
         body = card.content
 
@@ -480,17 +486,17 @@ class LauncherApp:
 
         title_group = tk.Frame(header, bg=P["card"])
         title_group.pack(side="left")
-        tk.Label(title_group, text="LivelySam", bg=P["card"], fg=P["text"], font=(FONT, 20, "bold")).pack(anchor="w")
-        tk.Label(title_group, text="로컬 배경 실행기", bg=P["card"], fg=P["text3"], font=(FONT, 9)).pack(anchor="w", pady=(2, 0))
+        tk.Label(title_group, text="LivelySam", bg=P["card"], fg=P["text"], font=(FONT, 18, "bold")).pack(anchor="w")
+        tk.Label(title_group, text="로컬 배경 실행기", bg=P["card"], fg=P["text3"], font=(FONT, 8)).pack(anchor="w", pady=(1, 0))
 
         self.pill_status = Pill(header, "준비 중", bg=P["off_bg"], fg=P["off_fg"], parent_bg=P["card"], font_size=9, height=24, padding=12)
-        self.pill_status.pack(side="right", pady=8)
+        self.pill_status.pack(side="right", pady=4)
 
-        tk.Label(body, textvariable=self.status_var, bg=P["card"], fg=P["text"], anchor="w", justify="left", wraplength=400, font=(FONT, 13, "bold")).pack(fill="x", pady=(18, 4))
-        tk.Label(body, textvariable=self.detail_var, bg=P["card"], fg=P["text3"], anchor="w", justify="left", wraplength=400, font=(FONT, 9)).pack(fill="x")
+        tk.Label(body, textvariable=self.status_var, bg=P["card"], fg=P["text"], anchor="w", justify="left", wraplength=386, font=(FONT, 12, "bold")).pack(fill="x", pady=(10, 2))
+        tk.Label(body, textvariable=self.detail_var, bg=P["card"], fg=P["text3"], anchor="w", justify="left", wraplength=386, font=(FONT, 8)).pack(fill="x")
 
         pills = tk.Frame(body, bg=P["card"])
-        pills.pack(fill="x", pady=(14, 0))
+        pills.pack(fill="x", pady=(10, 0))
         self.pill_storage = Pill(pills, "저장소", parent_bg=P["card"])
         self.pill_storage.pack(side="left")
         self.pill_wall = Pill(pills, "배경", parent_bg=P["card"])
@@ -500,11 +506,11 @@ class LauncherApp:
         self.pill_update = Pill(pills, "업데이트", parent_bg=P["card"])
         self.pill_update.pack(side="left", padx=(6, 0))
 
-        tk.Frame(body, bg=P["divider"], height=1).pack(fill="x", pady=(18, 14))
+        tk.Frame(body, bg=P["divider"], height=1).pack(fill="x", pady=(12, 10))
 
-        tk.Label(body, text="배경 모니터", bg=P["card"], fg=P["text2"], font=(FONT, 9, "bold")).pack(anchor="w")
+        tk.Label(body, text="배경 모니터", bg=P["card"], fg=P["text2"], font=(FONT, 8, "bold")).pack(anchor="w")
         monitor_row = tk.Frame(body, bg=P["card"])
-        monitor_row.pack(fill="x", pady=(8, 0))
+        monitor_row.pack(fill="x", pady=(6, 0))
 
         self.monitor_button = tk.Menubutton(
             monitor_row,
@@ -519,9 +525,9 @@ class LauncherApp:
             highlightbackground=P["border"],
             highlightcolor=P["border"],
             anchor="w",
-            padx=12,
-            pady=10,
-            font=(FONT, 10),
+            padx=10,
+            pady=8,
+            font=(FONT, 9),
             direction="below",
         )
         self.monitor_button.pack(side="left", fill="x", expand=True)
@@ -545,45 +551,100 @@ class LauncherApp:
             fg=P["primary_dk"],
             hover=P["ghost_hv"],
             parent_bg=P["card"],
-            width=68,
-            height=40,
+            width=60,
+            height=36,
             radius=12,
-            font_size=10,
+            font_size=9,
         )
         self.btn_refresh.pack(side="left", padx=(8, 0))
 
-        tk.Label(body, text="모니터가 하나뿐이면 브라우저 미리보기로 열 수 있습니다.", bg=P["card"], fg=P["text3"], font=(FONT, 8)).pack(anchor="w", pady=(8, 0))
+        tk.Frame(body, bg=P["divider"], height=1).pack(fill="x", pady=(12, 10))
 
-        tk.Frame(body, bg=P["divider"], height=1).pack(fill="x", pady=(18, 14))
+        guide_box = tk.Frame(body, bg=P["primary_lt"], highlightthickness=1, highlightbackground=P["divider"], bd=0)
+        guide_box.pack(fill="x", pady=(0, 10))
+        tk.Label(guide_box, text="사용 안내", bg=P["primary_lt"], fg=P["primary_dk"], font=(FONT, 8, "bold")).pack(anchor="w", padx=10, pady=(8, 0))
+        tk.Label(
+            guide_box,
+            text="듀얼 모니터 환경에서는 세컨 모니터에서 사용하시는 편을 권장합니다.",
+            bg=P["primary_lt"],
+            fg=P["text2"],
+            justify="left",
+            wraplength=382,
+            font=(FONT, 8),
+        ).pack(fill="x", padx=10, pady=(4, 0))
+        tk.Label(
+            guide_box,
+            text="모니터가 1대일 때는 브라우저 미리보기로도 바로 사용하실 수 있습니다.",
+            bg=P["primary_lt"],
+            fg=P["text2"],
+            justify="left",
+            wraplength=382,
+            font=(FONT, 8),
+        ).pack(fill="x", padx=10, pady=(2, 0))
+        guide_row = tk.Frame(guide_box, bg=P["primary_lt"])
+        guide_row.pack(fill="x", padx=10, pady=(5, 8))
+        tk.Label(guide_row, text="버그 신고 메일", bg=P["primary_lt"], fg=P["text3"], font=(FONT, 8, "bold")).pack(side="left")
+        self._link(guide_row, BUG_REPORT_EMAIL, self.copy_bug_report_email, bg=P["primary_lt"], font_size=8).pack(side="left", padx=(8, 0))
 
         button_row = tk.Frame(body, bg=P["card"])
         button_row.pack(fill="x")
 
-        self.btn_start = RButton(button_row, "배경 실행", self.on_start_wallpaper, bg=P["primary"], fg="#FFFFFF", hover=P["primary_dk"], parent_bg=P["card"], width=154, height=46, radius=14, font_size=11)
+        self.btn_start = RButton(button_row, "배경 실행", self.on_start_wallpaper, bg=P["primary"], fg="#FFFFFF", hover=P["primary_dk"], parent_bg=P["card"], width=148, height=42, radius=13, font_size=10)
         self.btn_start.pack(side="left")
 
-        self.btn_browser = RButton(button_row, "브라우저", self.on_start_browser, bg=P["ghost_bg"], fg=P["ghost_fg"], hover=P["ghost_hv"], parent_bg=P["card"], width=108, height=46, radius=14, font_size=10)
+        self.btn_browser = RButton(button_row, "브라우저", self.on_start_browser, bg=P["ghost_bg"], fg=P["ghost_fg"], hover=P["ghost_hv"], parent_bg=P["card"], width=102, height=42, radius=13, font_size=9)
         self.btn_browser.pack(side="left", padx=(8, 0))
 
-        self.btn_stop = RButton(button_row, "중지", self.on_stop_all, bg=P["danger_bg"], fg=P["danger_fg"], hover=P["danger_hv"], parent_bg=P["card"], width=92, height=46, radius=14, font_size=10)
+        self.btn_stop = RButton(button_row, "중지", self.on_stop_all, bg=P["danger_bg"], fg=P["danger_fg"], hover=P["danger_hv"], parent_bg=P["card"], width=88, height=42, radius=13, font_size=9)
         self.btn_stop.pack(side="left", padx=(8, 0))
 
         footer = tk.Frame(body, bg=P["card"])
-        footer.pack(fill="x", side="bottom", pady=(18, 0))
-        self._link(footer, "업데이트 확인", self.on_check_updates).pack(side="left", padx=(12, 0))
-        self._link(footer, "채널 전환", self.on_toggle_update_channel).pack(side="left", padx=(12, 0))
-        self._link(footer, "로그 폴더", self.open_log_folder).pack(side="left", padx=(12, 0))
+        footer.pack(fill="x", side="bottom", pady=(10, 0))
+        footer_row1 = tk.Frame(footer, bg=P["card"])
+        footer_row1.pack(anchor="w")
+        self._link(footer_row1, command=self.on_toggle_update_channel, textvariable=self.update_channel_var, font_size=8).pack(side="left", padx=(0, 10))
+        self._link(footer_row1, "업데이트 확인", self.on_check_updates, font_size=8).pack(side="left")
+        self._link(footer_row1, "로그 폴더", self.open_log_folder, font_size=8).pack(side="left", padx=(10, 0))
 
-        self._link(footer, "데이터 폴더", self.open_data_folder).pack(side="left")
-        self._link(footer, "index.html 열기", self.open_index_file).pack(side="left", padx=(12, 0))
-        tk.Label(footer, textvariable=self.footer_var, bg=P["card"], fg=P["text3"], font=(FONT, 8)).pack(side="right")
-
-    def _link(self, parent, text: str, command):
-        label = tk.Label(parent, text=text, bg=P["card"], fg=P["text3"], font=(FONT, 9), cursor="hand2")
+    def _link(
+        self,
+        parent,
+        text: str = "",
+        command=None,
+        *,
+        textvariable: tk.StringVar | None = None,
+        bg: str | None = None,
+        fg: str | None = None,
+        font_size: int = 9,
+    ):
+        base_bg = bg or P["card"]
+        base_fg = fg or P["text3"]
+        label_kwargs = {
+            "bg": base_bg,
+            "fg": base_fg,
+            "font": (FONT, font_size),
+            "cursor": "hand2",
+        }
+        if textvariable is not None:
+            label_kwargs["textvariable"] = textvariable
+        else:
+            label_kwargs["text"] = text
+        label = tk.Label(parent, **label_kwargs)
         label.bind("<Enter>", lambda _event: label.configure(fg=P["primary_dk"]))
-        label.bind("<Leave>", lambda _event: label.configure(fg=P["text3"]))
-        label.bind("<Button-1>", lambda _event: command())
+        label.bind("<Leave>", lambda _event: label.configure(fg=base_fg))
+        label.bind("<Button-1>", lambda _event: command() if command else None)
         return label
+
+    def copy_bug_report_email(self) -> None:
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(BUG_REPORT_EMAIL)
+            self.root.update()
+            self.set_status("버그 신고 메일 주소를 복사했습니다.", f"{BUG_REPORT_EMAIL} 주소로 보내 주시면 됩니다.")
+            self.root.after(1400, lambda: self.request_refresh(include_monitors=False))
+        except tk.TclError as error:
+            self._log_exception("failed to copy bug report email", error)
+            messagebox.showerror("복사 실패", self._format_log_detail("메일 주소를 복사하지 못했습니다."))
 
     def _set_pill(self, pill: Pill, tone: str, text: str) -> None:
         tones = {
@@ -701,6 +762,26 @@ class LauncherApp:
     def save_monitor_setting(self) -> None:
         self._persist_monitor_signature(self.get_selected_monitor())
 
+    @staticmethod
+    def _normalize_runtime_detail(detail: str | None, fallback: str = "") -> str:
+        text = str(detail or "").strip()
+        if not text:
+            return fallback
+
+        lowered = text.lower()
+        if "http://127.0.0.1" in lowered or "http://localhost" in lowered:
+            if "desktophost" in lowered or "runtime=desktophost" in lowered:
+                return "선택한 모니터에 배경 연결이 정상적으로 준비되어 있습니다."
+            return "브라우저 미리보기가 정상적으로 열려 있습니다."
+
+        replacements = {
+            "local wallpaper host is not running.": "배경 실행을 누르시면 바로 시작됩니다.",
+            "local wallpaper host stopped.": "배경 실행이 중지된 상태입니다.",
+            "browser preview is not running.": "브라우저 미리보기가 실행 중이 아닙니다.",
+            "browser preview stopped.": "브라우저 미리보기가 중지된 상태입니다.",
+        }
+        return replacements.get(lowered, text)
+
     def _apply_status_snapshot(self, bridge: dict | None, wallpaper: dict | None, browser: dict | None) -> None:
         wallpaper = wallpaper or {}
         browser = browser or {}
@@ -728,21 +809,24 @@ class LauncherApp:
             monitor = wallpaper.get("selected_monitor") or wallpaper.get("requested_monitor")
             target = device or (f"모니터 {monitor}" if monitor else "선택한 모니터")
             self._set_pill(self.pill_status, "ok", "배경 실행 중")
-            self.set_status(f"{target}에서 배경이 실행 중입니다.", str(wallpaper.get("url") or "바탕화면 모드가 정상 동작 중입니다."))
+            self.set_status(f"{target}에서 배경이 실행 중입니다.", "선택한 모니터에 배경 연결이 정상적으로 유지되고 있습니다.")
             return
 
         if browser_running:
             self._set_pill(self.pill_status, "info", "브라우저 보기")
             if browser.get("attached") is False:
-                self.set_status("기본 브라우저로 미리보기를 열었습니다.", str(browser.get("url") or "기본 브라우저 탭에서 LivelySam을 열었습니다."))
+                self.set_status("기본 브라우저로 미리보기를 열었습니다.", "기본 브라우저 탭에서 LivelySam 미리보기가 열려 있습니다.")
             else:
-                self.set_status("브라우저 미리보기가 실행 중입니다.", str(browser.get("url") or "브라우저에서 LivelySam을 열어 두었습니다."))
+                self.set_status("브라우저 미리보기가 실행 중입니다.", "브라우저 미리보기 창에서 LivelySam을 확인하실 수 있습니다.")
             return
 
         if bridge_ok:
             last_message = str((wallpaper.get("last_result") or {}).get("message") or "")
             self._set_pill(self.pill_status, "off", "대기 중")
-            self.set_status("실행 대기 상태입니다.", last_message or "모니터를 선택한 뒤 배경 실행을 누르시면 됩니다.")
+            self.set_status(
+                "실행 대기 상태입니다.",
+                self._normalize_runtime_detail(last_message, "모니터를 선택한 뒤 배경 실행을 누르시면 됩니다."),
+            )
             return
 
         self._set_pill(self.pill_status, "warn", "준비 중")
@@ -802,7 +886,7 @@ class LauncherApp:
         if self._closed:
             return
         if not self._busy:
-            self.request_refresh(include_monitors=True)
+            self.request_refresh(include_monitors=False)
         self.root.after(5000, self._tick)
 
     def on_start_wallpaper(self) -> None:
@@ -825,11 +909,9 @@ class LauncherApp:
                 monitor = self._resolve_monitor_choice(backend.list_monitors())
 
             if not monitor:
-                browser_result = backend.start_browser_preview()
                 return {
-                    "mode": "browser_fallback",
-                    "result": browser_result,
-                    "message": "사용 가능한 모니터를 찾지 못해 브라우저 미리보기로 전환했습니다.",
+                    "mode": "monitor_missing",
+                    "message": "사용 가능한 모니터를 찾지 못했습니다. 모니터를 다시 불러오거나 브라우저 버튼을 직접 사용해 주십시오.",
                 }
 
             result = backend.start_wallpaper(
@@ -841,18 +923,16 @@ class LauncherApp:
             if result.returncode == 0:
                 return {"mode": "wallpaper", "result": result, "monitor": monitor}
 
-            browser_result = backend.start_browser_preview()
             return {
-                "mode": "browser_fallback",
-                "result": browser_result,
-                "message": (result.stderr or result.stdout or "").strip(),
+                "mode": "wallpaper_failed",
+                "result": result,
             }
 
         def done(payload, error):
             self._set_busy(False)
             if error:
-                messagebox.showerror("실행 실패", str(error))
-                self.request_refresh()
+                messagebox.showerror("배경 실행 실패", str(error))
+                self.request_refresh(include_monitors=True)
                 return
 
             mode = str(payload.get("mode") or "")
@@ -865,14 +945,18 @@ class LauncherApp:
                 self.request_refresh()
                 return
 
-            if mode == "browser_fallback" and result:
-                detail = str(payload.get("message") or "배경 실행이 실패하여 브라우저 미리보기로 전환했습니다.")
-                if result.returncode == 0:
-                    self.set_status("브라우저 미리보기로 전환했습니다.", detail)
-                    self.request_refresh()
-                    return
-                messagebox.showerror("실행 실패", detail or "브라우저 미리보기도 실행하지 못했습니다.")
-                self.request_refresh()
+            if mode == "monitor_missing":
+                detail = str(payload.get("message") or "사용 가능한 모니터를 찾지 못했습니다.")
+                self.set_status("배경 실행 실패", detail)
+                messagebox.showwarning("배경 실행 실패", detail)
+                self.request_refresh(include_monitors=True)
+                return
+
+            if mode == "wallpaper_failed" and result:
+                detail = (result.stderr or result.stdout or "").strip() or "배경 실행을 시작하지 못했습니다."
+                self.set_status("배경 실행 실패", detail)
+                messagebox.showerror("배경 실행 실패", detail)
+                self.request_refresh(include_monitors=True)
                 return
 
             self.request_refresh()
@@ -1015,23 +1099,6 @@ class LauncherApp:
             self.request_refresh()
 
         self._run_async(work, done)
-
-    def open_data_folder(self) -> None:
-        backend.APPDATA_DIR.mkdir(parents=True, exist_ok=True)
-        try:
-            os.startfile(str(backend.APPDATA_DIR))
-        except Exception as exc:  # noqa: BLE001
-            self._log_exception("failed to open data folder", exc)
-            messagebox.showerror("열기 실패", str(exc))
-
-    def open_index_file(self) -> None:
-        try:
-            backend.ensure_storage_bridge()
-        except Exception as exc:  # noqa: BLE001
-            self._log_exception("failed to open index.html because storage bridge setup failed", exc)
-            messagebox.showerror("열기 실패", f"로컬 저장소 브리지를 준비하지 못했습니다.\n{exc}")
-            return
-        webbrowser.open((backend.ROOT_PATH / "index.html").as_uri())
 
     def open_log_folder(self) -> None:
         self._log_path.parent.mkdir(parents=True, exist_ok=True)

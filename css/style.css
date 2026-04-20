@@ -474,6 +474,55 @@ body.layout-edit-mode .widget-edit-close-btn {
   letter-spacing: 0.02em;
 }
 
+.record-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(6px * var(--widget-space-scale));
+  margin-bottom: calc(4px * var(--widget-space-scale));
+}
+
+.record-section-row .record-section-title {
+  margin: 0;
+  min-width: 0;
+}
+
+.record-section-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(3px * var(--widget-space-scale));
+  flex: 0 0 auto;
+}
+
+.record-section-icon-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-family);
+  font-size: 0.84em;
+  line-height: 1;
+  transition: all var(--transition-fast);
+}
+
+.record-section-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text-primary);
+  border-color: rgba(77, 171, 247, 0.24);
+}
+
+.record-section-icon-btn.is-active {
+  background: rgba(77, 171, 247, 0.18);
+  color: var(--theme-accent);
+  border-color: rgba(77, 171, 247, 0.28);
+}
+
 .widget-empty {
   display: flex;
   align-items: center;
@@ -925,20 +974,20 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  margin-bottom: calc(8px * var(--widget-space-scale));
-  padding: 3px;
+  margin-bottom: calc(5px * var(--widget-space-scale));
+  padding: 2px;
   margin-left: calc(14px * var(--widget-space-scale));
-  margin-top: calc(8px * var(--widget-space-scale));
+  margin-top: calc(5px * var(--widget-space-scale));
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.05);
 }
 .meal-tab-btn {
-  padding: 5px 12px;
+  padding: 4px 10px;
   border: none;
   background: transparent;
   border-radius: 999px;
   cursor: pointer;
-  font-size: 0.87em;
+  font-size: 0.84em;
   font-family: var(--font-family);
   color: var(--text-tertiary);
   font-weight: 600;
@@ -952,6 +1001,30 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
 }
 
 .meal-content { padding-top: 0; }
+
+#widget-meal .widget-body {
+  padding: calc(10px * var(--widget-space-scale)) calc(12px * var(--widget-space-scale));
+}
+
+#widget-meal .widget-empty {
+  justify-content: flex-start;
+  height: auto;
+  min-height: 0;
+  padding-top: calc(4px * var(--widget-space-scale));
+}
+
+#widget-meal .widget-empty p {
+  margin: 0;
+  font-size: 0.86em;
+}
+
+#widget-meal .meal-empty-message {
+  justify-content: center;
+  height: 100%;
+  min-height: 0;
+  padding-top: 0;
+  text-align: center;
+}
 
 .meal-summary-card {
   display: flex;
@@ -1146,9 +1219,22 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
 }
 
 /* 주간 급식 */
+.meal-week-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: calc(2px * var(--widget-space-scale));
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+}
+
 .meal-week-grid {
   display: flex;
   gap: calc(6px * var(--widget-space-scale));
+}
+.meal-week-scroll .meal-week-grid {
+  width: max-content;
+  min-width: 100%;
+  flex-wrap: nowrap;
 }
 .meal-week-day {
   flex: 1;
@@ -1156,6 +1242,10 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   border-radius: 8px;
   padding: calc(6px * var(--widget-space-scale));
   text-align: center;
+}
+.meal-week-scroll .meal-week-day {
+  flex: 0 0 118px;
+  min-width: 118px;
 }
 .meal-week-today {
   background: rgba(77, 171, 247, 0.1);
@@ -1568,6 +1658,28 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   color: var(--text-secondary);
 }
 
+#widget-weather[data-height-mode="sm"] .weather-weekly-sky-section,
+#widget-weather[data-height-mode="md"] .weather-weekly-sky-section {
+  display: none;
+}
+
+#widget-weather[data-height-mode="sm"] .weather-content > .weather-section + .weather-section,
+#widget-weather[data-height-mode="md"] .weather-content > .weather-section + .weather-section {
+  margin-top: calc(6px * var(--widget-space-scale));
+}
+
+#widget-weather[data-height-mode="sm"] .weather-current,
+#widget-weather[data-height-mode="md"] .weather-current {
+  padding: calc(8px * var(--widget-space-scale)) calc(10px * var(--widget-space-scale));
+  gap: calc(5px * var(--widget-space-scale));
+}
+
+#widget-weather[data-height-mode="sm"] .weather-daily-card,
+#widget-weather[data-height-mode="md"] .weather-daily-card {
+  padding: calc(5px * var(--widget-space-scale)) calc(4px * var(--widget-space-scale));
+  gap: calc(2px * var(--widget-space-scale));
+}
+
 .weather-alert-list {
   display: flex;
   flex-direction: column;
@@ -1846,6 +1958,11 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
 }
 
 #widget-calendar .widget-body {
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  gap: calc(4px * var(--widget-space-scale));
   padding: calc(8px * var(--widget-space-scale)) calc(9px * var(--widget-space-scale));
 }
 
@@ -1919,7 +2036,13 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   color: white;
 }
 
-.cal-grid { margin-bottom: calc(5px * var(--widget-space-scale)); }
+.cal-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: calc(5px * var(--widget-space-scale));
+  overflow: auto;
+  padding-right: 2px;
+}
 
 .cal-day-headers {
   display: grid;
@@ -2197,8 +2320,13 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
 }
 
 .cal-events {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: clamp(112px, 34%, 240px);
   border-top: 1px solid rgba(0, 0, 0, 0.05);
+  overflow: auto;
   padding-top: calc(5px * var(--widget-space-scale));
+  padding-right: 2px;
 }
 
 .cal-detail-head {
@@ -2207,6 +2335,11 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   justify-content: space-between;
   gap: calc(6px * var(--widget-space-scale));
   margin-bottom: calc(4px * var(--widget-space-scale));
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: calc(4px * var(--widget-space-scale));
+  background: linear-gradient(180deg, var(--widget-bg) 0%, var(--widget-bg) 84%, rgba(255, 255, 255, 0) 100%);
 }
 
 .cal-detail-head-main {
@@ -2214,6 +2347,30 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   flex-direction: column;
   gap: calc(3px * var(--widget-space-scale));
   min-width: 0;
+}
+
+#widget-calendar[data-height-mode="sm"] .cal-detail-head,
+#widget-calendar[data-height-mode="md"] .cal-detail-head {
+  gap: calc(3px * var(--widget-space-scale));
+  margin-bottom: calc(2px * var(--widget-space-scale));
+}
+
+#widget-calendar[data-height-mode="sm"] .cal-detail-title,
+#widget-calendar[data-height-mode="md"] .cal-detail-title {
+  font-size: 0.81em;
+}
+
+#widget-calendar[data-height-mode="sm"] .cal-detail-add,
+#widget-calendar[data-height-mode="md"] .cal-detail-add {
+  padding: calc(4px * var(--widget-space-scale)) calc(10px * var(--widget-space-scale));
+  font-size: 0.76em;
+  white-space: nowrap;
+}
+
+#widget-calendar[data-height-mode="sm"] .cal-filter-group .widget-filter-btn,
+#widget-calendar[data-height-mode="md"] .cal-filter-group .widget-filter-btn {
+  padding: calc(3px * var(--widget-space-scale)) calc(6px * var(--widget-space-scale));
+  font-size: 0.72em;
 }
 
 .cal-filter-group {
@@ -2282,6 +2439,11 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   max-height: 240px;
   overflow-y: auto;
   padding-right: 2px;
+}
+
+#widget-calendar[data-height-mode="sm"] .cal-detail-list,
+#widget-calendar[data-height-mode="md"] .cal-detail-list {
+  max-height: none;
 }
 
 .cal-detail-card {
@@ -3998,14 +4160,15 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
 }
 
 .widget-settings-sidebar-card {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 8px;
+  row-gap: 6px;
   padding: 0;
   border-radius: 0;
   border: none;
   background: transparent;
-  flex-wrap: wrap;
 }
 
 .widget-settings-sidebar-title {
@@ -4013,6 +4176,8 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   font-weight: 700;
   color: var(--text-tertiary);
   margin-right: 4px;
+  padding-top: 5px;
+  white-space: nowrap;
 }
 
 .widget-settings-sidebar-help {
@@ -4022,14 +4187,23 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
 .widget-settings-sidebar-list {
   display: flex;
   gap: 3px;
-  flex-wrap: wrap;
-  flex: 1;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.widget-settings-sidebar-list::-webkit-scrollbar {
+  display: none;
 }
 
 .widget-settings-summary {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex: 0 0 auto;
   width: auto;
   padding: 4px 10px;
   border: 1px solid transparent;
@@ -4038,6 +4212,7 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   text-align: left;
   cursor: pointer;
   transition: all var(--transition-fast);
+  white-space: nowrap;
 }
 
 .widget-settings-summary:hover {
@@ -4094,7 +4269,10 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
 }
 
 .widget-settings-sidebar-link {
-  margin-left: auto;
+  grid-column: 2;
+  justify-self: end;
+  margin-left: 0;
+  margin-top: 4px;
   border: 1px solid rgba(77, 171, 247, 0.25);
   border-radius: 999px;
   background: transparent;
@@ -5198,12 +5376,19 @@ select {
 /* 설정 하단: 좌측 힌트 + 우측 버튼 */
 .settings-footer {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
   padding: 8px 14px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   background: #fff;
+}
+.settings-footer-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
 }
 .settings-footer-hint {
   display: flex;
@@ -5232,6 +5417,43 @@ select {
 }
 .settings-footer-hint.is-neutral .settings-footer-hint-dot {
   background: rgba(0, 0, 0, 0.2);
+}
+.settings-footer-support {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+  font-size: 0.75em;
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+.settings-footer-support-item {
+  min-width: 0;
+}
+.settings-footer-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid rgba(77, 171, 247, 0.2);
+  border-radius: 999px;
+  background: rgba(77, 171, 247, 0.08);
+  color: var(--theme-accent);
+  cursor: pointer;
+  font-size: 1em;
+  font-family: var(--font-family);
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  white-space: normal;
+  word-break: break-word;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+.settings-footer-copy-btn:hover {
+  background: rgba(77, 171, 247, 0.14);
+  border-color: rgba(77, 171, 247, 0.28);
+  transform: translateY(-1px);
 }
 .settings-footer-actions {
   display: flex;
@@ -5559,7 +5781,10 @@ select {
 }
 
 #widget-calendar .cal-grid {
+  flex: 0 0 auto;
   margin-bottom: calc(4px * var(--widget-space-scale));
+  overflow: visible;
+  padding-right: 0;
 }
 
 #widget-calendar .cal-day-headers {
@@ -5685,17 +5910,24 @@ select {
 }
 
 #widget-calendar .cal-events {
+  flex: 0 0 auto;
+  max-height: none;
+  overflow: visible;
   padding-top: calc(4px * var(--widget-space-scale));
+  padding-right: 0;
 }
 
 #widget-calendar .cal-detail-head {
+  position: static;
   gap: calc(4px * var(--widget-space-scale));
   margin-bottom: calc(3px * var(--widget-space-scale));
 }
 
 #widget-calendar .cal-detail-list {
   gap: calc(2px * var(--widget-space-scale));
-  max-height: 220px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
 }
 
 #widget-calendar .cal-detail-card {
@@ -5732,15 +5964,21 @@ select {
   padding: calc(8px * var(--widget-space-scale)) calc(10px * var(--widget-space-scale));
 }
 
+#widget-bookmarks .widget-body {
+  overflow: hidden;
+}
+
 #widget-timer .widget-body,
 #widget-dday .widget-body {
   padding: calc(7px * var(--widget-space-scale)) calc(9px * var(--widget-space-scale));
 }
 
 #widget-bookmarks .widget-toolbar,
+#widget-memo .widget-toolbar,
 #widget-todo .widget-toolbar {
-  gap: calc(4px * var(--widget-space-scale));
-  margin-bottom: calc(6px * var(--widget-space-scale));
+  gap: calc(3px * var(--widget-space-scale));
+  margin-bottom: calc(3px * var(--widget-space-scale));
+  align-items: center;
 }
 
 #widget-dday .widget-toolbar {
@@ -5752,12 +5990,26 @@ select {
 #widget-bookmarks .widget-search,
 #widget-bookmarks .widget-select,
 #widget-bookmarks .widget-secondary-btn,
+#widget-memo .widget-search,
+#widget-memo .widget-select,
+#widget-memo .widget-secondary-btn,
 #widget-todo .widget-search,
 #widget-todo .widget-select,
 #widget-todo .widget-secondary-btn {
-  min-height: 30px;
-  padding: 6px 10px;
-  font-size: 0.87em;
+  min-height: 26px;
+  padding: 4px 8px;
+  font-size: 0.81em;
+  border-radius: 8px;
+}
+
+#widget-bookmarks .widget-search,
+#widget-memo .widget-search,
+#widget-todo .widget-search {
+  min-width: 0;
+}
+
+#widget-todo .widget-select {
+  min-width: 88px;
 }
 
 #widget-dday .widget-search,
@@ -5773,9 +6025,10 @@ select {
 }
 
 #widget-bookmarks .widget-filter-group,
+#widget-memo .widget-filter-group,
 #widget-todo .widget-filter-group {
-  gap: calc(2px * var(--widget-space-scale));
-  padding: calc(2px * var(--widget-space-scale));
+  gap: calc(1px * var(--widget-space-scale));
+  padding: calc(1px * var(--widget-space-scale));
 }
 
 #widget-dday .widget-filter-group {
@@ -5785,10 +6038,13 @@ select {
 
 #widget-bookmarks .widget-filter-btn,
 #widget-bookmarks .widget-secondary-btn,
+#widget-memo .widget-filter-btn,
+#widget-memo .widget-secondary-btn,
 #widget-todo .widget-filter-btn,
 #widget-todo .widget-secondary-btn {
-  padding: 5px 8px;
-  font-size: 0.83em;
+  min-height: 24px;
+  padding: 3px 7px;
+  font-size: 0.76em;
 }
 
 #widget-dday .widget-filter-btn,
@@ -5798,9 +6054,31 @@ select {
 }
 
 #widget-bookmarks .record-section-title,
+#widget-memo .record-section-title,
 #widget-todo .record-section-title {
-  margin: 2px 0 0;
-  font-size: 0.81em;
+  margin: 0;
+  font-size: 0.78em;
+}
+
+#widget-bookmarks .record-section-row,
+#widget-memo .record-section-row,
+#widget-todo .record-section-row {
+  gap: calc(4px * var(--widget-space-scale));
+  margin-bottom: calc(3px * var(--widget-space-scale));
+}
+
+#widget-bookmarks .record-section-actions,
+#widget-memo .record-section-actions,
+#widget-todo .record-section-actions {
+  gap: calc(2px * var(--widget-space-scale));
+}
+
+#widget-bookmarks .record-section-icon-btn,
+#widget-memo .record-section-icon-btn,
+#widget-todo .record-section-icon-btn {
+  width: 20px;
+  height: 20px;
+  font-size: 0.78em;
 }
 
 #widget-dday .record-section-title {
@@ -5810,11 +6088,22 @@ select {
 
 #widget-bookmarks .bm-list {
   gap: calc(4px * var(--widget-space-scale));
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: calc(3px * var(--widget-space-scale));
 }
 
 #widget-bookmarks .bm-grid {
   flex-direction: column;
   gap: calc(4px * var(--widget-space-scale));
+}
+
+#widget-bookmarks .bm-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
 }
 
 #widget-bookmarks .bm-item {
@@ -5887,6 +6176,28 @@ select {
 #widget-bookmarks .bm-actions,
 #widget-bookmarks .bm-item .record-badge-row {
   display: none;
+}
+
+#widget-bookmarks[data-height-mode="sm"] .record-section-row,
+#widget-bookmarks[data-height-mode="md"] .record-section-row {
+  margin-bottom: calc(2px * var(--widget-space-scale));
+}
+
+#widget-bookmarks[data-height-mode="sm"] .bm-list,
+#widget-bookmarks[data-height-mode="md"] .bm-list {
+  gap: calc(3px * var(--widget-space-scale));
+}
+
+#widget-bookmarks[data-height-mode="sm"] .bm-item,
+#widget-bookmarks[data-height-mode="md"] .bm-item {
+  padding: calc(3px * var(--widget-space-scale)) calc(7px * var(--widget-space-scale));
+  gap: calc(5px * var(--widget-space-scale));
+}
+
+#widget-bookmarks[data-height-mode="sm"] .bm-url,
+#widget-bookmarks[data-height-mode="md"] .bm-url {
+  flex-basis: 32%;
+  font-size: 0.72em;
 }
 
 /* ── 바로가기 위젯 ───────────────────────────────────────── */
@@ -6209,52 +6520,53 @@ select {
 }
 
 #widget-todo .todo-list {
-  gap: calc(2px * var(--widget-space-scale));
+  gap: calc(1px * var(--widget-space-scale));
 }
 
 #widget-todo .todo-google-section {
-  gap: calc(4px * var(--widget-space-scale));
+  gap: calc(3px * var(--widget-space-scale));
 }
 
 #widget-todo .todo-item {
   align-items: center;
-  gap: calc(6px * var(--widget-space-scale));
-  padding: calc(4px * var(--widget-space-scale)) calc(6px * var(--widget-space-scale));
-  border-radius: 7px;
+  gap: calc(5px * var(--widget-space-scale));
+  padding: calc(3px * var(--widget-space-scale)) calc(5px * var(--widget-space-scale));
+  border-radius: 6px;
 }
 
 #widget-todo .todo-check {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.92em;
-  margin-top: 1px;
+  font-size: 0.84em;
+  margin-top: 0;
 }
 
 #widget-todo .todo-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: calc(6px * var(--widget-space-scale));
-  row-gap: 2px;
+  column-gap: calc(5px * var(--widget-space-scale));
+  row-gap: 1px;
 }
 
 #widget-todo .todo-google-check {
-  width: 22px;
-  height: 22px;
-  font-size: 0.81em;
+  width: 20px;
+  height: 20px;
+  font-size: 0.76em;
 }
 
 #widget-todo .todo-google-chip {
-  padding: 1px 6px;
-  font-size: 0.77em;
+  padding: 1px 5px;
+  font-size: 0.73em;
 }
 
 #widget-todo .todo-title {
-  font-size: 0.88em;
-  line-height: 1.2;
+  font-size: 0.81em;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
@@ -6268,12 +6580,12 @@ select {
 }
 
 #widget-todo .todo-meta {
-  gap: calc(5px * var(--widget-space-scale));
-  font-size: 0.77em;
+  gap: calc(4px * var(--widget-space-scale));
+  font-size: 0.72em;
   margin-top: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
-  line-height: 1;
+  line-height: 0.95;
   min-width: 0;
 }
 
@@ -6283,8 +6595,8 @@ select {
 #widget-todo .todo-google-chip {
   display: inline-flex;
   align-items: center;
-  min-height: 18px;
-  padding: 1px 6px;
+  min-height: 16px;
+  padding: 0 5px;
   border-radius: 999px;
 }
 
@@ -6327,15 +6639,15 @@ select {
 }
 
 #widget-todo .todo-actions {
-  gap: calc(2px * var(--widget-space-scale));
+  gap: calc(1px * var(--widget-space-scale));
   align-self: center;
 }
 
 #widget-todo .todo-edit,
 #widget-todo .todo-delete {
-  width: 20px;
-  height: 20px;
-  font-size: 0.87em;
+  width: 18px;
+  height: 18px;
+  font-size: 0.8em;
 }
 
 @media (max-width: 760px) {
@@ -6417,7 +6729,9 @@ select {
   }
 
   .widget-settings-sidebar-list {
-    grid-template-columns: 1fr;
+    flex-wrap: wrap;
+    overflow: visible;
+    padding-bottom: 0;
   }
 
   .widget-settings-nav-btn {
@@ -6501,8 +6815,8 @@ select {
     grid-template-columns: 1fr;
   }
 
-  .meal-week-grid {
-    flex-direction: column;
+  .meal-week-scroll .meal-week-grid {
+    flex-direction: row;
   }
 
   #floating-action-stack {
@@ -6748,7 +7062,11 @@ select {
 .grid-stack-item[gs-w="2"] .meal-summary-grid { grid-template-columns: 1fr; }
 .grid-stack-item[gs-w="2"] .meal-tab-btn { font-size: 0.84em; padding: 5px 6px; }
 .grid-stack-item[gs-w="2"] .meal-menu-item { font-size: 0.87em; }
-.grid-stack-item[gs-w="2"] .meal-week-grid { flex-direction: column; }
+.grid-stack-item[gs-w="2"] #widget-meal .meal-week-scroll .meal-week-grid { flex-direction: row; }
+.grid-stack-item[gs-w="2"] #widget-meal .meal-week-scroll .meal-week-day {
+  flex-basis: 112px;
+  min-width: 112px;
+}
 
 /* ── 타이머 1칸 ── */
 .grid-stack-item[gs-w="1"] .timer-display { font-size: 1.45em; transform: none; }
@@ -6915,7 +7233,7 @@ select {
 .grid-stack-item:is([gs-w="3"], [gs-w="4"]) .meal-summary-grid { grid-template-columns: 1fr; }
 .grid-stack-item:is([gs-w="3"], [gs-w="4"]) .meal-tab-btn { font-size: 0.84em; padding: 5px 6px; }
 .grid-stack-item:is([gs-w="3"], [gs-w="4"]) .meal-menu-item { font-size: 0.87em; }
-.grid-stack-item:is([gs-w="3"], [gs-w="4"]) .meal-week-grid { flex-direction: column; }
+.grid-stack-item:is([gs-w="3"], [gs-w="4"]) #widget-meal .meal-week-scroll .meal-week-grid { flex-direction: row; }
 
 .grid-stack-item:is([gs-w="3"], [gs-w="4"]) .timer-display { font-size: 1.72em; }
 .grid-stack-item:is([gs-w="3"], [gs-w="4"]) .timer-btn { font-size: 0.7em; padding: 4px 5px; }
@@ -8067,16 +8385,37 @@ textarea.prompt-input { resize: vertical; min-height: 80px; }
 }
 
 @media (max-width: 980px) {
-  .widget-settings-layout {
-    grid-template-columns: 1fr;
-  }
-
   .widget-settings-sidebar {
     position: static;
   }
 
+  .widget-settings-sidebar-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
   .widget-settings-sidebar-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-wrap: wrap;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .widget-settings-sidebar-link {
+    grid-column: auto;
+    justify-self: auto;
+    margin-left: auto;
+    margin-top: 0;
+  }
+
+  .settings-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-footer-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 

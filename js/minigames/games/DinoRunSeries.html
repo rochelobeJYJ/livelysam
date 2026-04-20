@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Dino Run Series</title>
+    <meta name="livelysam:minigame:disabled" content="true">
     <style>
         html {
             font-size: clamp(12px, calc(10px + 0.5vw), 16px);
@@ -2075,6 +2076,7 @@
             const home = document.getElementById('series-home');
             const player = document.getElementById('series-player');
             const frame = document.getElementById('game-frame');
+            const previewFrame = document.getElementById('preview-base');
             const triggers = Array.from(document.querySelectorAll('[data-mode]'));
 
             function getOuterLeaderboard() {
@@ -2228,17 +2230,33 @@
                 window.history.replaceState({}, '', next.toString());
             }
 
+            function unloadFrame(targetFrame) {
+                if (!targetFrame) return;
+                targetFrame.removeAttribute('srcdoc');
+                targetFrame.src = 'about:blank';
+            }
+
+            function stopPreviewLoop() {
+                unloadFrame(previewFrame);
+            }
+
+            function stopGameFrame() {
+                unloadFrame(frame);
+            }
+
             function showHome() {
                 player.hidden = true;
                 home.hidden = false;
-                frame.removeAttribute('src');
-                frame.removeAttribute('srcdoc');
+                stopGameFrame();
+                startPreviewLoop();
                 updateUrl('');
             }
 
             function openMode(modeKey) {
                 const source = buildRuntimeSource(modeKey);
                 if (!source) return;
+                stopPreviewLoop();
+                stopGameFrame();
                 home.hidden = true;
                 player.hidden = false;
                 frame.srcdoc = source;
@@ -2246,10 +2264,29 @@
             }
 
             function startPreviewLoop() {
-                const previewFrame = document.getElementById('preview-base');
                 if (previewFrame) {
+                    stopPreviewLoop();
                     previewFrame.srcdoc = buildPreviewSource('base');
                 }
+            }
+
+            function handleOuterKeydown(event) {
+                if (event.altKey || event.ctrlKey || event.metaKey) return;
+                if (isPreviewMode) return;
+                if (event.key === 'Escape' && !player.hidden) {
+                    event.preventDefault();
+                    showHome();
+                    return;
+                }
+                if (event.key === '1') openMode('base');
+                if (event.key === '2') openMode('extended');
+                if (event.key === '3') openMode('hard');
+            }
+
+            function cleanupSeriesRunner() {
+                document.removeEventListener('keydown', handleOuterKeydown);
+                stopGameFrame();
+                stopPreviewLoop();
             }
 
             window.LivelySam = window.LivelySam || {};
@@ -2275,18 +2312,8 @@
                 });
             });
 
-            document.addEventListener('keydown', (event) => {
-                if (event.altKey || event.ctrlKey || event.metaKey) return;
-                if (isPreviewMode) return;
-                if (event.key === 'Escape' && !player.hidden) {
-                    event.preventDefault();
-                    showHome();
-                    return;
-                }
-                if (event.key === '1') openMode('base');
-                if (event.key === '2') openMode('extended');
-                if (event.key === '3') openMode('hard');
-            });
+            document.addEventListener('keydown', handleOuterKeydown);
+            window.addEventListener('beforeunload', cleanupSeriesRunner);
 
             if (isPreviewMode) {
                 document.body.classList.add('preview-mode');

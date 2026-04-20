@@ -8,6 +8,15 @@
     return `${date.getMonth() + 1}월 ${date.getDate()}일`;
   }
 
+  function getMealWeekStart(baseDate = new Date()) {
+    const anchor = new Date(baseDate);
+    anchor.setHours(0, 0, 0, 0);
+    if (anchor.getDay() === 0) {
+      anchor.setDate(anchor.getDate() + 1);
+    }
+    return LS.NeisAPI.getMonday(anchor);
+  }
+
   function getMealEmoji(type) {
     if (type === '조식') return '🍳';
     if (type === '중식') return '🍱';
@@ -43,7 +52,7 @@
         return;
       }
 
-      const monday = LS.NeisAPI.getMonday(new Date());
+      const monday = getMealWeekStart(new Date());
       const weekKey = LS.Helpers.formatDate(monday, 'YYYYMMDD');
       const cacheKey = `cachedMeals:${LS.Config.getSchoolContextKey()}:${weekKey}`;
 
@@ -104,7 +113,7 @@
       const showNutrition = Boolean(LS.Config.get('mealShowNutritionInfo')) && !compactDayView;
 
       if (!dayMeals.length) {
-        container.innerHTML = `<div class="widget-empty"><p>이번 ${label} 급식 정보가 없습니다.</p></div>`;
+        container.innerHTML = `<div class="widget-empty meal-empty-message"><p>${label} 급식 정보가 없습니다.</p></div>`;
         return;
       }
 
@@ -174,7 +183,7 @@
     },
 
     _getWeekSummary() {
-      const monday = LS.NeisAPI.getMonday(new Date());
+      const monday = getMealWeekStart(new Date());
       const todayKey = LS.Helpers.formatDate(new Date(), 'YYYYMMDD');
       const summary = {
         lunchDays: 0,
@@ -213,7 +222,7 @@
     },
 
     _renderWeek(container) {
-      const monday = LS.NeisAPI.getMonday(new Date());
+      const monday = getMealWeekStart(new Date());
       const todayKey = LS.Helpers.formatDate(new Date(), 'YYYYMMDD');
       const weekSummary = this._getWeekSummary();
 
@@ -237,6 +246,7 @@
       }
       html += '</div>';
 
+      html += '<div class="meal-week-scroll">';
       html += '<div class="meal-week-grid">';
 
       for (let offset = 0; offset < 5; offset += 1) {
@@ -263,6 +273,7 @@
         html += '</div>';
       }
 
+      html += '</div>';
       html += '</div>';
       container.innerHTML = html;
     },

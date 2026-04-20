@@ -83,6 +83,14 @@
     )));
   }
 
+  function renderSectionAction(action, icon, title, active = false) {
+    return `<button class="record-section-icon-btn ${active ? 'is-active' : ''}" type="button" data-toolbar-action="${action}" title="${LS.Helpers.escapeHtml(title)}" aria-label="${LS.Helpers.escapeHtml(title)}">${icon}</button>`;
+  }
+
+  function renderSectionHeader(title, actions = '') {
+    return `<div class="record-section-row"><div class="record-section-title">${LS.Helpers.escapeHtml(title)}</div>${actions ? `<div class="record-section-actions">${actions}</div>` : ''}</div>`;
+  }
+
   LS.TodoWidget = {
     _bound: false,
     _query: '',
@@ -110,45 +118,39 @@
       const pending = records.filter((record) => record.task.status !== 'done');
       const done = records.filter((record) => record.task.status === 'done');
 
-      let html = '<div class="widget-toolbar">';
-      html += `<input class="widget-search" id="todo-search" type="text" placeholder="할 일 검색" value="${LS.Helpers.escapeHtml(this._query)}">`;
-      html += '<select class="widget-select" id="todo-sort">';
-      html += `<option value="priority" ${this._sortBy === 'priority' ? 'selected' : ''}>우선순위</option>`;
-      html += `<option value="dueDate" ${this._sortBy === 'dueDate' ? 'selected' : ''}>마감일</option>`;
-      html += `<option value="updatedAt" ${this._sortBy === 'updatedAt' ? 'selected' : ''}>최근 수정</option>`;
-      html += `<option value="title" ${this._sortBy === 'title' ? 'selected' : ''}>제목순</option>`;
-      html += '</select>';
-      html += '<div class="widget-filter-group">';
-      html += `<button class="widget-filter-btn ${this._showArchived ? '' : 'active'}" data-filter="active">사용 중</button>`;
-      html += `<button class="widget-filter-btn ${this._showArchived ? 'active' : ''}" data-filter="archived">보관함</button>`;
-      html += '</div></div>';
-
+      let html = '';
       html += '<div class="todo-list">';
+      const toolbarActions = [
+        renderSectionAction('search', '⌕', this._query ? `검색어 변경 (${this._query})` : '검색', Boolean(this._query)),
+        renderSectionAction('sort', '⇅', `정렬 변경 (${this._getSortLabel(this._sortBy)})`, this._sortBy !== 'priority'),
+        renderSectionAction('toggle-archive', '🗃', this._showArchived ? '진행 중 항목 보기' : '보관함 보기', this._showArchived)
+      ].join('');
 
       if (!records.length && !googleTasks.length) {
+        html += renderSectionHeader(this._showArchived ? '보관된 항목' : '진행 중', toolbarActions);
         html += `<div class="todo-empty">${this._showArchived ? '보관한 항목이 없습니다.' : '할 일을 추가해 보세요.'}</div>`;
       } else if (this._showArchived) {
-        html += '<div class="record-section-title">보관된 항목</div>';
+        html += renderSectionHeader('보관된 항목', toolbarActions);
         records.forEach((record) => {
           html += this._renderLocalItem(record);
         });
       } else {
         if (pending.length) {
-          html += '<div class="record-section-title">진행 중</div>';
+          html += renderSectionHeader('진행 중', toolbarActions);
           pending.forEach((record) => {
             html += this._renderLocalItem(record);
           });
         }
 
         if (done.length) {
-          html += `<div class="record-section-title">완료됨 (${done.length})</div>`;
+          html += renderSectionHeader(`완료됨 (${done.length})`, pending.length ? '' : toolbarActions);
           done.forEach((record) => {
             html += this._renderLocalItem(record);
           });
         }
 
         if (googleTasks.length) {
-          html += '<div class="record-section-title todo-google-section-title">Google Tasks</div>';
+          html += renderSectionHeader('Google Tasks', pending.length || done.length ? '' : toolbarActions);
           html += '<div class="todo-google-section">';
           googleTasks.forEach((task) => {
             html += this._renderGoogleItem(task);
@@ -160,20 +162,9 @@
       html += '</div>';
       container.innerHTML = html;
 
-      container.querySelector('#todo-search')?.addEventListener('input', (event) => {
-        this._query = event.target.value || '';
-        this.render();
-      });
-
-      container.querySelector('#todo-sort')?.addEventListener('change', (event) => {
-        this._sortBy = event.target.value || 'priority';
-        this.render();
-      });
-
-      container.querySelectorAll('[data-filter]').forEach((button) => {
+      container.querySelectorAll('[data-toolbar-action]').forEach((button) => {
         button.addEventListener('click', () => {
-          this._showArchived = button.dataset.filter === 'archived';
-          this.render();
+          void this._handleToolbarAction(button.dataset.toolbarAction || '');
         });
       });
 
@@ -190,6 +181,67 @@
           }
         });
       });
+    },
+
+    _getSortLabel(sortBy = this._sortBy) {
+      return {
+        priority: '우선순위',
+        dueDate: '마감일',
+        updatedAt: '최근 수정',
+        title: '제목순'
+      }[sortBy] || '우선순위';
+    },
+
+    async _handleToolbarAction(action) {
+      if (action === 'toggle-archive') {
+        this._showArchived = !this._showArchived;
+        this.render();
+        return;
+      }
+
+      if (action === 'search') {
+        const result = await LS.Helpers.promptModal('할 일 검색', [
+          {
+            id: 'query',
+            type: 'text',
+            label: '검색어',
+            value: this._query,
+            placeholder: '제목, 설명, 태그'
+          }
+        ], {
+          confirmText: '적용',
+          cancelText: '취소'
+        });
+        if (!result) return;
+
+        this._query = String(result.query || '').trim();
+        this.render();
+        return;
+      }
+
+      if (action !== 'sort') return;
+
+      const result = await LS.Helpers.promptModal('할 일 정렬', [
+        {
+          id: 'sortBy',
+          type: 'select',
+          label: '정렬 기준',
+          value: this._sortBy,
+          options: [
+            { value: 'priority', text: '우선순위' },
+            { value: 'dueDate', text: '마감일' },
+            { value: 'updatedAt', text: '최근 수정' },
+            { value: 'title', text: '제목순' }
+          ]
+        }
+      ], {
+        confirmText: '적용',
+        cancelText: '취소'
+      });
+      if (!result) return;
+
+      this._sortBy = result.sortBy || 'priority';
+      this.render();
     },
 
     _renderLocalItem(record) {

@@ -22,17 +22,13 @@ if exist "%EXE%" (
   exit /b 0
 )
 
-if not exist "%PYTHON%" (
-  echo python.exe not found in venv\Scripts
-  pause
-  exit /b 1
+if exist "%PYTHON%" if exist "%SCRIPT%" (
+  start "" "%PYTHON%" "%SCRIPT%"
+  exit /b 0
 )
 
-if not exist "%SCRIPT%" (
-  echo livelysam_launcher_compact.py not found
-  pause
-  exit /b 1
-)
+echo python.exe or launcher executable not found
+pause
+exit /b 1
 
-start "" "%PYTHON%" "%SCRIPT%"
 exit /b 0

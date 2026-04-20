@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import secrets
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +21,39 @@ APP_NAME = "LivelySam"
 SNAPSHOT_VERSION = 2
 DEFAULT_PORT = 58671
 STORES = ["memos", "todos", "bookmarks", "schedules", "records", "backups"]
+BRIDGE_TOKEN_HEADER = "X-LivelySam-Token"
+BRIDGE_ENDPOINT_FILE_NAME = "bridge-endpoint.json"
+BRIDGE_MUTEX_NAME = r"Local\LivelySamStorageBridge"
+ALLOWED_ORIGIN_RE = re.compile(r"^https?://(127\.0\.0\.1|localhost)(:\d{1,5})?$", re.IGNORECASE)
+BLOCKED_SHELL_EXTENSIONS = {
+    ".appref-ms",
+    ".application",
+    ".bat",
+    ".cmd",
+    ".com",
+    ".cpl",
+    ".exe",
+    ".hta",
+    ".jse",
+    ".js",
+    ".lnk",
+    ".msc",
+    ".msi",
+    ".msp",
+    ".ps1",
+    ".ps1xml",
+    ".ps2",
+    ".psc1",
+    ".psc2",
+    ".psd1",
+    ".psm1",
+    ".reg",
+    ".scr",
+    ".vbe",
+    ".vbs",
+    ".wsf",
+    ".wsh",
+}
 
 
 def utc_now_iso() -> str:
@@ -45,6 +80,41 @@ def normalize_shell_kind(value: Any, allow_auto: bool = False) -> str:
     return normalized
 
 
+def strip_windows_extended_prefix(path_value: str) -> str:
+    if path_value.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path_value[8:]
+    if path_value.startswith("\\\\?\\"):
+        return path_value[4:]
+    return path_value
+
+
+def normalize_windows_shell_path(path_value: str) -> str:
+    if os.name != "nt" or not path_value:
+        return path_value
+
+    normalized = strip_windows_extended_prefix(path_value)
+
+    try:
+        import ctypes
+
+        buffer_size = 32768
+        buffer = ctypes.create_unicode_buffer(buffer_size)
+        result = ctypes.windll.kernel32.GetLongPathNameW(normalized, buffer, buffer_size)
+        if result and result < buffer_size:
+            return strip_windows_extended_prefix(buffer.value)
+    except Exception:
+        pass
+
+    try:
+        real_path = os.path.realpath(normalized)
+        if real_path:
+            return strip_windows_extended_prefix(real_path)
+    except OSError:
+        pass
+
+    return normalized
+
+
 def resolve_shell_target(target: Any) -> Path:
     raw_target = text(target)
     if not raw_target:
@@ -60,8 +130,10 @@ def resolve_shell_target(target: Any) -> Path:
             raw_target = raw_target[1:]
 
     expanded = os.path.expandvars(os.path.expanduser(raw_target))
+    expanded = normalize_windows_shell_path(expanded)
     path = Path(expanded)
-    return path.resolve(strict=False)
+    resolved = path.resolve(strict=False)
+    return Path(normalize_windows_shell_path(str(resolved)))
 
 
 def inspect_shell_target(target: Any, kind: Any) -> dict[str, Any]:
@@ -88,6 +160,9 @@ def open_shell_target(target: Any, kind: Any) -> dict[str, Any]:
     if not hasattr(os, "startfile"):
         raise RuntimeError("This platform does not support local shell open")
 
+    if is_blocked_shell_target(path, text(inspected.get("kind"), "file")):
+        raise PermissionError("Opening executable, script, shortcut, or network targets is not allowed.")
+
     os.startfile(str(path))
     return {
         "target": str(path),
@@ -101,6 +176,119 @@ def resolve_data_root() -> Path:
     if not local_appdata:
         local_appdata = str(Path.home() / "AppData" / "Local")
     return Path(local_appdata) / APP_NAME / "user-data"
+
+
+def resolve_runtime_root() -> Path:
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if not local_appdata:
+        local_appdata = str(Path.home() / "AppData" / "Local")
+    return Path(local_appdata) / APP_NAME / "runtime"
+
+
+def resolve_bridge_endpoint_path() -> Path:
+    return resolve_runtime_root() / BRIDGE_ENDPOINT_FILE_NAME
+
+
+def write_json_file(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(".tmp")
+    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temp_path, path)
+
+
+def read_json_file(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def write_bridge_endpoint(path: Path, *, port: int, auth_token: str, snapshot_path: Path) -> dict[str, Any]:
+    payload = {
+        "ok": True,
+        "app": APP_NAME,
+        "version": SNAPSHOT_VERSION,
+        "pid": os.getpid(),
+        "port": int(port),
+        "origin": f"http://127.0.0.1:{int(port)}",
+        "health_url": f"http://127.0.0.1:{int(port)}/__livelysam__/health",
+        "api_health_url": f"http://127.0.0.1:{int(port)}/api/health",
+        "auth_token": text(auth_token),
+        "storage_path": str(snapshot_path),
+        "updatedAt": utc_now_iso(),
+    }
+    write_json_file(path, payload)
+    return payload
+
+
+def clear_bridge_endpoint(path: Path, *, port: int) -> None:
+    payload = read_json_file(path)
+    if not isinstance(payload, dict):
+        return
+    if int(payload.get("pid") or 0) != os.getpid():
+        return
+    if int(payload.get("port") or 0) != int(port):
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
+
+
+def acquire_windows_mutex(name: str) -> int | None:
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        handle = int(ctypes.windll.kernel32.CreateMutexW(None, False, name))
+        if not handle:
+            raise OSError("CreateMutexW failed")
+        if int(ctypes.windll.kernel32.GetLastError()) == 183:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return None
+        return handle
+    except Exception:
+        return None
+
+
+def release_windows_mutex(handle: int | None) -> None:
+    if os.name != "nt" or not handle:
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.ReleaseMutex(handle)
+    except Exception:
+        pass
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.CloseHandle(handle)
+    except Exception:
+        pass
+
+
+def is_allowed_origin(origin: Any) -> bool:
+    normalized = text(origin)
+    if not normalized:
+        return True
+    if normalized == "null":
+        return True
+    return bool(ALLOWED_ORIGIN_RE.match(normalized))
+
+
+def is_network_shell_path(path: Path) -> bool:
+    normalized = str(path).replace("/", "\\")
+    return normalized.startswith("\\\\")
+
+
+def is_blocked_shell_target(path: Path, kind: str) -> bool:
+    if kind == "folder":
+        return is_network_shell_path(path)
+    return is_network_shell_path(path) or path.suffix.lower() in BLOCKED_SHELL_EXTENSIONS
 
 
 class SnapshotStore:
@@ -241,9 +429,12 @@ class LivelySamStorageHandler(BaseHTTPRequestHandler):
     server_version = "LivelySamStorageBridge/1.0"
 
     def end_headers(self) -> None:
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self._get_request_origin()
+        if origin and is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", f"Content-Type, {BRIDGE_TOKEN_HEADER}")
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
@@ -251,6 +442,9 @@ class LivelySamStorageHandler(BaseHTTPRequestHandler):
         return
 
     def do_OPTIONS(self) -> None:
+        path = urlparse(self.path).path
+        if not self._authorize_request(path, require_token=False):
+            return
         self.send_response(204)
         self.end_headers()
 
@@ -258,6 +452,8 @@ class LivelySamStorageHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query or "")
+        if not self._authorize_request(path):
+            return
         if path == "/__livelysam__/health":
             self._send_json(
                 200,
@@ -265,6 +461,7 @@ class LivelySamStorageHandler(BaseHTTPRequestHandler):
                     "ok": True,
                     "app": APP_NAME,
                     "version": SNAPSHOT_VERSION,
+                    "port": int(getattr(self.server, "server_port", DEFAULT_PORT)),
                     "storage_path": str(self.server.snapshot_path),  # type: ignore[attr-defined]
                     "data_proxy": self.server.data_proxy.health_snapshot(),  # type: ignore[attr-defined]
                 },
@@ -289,6 +486,8 @@ class LivelySamStorageHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if not self._authorize_request(path):
+            return
         if path.startswith("/__livelysam__/google-auth/"):
             self._handle_google_auth(path)
             return
@@ -307,7 +506,50 @@ class LivelySamStorageHandler(BaseHTTPRequestHandler):
         self._handle_write()
 
     def do_PUT(self) -> None:
+        path = urlparse(self.path).path
+        if not self._authorize_request(path):
+            return
         self._handle_write()
+
+    def _get_request_origin(self) -> str:
+        return text(self.headers.get("Origin"))
+
+    def _requires_auth(self, path: str) -> bool:
+        if path in {"/__livelysam__/health", "/api/health"}:
+            return False
+        if path == "/__livelysam__/google-auth/status":
+            return True
+        if path.startswith("/api/"):
+            return True
+        if path.startswith("/__livelysam__/google-auth/"):
+            return True
+        return path in {
+            "/__livelysam__/storage",
+            "/__livelysam__/storage/ops",
+            "/__livelysam__/google-api",
+            "/__livelysam__/shell/inspect",
+            "/__livelysam__/shell/open",
+        }
+
+    def _has_valid_auth_token(self) -> bool:
+        expected = text(getattr(self.server, "auth_token", ""))
+        provided = text(self.headers.get(BRIDGE_TOKEN_HEADER))
+        if not expected or not provided:
+            return False
+        try:
+            return secrets.compare_digest(provided, expected)
+        except Exception:
+            return False
+
+    def _authorize_request(self, path: str, *, require_token: bool = True) -> bool:
+        origin = self._get_request_origin()
+        if origin and not is_allowed_origin(origin):
+            self._send_json(403, {"ok": False, "error": "Origin is not allowed."})
+            return False
+        if require_token and self._requires_auth(path) and not self._has_valid_auth_token():
+            self._send_json(403, {"ok": False, "error": "Missing or invalid bridge token."})
+            return False
+        return True
 
     def _read_json_payload(self) -> Any:
         try:
@@ -568,23 +810,38 @@ def build_argument_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_argument_parser().parse_args()
     data_root = resolve_data_root()
+    endpoint_path = resolve_bridge_endpoint_path()
     snapshot_path = data_root / "shared-storage.json"
     store = SnapshotStore(snapshot_path)
     google_oauth = GoogleOAuthBridge(data_root)
     data_proxy = DataProxyService(data_root)
+    mutex_handle = acquire_windows_mutex(BRIDGE_MUTEX_NAME)
+
+    if os.name == "nt" and mutex_handle is None:
+        raise SystemExit("LivelySam storage bridge is already running.")
 
     server = ReusableThreadingHTTPServer(("127.0.0.1", args.port), LivelySamStorageHandler)
     server.store = store  # type: ignore[attr-defined]
     server.snapshot_path = snapshot_path  # type: ignore[attr-defined]
     server.google_oauth = google_oauth  # type: ignore[attr-defined]
     server.data_proxy = data_proxy  # type: ignore[attr-defined]
+    server.auth_token = secrets.token_urlsafe(32)  # type: ignore[attr-defined]
+    server.endpoint_path = endpoint_path  # type: ignore[attr-defined]
+    write_bridge_endpoint(
+        endpoint_path,
+        port=int(server.server_port),
+        auth_token=server.auth_token,  # type: ignore[attr-defined]
+        snapshot_path=snapshot_path,
+    )
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        clear_bridge_endpoint(endpoint_path, port=int(server.server_port))
         server.server_close()
+        release_windows_mutex(mutex_handle)
 
 
 if __name__ == "__main__":

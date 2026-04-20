@@ -67,7 +67,9 @@ if ($existingState -and (Test-PidRunning -ProcessId ([int]$existingState.host_pi
 }
 
 if (Test-Path -LiteralPath $storageBridgeScript) {
-    & $storageBridgeScript -Root $rootPath | Out-Null
+    $bridgeInfo = & $storageBridgeScript -Root $rootPath | ConvertFrom-Json
+} else {
+    $bridgeInfo = $null
 }
 
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
@@ -82,6 +84,9 @@ $preferredMonitorWidthLiteral = if ($null -eq $PreferredMonitorWidth) { '$null' 
 $preferredMonitorHeightLiteral = if ($null -eq $PreferredMonitorHeight) { '$null' } else { [string][int]$PreferredMonitorHeight }
 $preferredMonitorPrimaryLiteral = [int]$PreferredMonitorPrimary
 $allowPrimaryFallbackLiteral = if ($AllowPrimaryFallback) { '$true' } else { '$false' }
+$bridgePortLiteral = if ($bridgeInfo -and [int]$bridgeInfo.port -gt 0) { [string][int]$bridgeInfo.port } else { '0' }
+$bridgeTokenLiteral = if ($bridgeInfo) { [string]$bridgeInfo.auth_token } else { '' }
+$bridgeTokenLiteral = $bridgeTokenLiteral.Replace("'", "''")
 $launcherScript = @"
 `$ErrorActionPreference = 'Stop'
 `$RootPath = '$rootPathLiteral'
@@ -93,18 +98,21 @@ $launcherScript = @"
 `$PreferredMonitorHeight = $preferredMonitorHeightLiteral
 `$PreferredMonitorPrimary = $preferredMonitorPrimaryLiteral
 `$AllowPrimaryFallback = $allowPrimaryFallbackLiteral
+`$BridgePort = $bridgePortLiteral
+`$BridgeToken = '$bridgeTokenLiteral'
 `$RuntimeDir = Join-Path `$RootPath 'runtime\desktop-host'
 `$StateFile = Join-Path `$RuntimeDir 'state.json'
 `$ResultFile = Join-Path `$RuntimeDir 'last-result.json'
 `$StopFile = Join-Path `$RuntimeDir 'stop.flag'
 `$LogFile = Join-Path `$RuntimeDir 'host.log'
-`$ProfileDir = Join-Path `$RuntimeDir 'webview2-profile-inline'
+`$ProfileDir = Join-Path `$RuntimeDir ('webview2-profile-inline-' + `$PID)
 `$PreviewHostExeCandidates = @(
   (Join-Path `$RootPath 'dist\launcher\BrowserPreviewHost.exe'),
   (Join-Path `$RootPath 'BrowserPreviewHost.exe')
 )
 `$PreviewHostExe = `$PreviewHostExeCandidates | Where-Object { Test-Path -LiteralPath `$_ } | Select-Object -First 1
 `$PythonPath = Join-Path `$RootPath 'venv\Scripts\python.exe'
+`$PreviewHostScript = Join-Path `$RootPath 'tools\browser_preview_host.py'
 
 function Ensure-RuntimeDir { New-Item -ItemType Directory -Path `$RuntimeDir -Force | Out-Null }
 function Log-Message([string]`$Message,[string]`$Level='INFO') {
@@ -162,6 +170,20 @@ function Wait-ForServer([string]`$Url,[int]`$TimeoutSeconds=15) {
   }
   throw 'Timed out waiting for local server.'
 }
+function Get-ListeningProcessId([int]`$Port,[int]`$FallbackPid) {
+  `$pattern = '^\s*TCP\s+\S+:' + `$Port + '\s+\S+\s+LISTENING\s+(\d+)\s*$'
+  try {
+    `$lines = netstat -ano -p tcp 2>`$null
+    foreach (`$line in `$lines) {
+      `$match = [regex]::Match(`$line, `$pattern)
+      if (`$match.Success) {
+        return [int]`$match.Groups[1].Value
+      }
+    }
+  } catch {
+  }
+  return [int]`$FallbackPid
+}
 
 Ensure-RuntimeDir
 Remove-Item -LiteralPath `$StopFile -Force -ErrorAction SilentlyContinue
@@ -173,21 +195,34 @@ Write-Result @{
 }
 
 `$managedDir = if (`$env:LIVELYSAM_WEBVIEW2_MANAGED_DIR) { `$env:LIVELYSAM_WEBVIEW2_MANAGED_DIR } else { 'C:\Program Files (x86)\Hnc\Office 2024\HncUtils\Service' }
-`$loaderDir = if (`$env:LIVELYSAM_WEBVIEW2_LOADER_DIR) { `$env:LIVELYSAM_WEBVIEW2_LOADER_DIR } elseif (Test-Path 'C:\Program Files\Microsoft Office\root\Office16\WebView2Loader.dll') { 'C:\Program Files\Microsoft Office\root\Office16' } else { 'C:\Program Files\Microsoft OneDrive\26.040.0301.0001' }
+`$loaderDir = if (`$env:LIVELYSAM_WEBVIEW2_LOADER_DIR) { `$env:LIVELYSAM_WEBVIEW2_LOADER_DIR } elseif (Test-Path 'C:\Program Files\Microsoft Office\root\Office16\WebView2Loader.dll') { 'C:\Program Files\Microsoft Office\root\Office16' } elseif (Test-Path 'C:\Program Files\Microsoft OneDrive\26.055.0323.0004\WebView2Loader.dll') { 'C:\Program Files\Microsoft OneDrive\26.055.0323.0004' } else { 'C:\Program Files\Microsoft OneDrive\26.040.0301.0001' }
 
 `$port = Get-AppServerPort
-`$url = 'http://127.0.0.1:' + `$port + '/index.html?runtime=desktophost'
-if (`$PreviewHostExe) {
-  `$server = Start-Process -FilePath `$PreviewHostExe -ArgumentList @('serve','--port',`$port) -WindowStyle Hidden -PassThru
+`$statusUrl = 'http://127.0.0.1:' + `$port + '/index.html?runtime=desktophost'
+`$launchUrl = `$statusUrl
+if (`$BridgePort -gt 0) {
+  `$queryParts = @('runtime=desktophost', 'bridgePort=' + `$BridgePort)
+  if (-not [string]::IsNullOrWhiteSpace(`$BridgeToken)) {
+    `$queryParts += 'livelySamToken=' + [System.Uri]::EscapeDataString(`$BridgeToken)
+  }
+  `$launchUrl = 'http://127.0.0.1:' + `$port + '/index.html?' + (`$queryParts -join '&')
+}
+if ((Test-Path -LiteralPath `$PythonPath) -and (Test-Path -LiteralPath `$PreviewHostScript)) {
+  `$server = Start-Process -FilePath `$PythonPath -ArgumentList @(`$PreviewHostScript,'serve','--port',`$port) -WorkingDirectory `$RootPath -WindowStyle Hidden -PassThru
+} elseif (`$PreviewHostExe) {
+  `$server = Start-Process -FilePath `$PreviewHostExe -ArgumentList @('serve','--port',`$port) -WorkingDirectory `$RootPath -WindowStyle Hidden -PassThru
 } else {
-  if (-not (Test-Path -LiteralPath `$PythonPath)) { throw ('BrowserPreviewHost.exe or python.exe not found. Checked: ' + (`$PreviewHostExeCandidates -join ', ')) }
-  `$server = Start-Process -FilePath `$PythonPath -ArgumentList @('-m','http.server',`$port,'--bind','127.0.0.1','--directory',`$RootPath) -WindowStyle Hidden -PassThru
+  throw ('BrowserPreviewHost runtime not found. Checked: ' + ((`$PreviewHostExeCandidates + @(`$PreviewHostScript, `$PythonPath)) -join ', '))
 }
 Log-Message ('Server process started: pid=' + `$server.Id + ' port=' + `$port)
 
 try {
-  Wait-ForServer -Url `$url
-  Log-Message ('Local server ready at ' + `$url)
+  Wait-ForServer -Url `$statusUrl
+  `$resolvedServerPid = Get-ListeningProcessId -Port `$port -FallbackPid `$server.Id
+  Log-Message ('Local server ready at ' + `$statusUrl)
+  if (`$resolvedServerPid -ne `$server.Id) {
+    Log-Message ('Resolved actual server pid=' + `$resolvedServerPid + ' from launcher pid=' + `$server.Id)
+  }
 
   `$env:PATH = `$loaderDir + ';' + `$env:PATH
   Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Windows.Forms
@@ -813,7 +848,26 @@ if (-not `$targetScreen) {
     if (`$normalized.IndexOf('?') -ge 0 -or `$normalized.IndexOf('*') -ge 0 -or `$normalized.IndexOf('<') -ge 0 -or `$normalized.IndexOf('>') -ge 0 -or `$normalized.IndexOf('|') -ge 0) { return }
 
     if (`$normalized -match '^(file://|[a-zA-Z]:\\|\\\\)') {
-      if (-not `$Results.Contains(`$normalized)) {
+      if (`$normalized -match '^([a-zA-Z]:\\|\\\\)') {
+        try {
+          `$resolvedItem = Get-Item -LiteralPath `$normalized -ErrorAction Stop
+          `$normalized = [string]`$resolvedItem.FullName
+        } catch {
+          try {
+            `$normalized = [System.IO.Path]::GetFullPath(`$normalized)
+          } catch { }
+        }
+      }
+
+      `$exists = `$false
+      foreach (`$existing in `$Results) {
+        if ([string]::Equals([string]`$existing, `$normalized, [System.StringComparison]::OrdinalIgnoreCase)) {
+          `$exists = `$true
+          break
+        }
+      }
+
+      if (-not `$exists) {
         `$Results.Add(`$normalized)
       }
     }
@@ -893,20 +947,21 @@ if (-not `$targetScreen) {
   }
 
   function Get-NativeDropTargets([object]`$DataObject) {
-    `$results = New-Object 'System.Collections.Generic.List[string]'
+    `$fileDropResults = New-Object 'System.Collections.Generic.List[string]'
+    `$nameResults = New-Object 'System.Collections.Generic.List[string]'
     `$fallbackResults = New-Object 'System.Collections.Generic.List[string]'
     if (-not `$DataObject) { return @() }
 
-    foreach (`$format in @(
-      [System.Windows.DataFormats]::FileDrop,
-      'FileNameW',
-      'FileName'
-    )) {
-      Add-NativeDropFormatData `$results `$DataObject `$format
+    Add-NativeDropFormatData `$fileDropResults `$DataObject [System.Windows.DataFormats]::FileDrop
+    if (`$fileDropResults.Count -gt 0) {
+      return @(`$fileDropResults.ToArray())
     }
 
-    if (`$results.Count -gt 0) {
-      return @(`$results.ToArray())
+    foreach (`$format in @('FileNameW', 'FileName')) {
+      Add-NativeDropFormatData `$nameResults `$DataObject `$format
+    }
+    if (`$nameResults.Count -gt 0) {
+      return @(`$nameResults.ToArray())
     }
 
     foreach (`$format in @(
@@ -1246,9 +1301,10 @@ if (-not `$targetScreen) {
   `$script:hostHandle = [IntPtr]::Zero
   `$script:state = @{
     host_pid = `$PID
-    server_pid = `$server.Id
+    server_pid = `$resolvedServerPid
+    server_launcher_pid = `$server.Id
     port = `$port
-    url = `$url
+    url = `$statusUrl
     renderer = 'WebView2'
     mode = 'interactive_overlay'
     requested_monitor = if (`$PreferredMonitor -gt 0) { `$PreferredMonitor } else { 'auto-secondary' }
@@ -1314,7 +1370,7 @@ if (-not `$targetScreen) {
           Log-Message ('WebView host message handling failed: ' + `$_.Exception.Message) 'WARN'
         }
       })
-      `$s.CoreWebView2.Navigate(`$url)
+      `$s.CoreWebView2.Navigate(`$launchUrl)
     } else {
       `$text = if (`$a.InitializationException) { `$a.InitializationException.ToString() } else { 'Unknown WebView2 initialization error.' }
       `$script:state.last_error = `$text
@@ -1403,7 +1459,7 @@ if (-not `$targetScreen) {
         attached = `$true
         message = 'Interactive wallpaper host is running.'
         updated_at = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-        url = `$url
+        url = `$statusUrl
         renderer = 'WebView2'
         mode = 'interactive_overlay'
         selected_monitor = `$selectedMonitor
@@ -1499,6 +1555,15 @@ if (-not `$targetScreen) {
   Log-Message ('Inline wallpaper host failed: ' + `$message) 'ERROR'
   throw
 } finally {
+  `$resolvedServerPidToStop = 0
+  if (`$script:state -and `$script:state.server_pid) {
+    `$resolvedServerPidToStop = [int]`$script:state.server_pid
+  } elseif (`$resolvedServerPid) {
+    `$resolvedServerPidToStop = [int]`$resolvedServerPid
+  }
+  if (`$resolvedServerPidToStop -gt 0 -and `$resolvedServerPidToStop -ne `$server.Id) {
+    Stop-Process -Id `$resolvedServerPidToStop -Force -ErrorAction SilentlyContinue
+  }
   if (`$server -and -not `$server.HasExited) { Stop-Process -Id `$server.Id -Force -ErrorAction SilentlyContinue }
   Clear-State
   `$currentResult = Read-JsonFile -Path `$ResultFile
@@ -1515,43 +1580,166 @@ if (-not `$targetScreen) {
 "@
 
 $launcherFile = Join-Path $runtimeDir "launch-inline.ps1"
+$browserFallbackScript = Join-Path $rootPath "tools\local_wallpaper_browser_fallback.ps1"
 Set-Content -LiteralPath $launcherFile -Value $launcherScript -Encoding UTF8
+$script:currentInlineLauncher = $null
 
-Start-Process -FilePath "powershell.exe" -ArgumentList @(
-    "-NoProfile",
-    "-STA",
-    "-ExecutionPolicy", "Bypass",
-    "-WindowStyle", "Hidden",
-    "-File", $launcherFile
-) -WindowStyle Hidden
+function Start-InlineLauncherProcess {
+    Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue
+    $script:currentInlineLauncher = Start-Process -FilePath "powershell.exe" -ArgumentList @(
+        "-NoProfile",
+        "-STA",
+        "-ExecutionPolicy", "Bypass",
+        "-WindowStyle", "Hidden",
+        "-File", $launcherFile
+    ) -WindowStyle Hidden -PassThru
+}
 
-$deadline = (Get-Date).AddSeconds(25)
-$attached = $false
-$failureMessage = $null
-
-while ((Get-Date) -lt $deadline) {
-    Start-Sleep -Milliseconds 500
-
-    $state = Read-JsonFile -Path $stateFile
-    if ($state -and $state.attached) {
-        $attached = $true
-        break
-    }
-
-    $result = Read-JsonFile -Path $resultFile
-    if ($result -and $result.status -eq "running" -and $result.attached) {
-        $attached = $true
-        break
-    }
-
-    if ($result -and $result.status -eq "failed") {
-        $failureMessage = $result.error
-        break
+function Stop-InlineLauncherProcess {
+    if ($script:currentInlineLauncher) {
+        Stop-Process -Id $script:currentInlineLauncher.Id -Force -ErrorAction SilentlyContinue
+        $script:currentInlineLauncher = $null
     }
 }
 
-if ($attached) {
-    $state = Read-JsonFile -Path $stateFile
+function Start-BrowserFallbackProcess {
+    Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue
+    $args = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-WindowStyle", "Hidden",
+        "-File", $browserFallbackScript,
+        "-Root", $rootPath,
+        "-PreferredMonitor", $PreferredMonitor
+    )
+
+    if ($PreferredMonitorDevice) {
+        $args += @("-PreferredMonitorDevice", $PreferredMonitorDevice)
+    }
+    if ($PreferredMonitorPrimary -ge 0) {
+        $args += @("-PreferredMonitorPrimary", $PreferredMonitorPrimary)
+    }
+
+    if ($null -ne $PreferredMonitorX) {
+        $args += @("-PreferredMonitorX", [string][int]$PreferredMonitorX)
+    }
+    if ($null -ne $PreferredMonitorY) {
+        $args += @("-PreferredMonitorY", [string][int]$PreferredMonitorY)
+    }
+    if ($null -ne $PreferredMonitorWidth) {
+        $args += @("-PreferredMonitorWidth", [string][int]$PreferredMonitorWidth)
+    }
+    if ($null -ne $PreferredMonitorHeight) {
+        $args += @("-PreferredMonitorHeight", [string][int]$PreferredMonitorHeight)
+    }
+    if ($AllowPrimaryFallback) {
+        $args += "-AllowPrimaryFallback"
+    }
+
+    Start-Process -FilePath "powershell.exe" -ArgumentList $args -WindowStyle Hidden | Out-Null
+}
+
+function Wait-InlineAttach {
+    param([int]$TimeoutSeconds = 25)
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $attached = $false
+    $failureMessage = $null
+
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+
+        $state = Read-JsonFile -Path $stateFile
+        if ($state -and $state.attached) {
+            return @{
+                attached = $true
+                state = $state
+                failure = $null
+            }
+        }
+
+        $result = Read-JsonFile -Path $resultFile
+        if ($result -and $result.status -eq "running" -and $result.attached) {
+            return @{
+                attached = $true
+                state = (Read-JsonFile -Path $stateFile)
+                failure = $null
+            }
+        }
+
+        if ($result -and $result.status -eq "failed") {
+            $failureMessage = if ($result.error) { [string]$result.error } else { [string]$result.message }
+            break
+        }
+    }
+
+    if (-not $failureMessage) {
+        $result = Read-JsonFile -Path $resultFile
+        if ($result -and $result.error) {
+            $failureMessage = [string]$result.error
+        } else {
+            $failureMessage = "Timed out waiting for the wallpaper host to attach."
+        }
+    }
+
+    return @{
+        attached = $false
+        state = $null
+        failure = $failureMessage
+    }
+}
+
+$attemptCount = 0
+$maxAttempts = 4
+$outcome = $null
+
+while ($attemptCount -lt $maxAttempts) {
+    $attemptCount += 1
+    Start-InlineLauncherProcess
+    $outcome = Wait-InlineAttach -TimeoutSeconds 25
+    if ($outcome.attached) {
+        break
+    }
+
+    Stop-InlineLauncherProcess
+
+    $failureText = [string]$outcome.failure
+    $shouldRetry = (
+        $attemptCount -lt $maxAttempts -and
+        $failureText -and
+        ($failureText -match "WebView2 initialization failed" -or
+         $failureText -match "0x8000FFFF" -or
+         $failureText -match "0x800700AA" -or
+         $failureText -match "E_UNEXPECTED")
+    )
+
+    if (-not $shouldRetry) {
+        break
+    }
+
+    Start-Sleep -Milliseconds 1200
+}
+
+$failureText = if ($outcome) { [string]$outcome.failure } else { "" }
+$shouldUseBrowserFallback = (
+    -not ($outcome -and $outcome.attached) -and
+    (
+        -not $failureText -or
+        $failureText -match "WebView2 initialization failed" -or
+        $failureText -match "0x8000FFFF" -or
+        $failureText -match "E_UNEXPECTED" -or
+        $failureText -match "Timed out waiting for the wallpaper host to attach"
+    )
+)
+
+if ($shouldUseBrowserFallback -and (Test-Path -LiteralPath $browserFallbackScript)) {
+    Stop-InlineLauncherProcess
+    Start-BrowserFallbackProcess
+    $outcome = Wait-InlineAttach -TimeoutSeconds 25
+}
+
+if ($outcome -and $outcome.attached) {
+    $state = $outcome.state
     Write-Host "[LivelySam] wallpaper host started" -ForegroundColor Green
     Write-Host "Stop: stop_local_wallpaper.cmd"
     if ($state.url) {
@@ -1572,15 +1760,7 @@ if ($attached) {
     exit 0
 }
 
-if (-not $failureMessage) {
-    $result = Read-JsonFile -Path $resultFile
-    if ($result -and $result.error) {
-        $failureMessage = $result.error
-    } else {
-        $failureMessage = "Timed out waiting for the wallpaper host to attach."
-    }
-}
-
+$failureMessage = if ($outcome) { [string]$outcome.failure } else { "Wallpaper host did not start." }
 Write-Host "[LivelySam] wallpaper host failed to start" -ForegroundColor Red
 Write-Host "Error: $failureMessage"
 Write-Host "Log: $logFile"

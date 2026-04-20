@@ -1,8 +1,61 @@
 (function () {
   'use strict';
   const LS = window.LivelySam = window.LivelySam || {};
+  const SENSITIVE_RUNTIME_QUERY_KEYS = new Set(['bridgePort', 'livelySamToken']);
+  let runtimeQueryParamCache = null;
+
+  function readRuntimeQueryParams() {
+    if (runtimeQueryParamCache) {
+      return runtimeQueryParamCache;
+    }
+
+    const cached = {};
+    try {
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.forEach((value, key) => {
+        if (!Object.prototype.hasOwnProperty.call(cached, key)) {
+          cached[key] = value;
+        }
+      });
+
+      let stripped = false;
+      SENSITIVE_RUNTIME_QUERY_KEYS.forEach((key) => {
+        if (!currentUrl.searchParams.has(key)) {
+          return;
+        }
+        currentUrl.searchParams.delete(key);
+        stripped = true;
+      });
+
+      if (stripped && window.history?.replaceState) {
+        const nextUrl = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+        window.history.replaceState(window.history.state, document.title, nextUrl || window.location.pathname || '/');
+      }
+    } catch {
+      try {
+        const params = new URLSearchParams(window.location.search || '');
+        params.forEach((value, key) => {
+          if (!Object.prototype.hasOwnProperty.call(cached, key)) {
+            cached[key] = value;
+          }
+        });
+      } catch {
+        // ignore query parsing failures and fall back to an empty cache
+      }
+    }
+
+    runtimeQueryParamCache = cached;
+    return runtimeQueryParamCache;
+  }
 
   LS.Helpers = {
+    getRuntimeQueryParam(key, fallback = '') {
+      const normalizedKey = String(key || '').trim();
+      if (!normalizedKey) return fallback;
+      const value = readRuntimeQueryParams()[normalizedKey];
+      return value === undefined || value === null ? fallback : value;
+    },
+
     /* ── 요일 ── */
     DAY_NAMES: ['일', '월', '화', '수', '목', '금', '토'],
     DAY_NAMES_FULL: ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'],
@@ -225,11 +278,60 @@
       return periods;
     },
 
+    isWeekend(date = new Date()) {
+      const day = date.getDay();
+      return day === 0 || day === 6;
+    },
+
+    getNextSchoolStartInfo(periods, now = new Date()) {
+      if (!Array.isArray(periods) || !periods.length) return null;
+      const firstPeriod = periods[0];
+      const target = new Date(now);
+      const day = target.getDay();
+      const daysUntilMonday = day === 6 ? 2 : day === 0 ? 1 : 0;
+
+      target.setDate(target.getDate() + daysUntilMonday);
+      target.setHours(Math.floor(firstPeriod.startMin / 60), firstPeriod.startMin % 60, 0, 0);
+
+      const remainingMinutes = Math.max(0, Math.ceil((target.getTime() - now.getTime()) / 60000));
+
+      return {
+        target,
+        remainingMinutes,
+        label: firstPeriod.label,
+        start: firstPeriod.start,
+        dayName: this.DAY_NAMES_FULL[target.getDay()]
+      };
+    },
+
+    formatRemainingMinutes(minutes) {
+      const totalMinutes = Math.max(0, Math.ceil(Number(minutes) || 0));
+      const days = Math.floor(totalMinutes / 1440);
+      const hours = Math.floor((totalMinutes % 1440) / 60);
+      const mins = totalMinutes % 60;
+      const parts = [];
+
+      if (days > 0) parts.push(`${days}일`);
+      if (hours > 0 || days > 0) parts.push(`${hours}시간`);
+      parts.push(`${mins}분`);
+
+      return parts.join(' ');
+    },
+
     /* ── 현재 교시 판단 ── */
     getCurrentPeriod(periods, now) {
       if (!now) now = new Date();
-      const currentMin = now.getHours() * 60 + now.getMinutes();
       const dayOfWeek = now.getDay(); // 0=일, 1=월, ..., 6=토
+      const currentMin = now.getHours() * 60 + now.getMinutes();
+
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        return {
+          current: null,
+          index: -1,
+          status: 'weekend',
+          nextSchoolStart: this.getNextSchoolStartInfo(periods, now)
+        };
+      }
 
       for (let i = 0; i < periods.length; i++) {
         const p = periods[i];
@@ -305,6 +407,33 @@
       const div = document.createElement('div');
       div.textContent = str;
       return div.innerHTML;
+    },
+
+    safeParse(raw, fallback = null) {
+      if (raw === null || raw === undefined || raw === '') {
+        return fallback;
+      }
+
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return fallback;
+      }
+    },
+
+    safeWrite(key, value, options = {}) {
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (error) {
+        if (options.log !== false) {
+          console.warn(options.scope || '[Helpers] localStorage write failed:', error);
+        }
+        if (options.throwOnError) {
+          throw error;
+        }
+        return false;
+      }
     },
 
     /* ── 고유 ID 생성 ── */
@@ -562,4 +691,6 @@
       }, duration);
     }
   };
+
+  readRuntimeQueryParams();
 })();

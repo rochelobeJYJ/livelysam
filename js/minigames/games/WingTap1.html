@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Wing Tap (Classic)</title>
+    <meta name="livelysam:minigame:id" content="wing-tap-1">
+    <meta name="livelysam:minigame:title" content="Wing Tap Classic">
+    <meta name="livelysam:minigame:icon" content="🐥">
+    <meta name="livelysam:minigame:status" content="ready">
+    <meta name="livelysam:minigame:series-id" content="wing-tap">
+    <meta name="livelysam:minigame:series-title" content="Wing Tap">
+    <meta name="livelysam:minigame:series-description" content="기본, 확장, 보스전을 한 흐름으로 즐길 수 있습니다.">
+    <meta name="livelysam:minigame:series-icon" content="🐥">
+    <meta name="livelysam:minigame:description" content="기본 조작으로 즐기는 클래식 Wing Tap입니다.">
+    <meta name="livelysam:minigame:score-label" content="비행 점수">
+    <meta name="livelysam:minigame:leaderboard-mode" content="personal-best">
+    <meta name="livelysam:minigame:tags" content="firebase,hall-of-fame">
+    <meta name="livelysam:minigame:sort-order" content="40">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -76,12 +89,42 @@
             margin-top: 10px;
             text-shadow: 0 0 5px #000;
         }
-
-        #start-overlay { 
+        #start-overlay .start-panel {
+            margin-top: auto;
             display: flex;
-            /* (수정) 캔버스 타이틀과 겹치지 않도록 아래로 */
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+            width: min(290px, calc(100% - 44px));
+            padding: 16px 18px;
+            border-radius: 24px;
+            background: rgba(7, 16, 34, 0.64);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
+            backdrop-filter: blur(8px);
+        }
+        #start-overlay .start-chip {
+            display: inline-flex;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(255, 223, 0, 0.12);
+            color: #FFDF00;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.62rem;
+            letter-spacing: 0.08em;
+        }
+        #start-overlay p {
+            margin: 0;
+            font-size: 1rem;
+            line-height: 1.55;
+            text-align: left;
+        }
+
+        #start-overlay {
+            display: none;
             justify-content: flex-end;
-            padding-bottom: 150px; 
+            align-items: flex-start;
+            padding: 22px;
         }
         #game-over-overlay { 
             display: none;
@@ -92,7 +135,7 @@
 
         #global-highscore-display {
             /* (수정) 1. 레트로 폰트 적용 */
-            font-family: 'Inter;
+            font-family: 'Inter', sans-serif;
             font-size: 0.7rem; 
             color: #FFDF00; /* THRUST_YELLOW */
             margin-top: 0; /* (수정) 여백 */
@@ -144,10 +187,12 @@
 <body>
     <div id="game-container">
         <canvas id="gameCanvas" width="800" height="600"></canvas>
-        //<h1 id="game-title">Wing Tap 1</h1>
 
         <div id="start-overlay" class="overlay">
-            <p>스페이스바 / 클릭 / 터치로 시작</p>
+            <div class="start-panel">
+                <span class="start-chip">CLASSIC FLIGHT</span>
+                <p>스페이스바 · 클릭 · 터치로 가볍게 출발하세요.</p>
+            </div>
         </div>
         
         <div id="game-over-overlay" class="overlay">
@@ -245,9 +290,12 @@
         // --- (수정) 1. 폰트 상수 ---
         const FONT_RETRO_48 = "48px 'Press Start 2P', cursive"; 
         const FONT_RETRO_70 = "70px 'Press Start 2P', cursive"; 
+        const FONT_RETRO_24 = "24px 'Press Start 2P', cursive";
         const FONT_KOREAN_48 = "bold 48px 'Inter', sans-serif";
         const FONT_KOREAN_30 = "bold 30px 'Inter', sans-serif";
 	const FONT_INTER_70 = "bold 70px 'Inter', sans-serif";
+        const FONT_INTER_22 = "600 22px 'Inter', sans-serif";
+        const START_BUTTON_RECT = { x: WIDTH / 2 - 150, y: HEIGHT / 2 + 108, w: 300, h: 44 };
 
         // --- 물리/난이도 상수 ---
         const GRAVITY = 0.5;
@@ -593,7 +641,7 @@
             currentGapHeight = BASE_GAP_HEIGHT;
             currentSpawnRate = BASE_SPAWN_RATE;
 
-            startOverlay.style.display = 'flex';
+            startOverlay.style.display = 'none';
             gameOverOverlay.style.display = 'none';
         }
 
@@ -646,9 +694,13 @@
             isSubmitting = false; // 모든 로직이 끝났으므로 버튼 활성화
         }
 
+        let animationFrameId = 0;
+        let gameDisposed = false;
+
         function gameLoop() {
+            if (gameDisposed) return;
             // (수정) 루프가 중단되지 않도록 requestAnimationFrame을 맨 위에 배치
-            requestAnimationFrame(gameLoop);
+            animationFrameId = requestAnimationFrame(gameLoop);
             
             // --- 업데이트 로직 ---
             if (gameStarted && !gameOver) {
@@ -756,8 +808,11 @@
             if (!gameStarted) {
                 // (수정) 비행기 먼저 그리기 (오류 방지)
                 if (plane) plane.draw(ctx);
-                // (수정) 2. 타이틀 변경 및 1. 폰트 적용
-                drawTextWithShadow(ctx, "Wing Tap 1", FONT_RETRO_48, WHITE, WIDTH / 2, HEIGHT / 2 - 50, 'center', 'middle');
+                drawTextWithShadow(ctx, "Wing Tap 1", FONT_RETRO_48, WHITE, WIDTH / 2, HEIGHT / 2 - 118, 'center', 'middle');
+                drawTextWithShadow(ctx, "윙탭 (기본)", FONT_INTER_22, WHITE, WIDTH / 2, HEIGHT / 2 - 12, 'center', 'middle');
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+                ctx.fillRect(START_BUTTON_RECT.x, START_BUTTON_RECT.y, START_BUTTON_RECT.w, START_BUTTON_RECT.h);
+                drawTextWithShadow(ctx, "[ START ]", FONT_RETRO_24, THRUST_YELLOW, WIDTH / 2, START_BUTTON_RECT.y + START_BUTTON_RECT.h / 2, 'center', 'middle');
             
             } else if (!gameOver) {
                 // 인게임
@@ -801,36 +856,36 @@
             }
         }
 
-        window.addEventListener('keydown', (e) => {
+        const handleWindowKeydown = (e) => {
             if (e.code === 'Space') {
                 e.preventDefault();
                 handleGameAction();
             }
-        });
+        };
         
-        window.addEventListener('mousedown', (e) => {
+        const handleWindowMousedown = (e) => {
             // (수정) 로비 버튼 클릭 시, 게임 액션(재시작) 방지
             if (e.target.closest('.back-btn')) {
                 return;
             }
             e.preventDefault();
             handleGameAction();
-        });
+        };
         
-        window.addEventListener('touchstart', (e) => {
+        const handleWindowTouchstart = (e) => {
             // (수정) 로비 버튼 클릭 시, 게임 액션(재시작) 방지
             if (e.target.closest('.back-btn')) {
                 return;
             }
             e.preventDefault();
             handleGameAction();
-        }, { passive: false });
+        };
 
-        lobbyBtn.addEventListener('click', (e) => {
+        const handleLobbyClick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             returnToMinigameHub();
-        });
+        };
         
         // --- 화면 크기 조정 ---
         function resizeCanvas() {
@@ -850,18 +905,39 @@
             container.style.width = `${finalWidth}px`;
             container.style.height = `${finalHeight}px`;
         }
+        function cleanupGame() {
+            gameDisposed = true;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = 0;
+            }
+            window.removeEventListener('keydown', handleWindowKeydown);
+            window.removeEventListener('mousedown', handleWindowMousedown);
+            window.removeEventListener('touchstart', handleWindowTouchstart);
+            window.removeEventListener('resize', resizeCanvas);
+            lobbyBtn.removeEventListener('click', handleLobbyClick);
+            window.removeEventListener('beforeunload', cleanupGame);
+        }
+
+        window.addEventListener('keydown', handleWindowKeydown);
+        window.addEventListener('mousedown', handleWindowMousedown);
+        window.addEventListener('touchstart', handleWindowTouchstart, { passive: false });
+        lobbyBtn.addEventListener('click', handleLobbyClick);
         window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('beforeunload', cleanupGame);
         resizeCanvas();
 
         // --- (수정) 7. 폰트 로드 후 게임 시작 ---
         console.log("Waiting for fonts to load...");
         // 폰트가 로드되었는지 확인 (특히 'Press Start 2P'와 'Inter')
         document.fonts.ready.then(() => {
+            if (gameDisposed) return;
             console.log("Fonts loaded, starting game.");
             // 폰트 로드가 완료된 후 게임 시작
             startGame();
             gameLoop();
         }).catch(err => {
+            if (gameDisposed) return;
             console.error("Font loading failed, starting game anyway:", err);
             // 폰트 로드 실패 시에도 (시스템 기본 폰트로) 게임 시작
             startGame();

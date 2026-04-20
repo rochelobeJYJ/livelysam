@@ -1,0 +1,2031 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>OceanTap</title>
+    <meta name="livelysam:minigame:id" content="ocean-tap">
+    <meta name="livelysam:minigame:title" content="OceanTap">
+    <meta name="livelysam:minigame:icon" content="🦈">
+    <meta name="livelysam:minigame:status" content="ready">
+    <meta name="livelysam:minigame:series-id" content="ocean-tap">
+    <meta name="livelysam:minigame:series-title" content="OceanTap">
+    <meta name="livelysam:minigame:series-description" content="수중 터널을 통과하는 바다 아케이드 시리즈입니다.">
+    <meta name="livelysam:minigame:series-icon" content="🦈">
+    <meta name="livelysam:minigame:description" content="상어처럼 헤엄치며 이어지는 수중 터널을 통과하는 OceanTap입니다.">
+    <meta name="livelysam:minigame:score-label" content="수영 점수">
+    <meta name="livelysam:minigame:leaderboard-mode" content="all-scores">
+    <meta name="livelysam:minigame:tags" content="firebase,hall-of-fame,ocean,arcade">
+    <meta name="livelysam:minigame:sort-order" content="55">
+    <style>
+        :root {
+            color-scheme: light;
+            --shell: rgba(255, 255, 255, 0.84);
+            --shell-strong: rgba(255, 255, 255, 0.94);
+            --shell-border: rgba(148, 163, 184, 0.22);
+            --shadow-soft: 0 18px 40px rgba(15, 23, 42, 0.12);
+            --shadow-strong: 0 28px 70px rgba(8, 47, 73, 0.22);
+            --text-main: #10243a;
+            --text-subtle: #58708b;
+            --accent: #0891b2;
+            --accent-soft: rgba(8, 145, 178, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: "Segoe UI", "Pretendard", "Apple SD Gothic Neo", sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+            color: var(--text-main);
+            background:
+                radial-gradient(circle at top left, rgba(125, 211, 252, 0.28), transparent 28%),
+                radial-gradient(circle at top right, rgba(45, 212, 191, 0.2), transparent 24%),
+                linear-gradient(180deg, #dff6ff, #ecfeff 56%, #f0fdfa);
+            touch-action: manipulation;
+        }
+
+        body.preview-mode {
+            background: transparent;
+            padding: 0;
+        }
+
+        #game-shell {
+            width: min(1080px, 100%);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            align-items: center;
+        }
+
+        body.preview-mode #game-shell {
+            width: 100%;
+            gap: 0;
+        }
+
+        #hud {
+            width: min(960px, calc(100vw - 32px), calc((100vh - 32px) * 1.72));
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 4px 4px 0;
+        }
+
+        body.preview-mode #hud,
+        body.preview-mode #start-overlay,
+        body.preview-mode #game-over-overlay {
+            display: none !important;
+        }
+
+        .hud-copy {
+            min-width: 0;
+        }
+
+        .hud-eyebrow {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--accent);
+        }
+
+        .hud-copy h1 {
+            margin: 0;
+            font-size: clamp(1.15rem, 2vw, 1.56rem);
+            letter-spacing: 0.16em;
+            color: #1a4467;
+        }
+
+        .hud-pills {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .hud-pill {
+            min-width: 98px;
+            padding: 10px 14px;
+            border-radius: 18px;
+            background: var(--shell);
+            border: 1px solid var(--shell-border);
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(10px);
+        }
+
+        .hud-pill span,
+        .hud-pill strong {
+            display: block;
+        }
+
+        .hud-pill span {
+            font-size: 0.74rem;
+            font-weight: 700;
+            color: var(--text-subtle);
+        }
+
+        .hud-pill strong {
+            margin-top: 4px;
+            font-size: 1.02rem;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        #stage-wrap {
+            position: relative;
+            width: min(960px, calc(100vw - 32px), calc((100vh - 32px) * 1.72));
+            aspect-ratio: 12 / 7;
+            border-radius: 30px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            box-shadow: var(--shadow-strong);
+            background: #0d3a55;
+        }
+
+        body.preview-mode #stage-wrap {
+            width: min(100vw, calc(100vh * 1.72));
+            border-radius: 0;
+            border: 0;
+            box-shadow: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+        }
+
+        .overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 18px;
+            background: linear-gradient(180deg, rgba(8, 47, 73, 0.08), rgba(8, 47, 73, 0.22));
+            z-index: 10;
+        }
+
+        .overlay.is-hidden {
+            display: none;
+        }
+
+        .panel {
+            width: min(456px, calc(100% - 18px));
+            padding: 22px;
+            border-radius: 28px;
+            background: var(--shell-strong);
+            border: 1px solid rgba(255, 255, 255, 0.78);
+            box-shadow: 0 26px 58px rgba(8, 47, 73, 0.22);
+            backdrop-filter: blur(14px);
+        }
+
+        .panel-chip {
+            display: inline-flex;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .panel h2 {
+            margin: 12px 0 10px;
+            font-size: clamp(1.45rem, 4vw, 2rem);
+            line-height: 1.22;
+            color: #0f2940;
+        }
+
+        .panel p {
+            margin: 0;
+            font-size: 0.98rem;
+            line-height: 1.58;
+            color: var(--text-subtle);
+        }
+
+        .tip-row {
+            margin-top: 14px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            color: #5b7895;
+        }
+
+        .tip-row.compact {
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        .meta-grid {
+            margin-top: 16px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .meta-card {
+            padding: 12px 14px;
+            border-radius: 18px;
+            background: rgba(248, 250, 252, 0.95);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+        }
+
+        .meta-card span,
+        .meta-card strong {
+            display: block;
+        }
+
+        .meta-card span {
+            font-size: 0.76rem;
+            font-weight: 700;
+            color: #64748b;
+        }
+
+        .meta-card strong {
+            margin-top: 5px;
+            font-size: 0.94rem;
+            font-weight: 800;
+            color: #153047;
+        }
+
+        .support-line {
+            margin-top: 14px !important;
+            font-size: 0.9rem !important;
+            color: #4f6a84 !important;
+        }
+
+        .score-banner {
+            margin-top: 12px;
+            padding: 12px 14px;
+            border-radius: 18px;
+            background: rgba(6, 182, 212, 0.1);
+            color: #0f7e95;
+            font-size: 1rem;
+            font-weight: 800;
+        }
+
+        .score-banner strong {
+            font-size: 1.2rem;
+        }
+
+        .action-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .primary-button,
+        .secondary-button {
+            width: 100%;
+            border: 0;
+            border-radius: 16px;
+            padding: 14px 16px;
+            font: inherit;
+            font-size: 1rem;
+            font-weight: 800;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+        }
+
+        .primary-button {
+            margin-top: 16px;
+            background: linear-gradient(135deg, #06b6d4, #0f766e);
+            color: #ffffff;
+            box-shadow: 0 16px 36px rgba(6, 182, 212, 0.28);
+        }
+
+        .action-row .primary-button {
+            margin-top: 0;
+        }
+
+        .secondary-button {
+            background: #94a3b8;
+            color: #ffffff;
+        }
+
+        .primary-button:hover,
+        .secondary-button:hover {
+            transform: translateY(-1px);
+        }
+
+        .secondary-button:hover {
+            background: #7b8ba0;
+        }
+
+        @media (max-width: 780px) {
+            body {
+                padding: 12px;
+            }
+
+            #hud {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .hud-pills {
+                justify-content: flex-start;
+            }
+
+            .meta-grid,
+            .action-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-shell">
+        <header id="hud">
+            <div class="hud-copy">
+                <span class="hud-eyebrow">Quick Play</span>
+                <h1>OCEANTAP</h1>
+            </div>
+            <div class="hud-pills">
+                <div class="hud-pill">
+                    <span>점수</span>
+                    <strong id="score-display">0</strong>
+                </div>
+                <div class="hud-pill">
+                    <span>최고</span>
+                    <strong id="highscore-display">0</strong>
+                </div>
+                <div class="hud-pill">
+                    <span>연속</span>
+                    <strong id="combo-display">0</strong>
+                </div>
+            </div>
+        </header>
+
+        <div id="stage-wrap">
+            <canvas id="gameCanvas" width="960" height="560"></canvas>
+
+            <div id="start-overlay" class="overlay">
+                <div class="panel">
+                    <span class="panel-chip">OceanTap</span>
+                    <h2>바로 시작</h2>
+                    <div class="tip-row">SPACE · CLICK · TOUCH</div>
+                    <button id="start-button" class="primary-button">START</button>
+                </div>
+            </div>
+
+            <div id="game-over-overlay" class="overlay is-hidden">
+                <div class="panel">
+                    <span class="panel-chip">Dive Over</span>
+                    <h2 id="result-title">한 번 더 헤엄쳐보세요</h2>
+                    <div class="score-banner">이번 점수 <strong id="final-score-display">0</strong></div>
+                    <p id="submit-status" class="support-line" hidden></p>
+                    <div class="action-row">
+                        <button id="restart-button" class="primary-button">다시 시작</button>
+                        <button id="lobby-button" class="secondary-button">목록 돌아가기</button>
+                    </div>
+                    <div class="tip-row compact">SPACEBAR로 바로 재시작</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            'use strict';
+
+            const MINIGAME_ID = 'ocean-tap';
+            const LEADERBOARD_MODE = 'all-scores';
+            const MAX_ENTRIES_PER_PLAYER = 3;
+            const MIN_SUBMIT_SCORE = 300;
+            const LOCAL_HIGHSCORE_KEY = `minigameLocalHighScore:${MINIGAME_ID}`;
+            const IS_PREVIEW_MODE = new URLSearchParams(window.location.search).get('preview') === '1';
+
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const stageWidth = canvas.width;
+            const stageHeight = canvas.height;
+
+            const scoreDisplay = document.getElementById('score-display');
+            const highscoreDisplay = document.getElementById('highscore-display');
+            const comboDisplay = document.getElementById('combo-display');
+            const startOverlay = document.getElementById('start-overlay');
+            const gameOverOverlay = document.getElementById('game-over-overlay');
+            const startButton = document.getElementById('start-button');
+            const restartButton = document.getElementById('restart-button');
+            const lobbyButton = document.getElementById('lobby-button');
+            const topEntrySummary = document.getElementById('top-entry-summary');
+            const finalScoreDisplay = document.getElementById('final-score-display');
+            const resultTitle = document.getElementById('result-title');
+            const submitStatus = document.getElementById('submit-status');
+
+            if (IS_PREVIEW_MODE) {
+                document.body.classList.add('preview-mode');
+            }
+
+            const FIREBASE_SDK_VERSION = '9.23.0';
+            const BASE_GAME_SPEED = 3.5;
+            const MAX_GAME_SPEED = 7.4;
+            const BASE_GAP_HEIGHT = 468;
+            const MIN_GAP_HEIGHT = 188;
+            const SEGMENT_WIDTH = 92;
+            const TOP_MARGIN = 34;
+            const BOTTOM_MARGIN = 46;
+            const SHARK_START_X = 220;
+            const TUNNEL_BASELINE = 0.5;
+            const SCORE_DIVISOR = 10;
+            const PREVIEW_SEED_SCORE = 120;
+            const MAX_COMBO = 5;
+
+            let leaderboardReadyPromise = null;
+
+            const THEMES = [
+                {
+                    name: 'LAGOON',
+                    top: '#86d3e8',
+                    bottom: '#1f8598',
+                    bubble: 'rgba(235, 252, 255, 0.64)',
+                    ray: 'rgba(255,255,255,0.18)',
+                    wallTop: '#3e7383',
+                    wallBottom: '#5d9a88',
+                    wallShadow: '#274b5d',
+                    highlight: '#dff8ff',
+                    coralA: '#ffa69e',
+                    coralB: '#6fffe9',
+                    coralC: '#ffd166',
+                    pearl: '#f8fafc',
+                    urchin: '#7c3aed',
+                    fin: '#32536b',
+                    body: '#6e8fa5',
+                    bodyDark: '#405c72',
+                    belly: '#f2f8fb'
+                },
+                {
+                    name: 'REEF',
+                    top: '#76d7f4',
+                    bottom: '#155c70',
+                    bubble: 'rgba(240, 253, 255, 0.68)',
+                    ray: 'rgba(255,255,255,0.15)',
+                    wallTop: '#497b6c',
+                    wallBottom: '#7aac77',
+                    wallShadow: '#295649',
+                    highlight: '#ebfffb',
+                    coralA: '#ff8fab',
+                    coralB: '#8ce99a',
+                    coralC: '#ffcb77',
+                    pearl: '#f8fafc',
+                    urchin: '#8b5cf6',
+                    fin: '#2f4f63',
+                    body: '#7d97a9',
+                    bodyDark: '#425868',
+                    belly: '#eef5f9'
+                },
+                {
+                    name: 'TRENCH',
+                    top: '#5fb7df',
+                    bottom: '#0d4155',
+                    bubble: 'rgba(226, 244, 255, 0.62)',
+                    ray: 'rgba(255,255,255,0.11)',
+                    wallTop: '#435b7b',
+                    wallBottom: '#5f7493',
+                    wallShadow: '#263553',
+                    highlight: '#d6e6ff',
+                    coralA: '#f97316',
+                    coralB: '#67e8f9',
+                    coralC: '#f9a8d4',
+                    pearl: '#f8fafc',
+                    urchin: '#c026d3',
+                    fin: '#29394d',
+                    body: '#7a93a8',
+                    bodyDark: '#33475d',
+                    belly: '#edf4fa'
+                }
+            ];
+
+            const bubbles = buildBubbles();
+            const lightBands = buildLightBands();
+            const backHills = buildHills(7, 120, 180);
+            const frontHills = buildHills(6, 180, 260);
+            const seaweed = buildSeaweed();
+
+            let shark = null;
+            let tunnelSegments = [];
+            let particles = [];
+            let score = 0;
+            let highScore = loadLocalHighScore();
+            let comboLevel = 0;
+            let comboTimer = 0;
+            let currentBoostTimer = 0;
+            let frameCount = 0;
+            let framesElapsed = 0;
+            let currentSpeed = BASE_GAME_SPEED;
+            let currentThemeLabel = THEMES[0].name;
+            let previewResetFrames = 0;
+            let nextPearlCooldown = 0;
+            let nextHazardCooldown = 3;
+            let gameState = IS_PREVIEW_MODE ? 'preview' : 'ready';
+
+            function text(value, fallback) {
+                const normalized = String(value ?? '').trim();
+                return normalized || (fallback || '');
+            }
+
+            function clamp(value, min, max) {
+                return Math.min(max, Math.max(min, value));
+            }
+
+            function lerp(start, end, amount) {
+                return start + (end - start) * amount;
+            }
+
+            function randomBetween(min, max) {
+                return min + Math.random() * (max - min);
+            }
+
+            function hexToRgb(value) {
+                const source = String(value ?? '').trim();
+                const rgbMatch = source.match(/^rgba?\(([^)]+)\)$/i);
+                if (rgbMatch) {
+                    const parts = rgbMatch[1]
+                        .split(',')
+                        .slice(0, 3)
+                        .map((part) => parseInt(part.trim(), 10));
+                    if (parts.length === 3 && parts.every((part) => Number.isFinite(part))) {
+                        return {
+                            r: parts[0],
+                            g: parts[1],
+                            b: parts[2]
+                        };
+                    }
+                }
+
+                const normalized = source.replace('#', '');
+                const expanded = normalized.length === 3
+                    ? normalized.split('').map((part) => part + part).join('')
+                    : normalized;
+                const numeric = parseInt(expanded, 16);
+                return {
+                    r: (numeric >> 16) & 255,
+                    g: (numeric >> 8) & 255,
+                    b: numeric & 255
+                };
+            }
+
+            function mixColor(left, right, amount) {
+                const start = hexToRgb(left);
+                const end = hexToRgb(right);
+                return `rgb(${Math.round(lerp(start.r, end.r, amount))}, ${Math.round(lerp(start.g, end.g, amount))}, ${Math.round(lerp(start.b, end.b, amount))})`;
+            }
+
+            function rgba(value, alpha) {
+                const color = hexToRgb(value);
+                return `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
+            }
+
+            function buildBubbles() {
+                return Array.from({ length: 30 }, () => ({
+                    x: randomBetween(0, stageWidth),
+                    y: randomBetween(0, stageHeight),
+                    radius: randomBetween(6, 18),
+                    speed: randomBetween(0.35, 1.1),
+                    drift: randomBetween(-0.3, 0.3),
+                    phase: randomBetween(0, Math.PI * 2)
+                }));
+            }
+
+            function buildLightBands() {
+                return Array.from({ length: 8 }, (_, index) => ({
+                    x: 80 + index * 110 + randomBetween(-24, 24),
+                    width: randomBetween(54, 92),
+                    angle: randomBetween(-0.16, 0.16)
+                }));
+            }
+
+            function buildHills(count, minHeight, maxHeight) {
+                return Array.from({ length: count }, (_, index) => ({
+                    x: index * 180 + randomBetween(-20, 30),
+                    width: randomBetween(180, 260),
+                    height: randomBetween(minHeight, maxHeight)
+                }));
+            }
+
+            function buildSeaweed() {
+                return Array.from({ length: 20 }, (_, index) => ({
+                    x: 12 + index * 48 + randomBetween(-10, 10),
+                    height: randomBetween(28, 76),
+                    sway: randomBetween(0.02, 0.05),
+                    phase: randomBetween(0, Math.PI * 2)
+                }));
+            }
+
+            function loadLocalHighScore() {
+                try {
+                    return Math.max(0, parseInt(localStorage.getItem(LOCAL_HIGHSCORE_KEY), 10) || 0);
+                } catch {
+                    return 0;
+                }
+            }
+
+            function saveLocalHighScore(nextScore) {
+                highScore = Math.max(highScore, nextScore);
+                try {
+                    localStorage.setItem(LOCAL_HIGHSCORE_KEY, String(highScore));
+                } catch {
+                    // ignore
+                }
+            }
+
+            function resolveGameNickname() {
+                try {
+                    const parentNickname = window.parent && window.parent !== window && window.parent.LivelySam?.MinigamesHub?.getNickname?.();
+                    if (parentNickname) return String(parentNickname).trim();
+                } catch {
+                    // ignore
+                }
+                try {
+                    const nickname = localStorage.getItem('minigameNickname');
+                    if (nickname) return String(nickname).trim();
+                } catch {
+                    // ignore
+                }
+                try {
+                    const legacyNickname = localStorage.getItem('j_game_username');
+                    if (legacyNickname) return String(legacyNickname).trim();
+                } catch {
+                    // ignore
+                }
+                return 'Guest';
+            }
+
+            function loadScriptOnce(src) {
+                return new Promise((resolve, reject) => {
+                    const existing = Array.from(document.scripts).find((script) => script.dataset.livelysamSrc === src || script.src === src);
+                    if (existing) {
+                        if (existing.dataset.loaded === 'true') {
+                            resolve();
+                            return;
+                        }
+                        existing.addEventListener('load', () => resolve(), { once: true });
+                        existing.addEventListener('error', () => reject(new Error(`스크립트 로드 실패: ${src}`)), { once: true });
+                        return;
+                    }
+
+                    const script = document.createElement('script');
+                    script.src = src;
+                    script.async = false;
+                    script.dataset.livelysamSrc = src;
+                    script.addEventListener('load', () => {
+                        script.dataset.loaded = 'true';
+                        resolve();
+                    }, { once: true });
+                    script.addEventListener('error', () => reject(new Error(`스크립트 로드 실패: ${src}`)), { once: true });
+                    document.head.appendChild(script);
+                });
+            }
+
+            async function ensureLeaderboardBridgeReady() {
+                if (IS_PREVIEW_MODE) {
+                    return null;
+                }
+
+                const existingBridge = getLeaderboardBridge();
+                if (existingBridge?.submitScore && existingBridge?.getTopEntry) {
+                    return existingBridge;
+                }
+
+                if (!leaderboardReadyPromise) {
+                    leaderboardReadyPromise = (async () => {
+                        await loadScriptOnce('../leaderboard-public-config.js');
+                        if (!window.firebase?.initializeApp || !window.firebase?.auth || !window.firebase?.firestore) {
+                            await loadScriptOnce(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app-compat.js`);
+                            await loadScriptOnce(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-auth-compat.js`);
+                            await loadScriptOnce(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-firestore-compat.js`);
+                        }
+                        await loadScriptOnce('../leaderboard.js');
+
+                        const bridge = getLeaderboardBridge();
+                        if (!bridge?.submitScore || !bridge?.getTopEntry) {
+                            throw new Error('Firebase leaderboard bridge unavailable');
+                        }
+
+                        if (typeof bridge.warmup === 'function') {
+                            try {
+                                await bridge.warmup();
+                            } catch (error) {
+                                console.warn('OceanTap leaderboard warmup failed:', error);
+                            }
+                        }
+
+                        return bridge;
+                    })().catch((error) => {
+                        leaderboardReadyPromise = null;
+                        throw error;
+                    });
+                }
+
+                return leaderboardReadyPromise;
+            }
+
+            function returnToMinigameHub() {
+                try {
+                    if (window.parent && window.parent !== window && window.parent.LivelySam?.MinigamesHub?.closeRunner) {
+                        window.parent.LivelySam.MinigamesHub.closeRunner();
+                        return;
+                    }
+                } catch {
+                    // ignore
+                }
+                window.location.href = '../../index.html';
+            }
+
+            function getLeaderboardBridge() {
+                if (IS_PREVIEW_MODE) {
+                    return null;
+                }
+                try {
+                    if (window.parent && window.parent !== window && window.parent.LivelySam?.Leaderboard) {
+                        return window.parent.LivelySam.Leaderboard;
+                    }
+                } catch {
+                    // ignore
+                }
+                return window.LivelySam?.Leaderboard || null;
+            }
+
+            async function submitScore(finalScore) {
+                const leaderboard = await ensureLeaderboardBridgeReady();
+                if (!leaderboard?.submitScore) {
+                    throw new Error('Firebase leaderboard bridge unavailable');
+                }
+                return leaderboard.submitScore({
+                    gameId: MINIGAME_ID,
+                    nickname: resolveGameNickname(),
+                    score: finalScore,
+                    leaderboardMode: LEADERBOARD_MODE,
+                    maxEntriesPerPlayer: MAX_ENTRIES_PER_PLAYER
+                });
+            }
+
+            async function refreshTopEntry() {
+                if (!topEntrySummary) {
+                    return;
+                }
+                let leaderboard = null;
+                try {
+                    leaderboard = await ensureLeaderboardBridgeReady();
+                } catch {
+                    leaderboard = getLeaderboardBridge();
+                }
+                if (!leaderboard?.getTopEntry) {
+                    topEntrySummary.textContent = `${MIN_SUBMIT_SCORE}점부터 명예의 전당에 등록됩니다.`;
+                    return;
+                }
+
+                try {
+                    const topEntry = await leaderboard.getTopEntry({
+                        gameId: MINIGAME_ID,
+                        leaderboardMode: LEADERBOARD_MODE
+                    });
+                    if (topEntry?.score) {
+                        topEntrySummary.textContent = `현재 최고 ${topEntry.score}점 · ${text(topEntry.nickname || topEntry.name, '익명')}`;
+                    } else {
+                        topEntrySummary.textContent = `${MIN_SUBMIT_SCORE}점부터 명예의 전당에 등록됩니다.`;
+                    }
+                } catch {
+                    topEntrySummary.textContent = `${MIN_SUBMIT_SCORE}점부터 명예의 전당에 등록됩니다.`;
+                }
+            }
+
+            function currentTheme() {
+                const cycle = 180;
+                const index = Math.floor(score / cycle) % THEMES.length;
+                const nextIndex = (index + 1) % THEMES.length;
+                const progress = (score % cycle) / cycle;
+                const from = THEMES[index];
+                const to = THEMES[nextIndex];
+
+                currentThemeLabel = currentBoostTimer > 0 ? `${from.name} SURGE` : from.name;
+
+                return {
+                    top: mixColor(from.top, to.top, progress),
+                    bottom: mixColor(from.bottom, to.bottom, progress),
+                    bubble: from.bubble,
+                    ray: from.ray,
+                    wallTop: mixColor(from.wallTop, to.wallTop, progress),
+                    wallBottom: mixColor(from.wallBottom, to.wallBottom, progress),
+                    wallShadow: mixColor(from.wallShadow, to.wallShadow, progress),
+                    highlight: mixColor(from.highlight, to.highlight, progress),
+                    coralA: mixColor(from.coralA, to.coralA, progress),
+                    coralB: mixColor(from.coralB, to.coralB, progress),
+                    coralC: mixColor(from.coralC, to.coralC, progress),
+                    pearl: mixColor(from.pearl, to.pearl, progress),
+                    urchin: mixColor(from.urchin, to.urchin, progress),
+                    fin: mixColor(from.fin, to.fin, progress),
+                    body: mixColor(from.body, to.body, progress),
+                    bodyDark: mixColor(from.bodyDark, to.bodyDark, progress),
+                    belly: mixColor(from.belly, to.belly, progress)
+                };
+            }
+
+            function createShark() {
+                return {
+                    x: SHARK_START_X,
+                    y: stageHeight * TUNNEL_BASELINE,
+                    radius: 24,
+                    velocity: 0,
+                    rotation: 0,
+                    flapLock: 0,
+                    idlePhase: 0
+                };
+            }
+
+            function currentDifficulty() {
+                return clamp(framesElapsed / 3600, 0, 1);
+            }
+
+            function currentGapTarget() {
+                return Math.max(MIN_GAP_HEIGHT, BASE_GAP_HEIGHT - Math.floor(framesElapsed / 220) * 8);
+            }
+
+            function createSegmentDecorations(segment, previewOnly) {
+                const decorations = [];
+                const slots = [-26, -6, 16].sort(() => Math.random() - 0.5);
+
+                if ((previewOnly || Math.random() < 0.74) && slots.length) {
+                    decorations.push({
+                        kind: Math.random() > 0.38 ? 'coral' : 'anemone',
+                        offsetX: slots.pop(),
+                        size: randomBetween(11, 18),
+                        phase: randomBetween(0, Math.PI * 2),
+                        tint: Math.random()
+                    });
+                }
+
+                if (Math.random() < (previewOnly ? 0.55 : 0.72) && slots.length) {
+                    decorations.push({
+                        kind: 'seaweed',
+                        offsetX: slots.pop(),
+                        height: randomBetween(18, 34),
+                        sway: randomBetween(0.03, 0.055),
+                        phase: randomBetween(0, Math.PI * 2),
+                        tint: Math.random()
+                    });
+                }
+
+                if (Math.random() < 0.44 && slots.length) {
+                    decorations.push({
+                        kind: 'anemone',
+                        offsetX: slots.pop(),
+                        size: randomBetween(10, 15),
+                        phase: randomBetween(0, Math.PI * 2),
+                        tint: Math.random()
+                    });
+                }
+
+                if (Math.random() < 0.18 && slots.length) {
+                    decorations.push({
+                        kind: 'rock',
+                        offsetX: slots.pop(),
+                        width: randomBetween(16, 30),
+                        height: randomBetween(8, 15),
+                        tilt: randomBetween(-0.25, 0.25)
+                    });
+                }
+
+                if (Math.random() < 0.16 && slots.length) {
+                    decorations.push({
+                        kind: 'shell',
+                        offsetX: slots.pop(),
+                        size: randomBetween(7, 12),
+                        flip: Math.random() > 0.5 ? 1 : -1
+                    });
+                }
+
+                return decorations;
+            }
+
+            function clampTunnelCenter(centerY, gapHeight) {
+                return clamp(
+                    centerY,
+                    TOP_MARGIN + gapHeight * 0.5,
+                    stageHeight - BOTTOM_MARGIN - gapHeight * 0.5
+                );
+            }
+
+            function createTunnelItem(segment, previewOnly) {
+                const difficulty = currentDifficulty();
+                const safeTop = segment.topY + 34;
+                const safeBottom = segment.bottomY - 34;
+
+                if (safeBottom - safeTop < 44) {
+                    return null;
+                }
+
+                if (nextPearlCooldown > 0) {
+                    nextPearlCooldown -= 1;
+                }
+                if (nextHazardCooldown > 0) {
+                    nextHazardCooldown -= 1;
+                }
+
+                if (nextPearlCooldown <= 0 && Math.random() < (previewOnly ? 0.32 : 0.22)) {
+                    nextPearlCooldown = 2 + Math.floor(Math.random() * 2);
+                    return {
+                        type: 'pearl',
+                        y: clamp(
+                            segment.centerY + randomBetween(-segment.gapHeight * 0.18, segment.gapHeight * 0.18),
+                            safeTop,
+                            safeBottom
+                        ),
+                        radius: 14,
+                        phase: randomBetween(0, Math.PI * 2),
+                        collected: false
+                    };
+                }
+
+                if (!previewOnly && framesElapsed > 520 && nextHazardCooldown <= 0 && Math.random() < 0.1 + difficulty * 0.1) {
+                    nextHazardCooldown = 3 + Math.floor(Math.random() * 2);
+                    return {
+                        type: 'urchin',
+                        y: clamp(
+                            segment.centerY + randomBetween(-segment.gapHeight * 0.22, segment.gapHeight * 0.22),
+                            safeTop,
+                            safeBottom
+                        ),
+                        radius: 18,
+                        phase: randomBetween(0, Math.PI * 2),
+                        collected: false
+                    };
+                }
+
+                return null;
+            }
+
+            function createTunnelSegment(x, previousSegment, previewOnly) {
+                const difficulty = currentDifficulty();
+                const targetGapHeight = currentGapTarget();
+                const previousCenter = previousSegment ? previousSegment.centerY : stageHeight * TUNNEL_BASELINE;
+                const previousGapHeight = previousSegment ? previousSegment.gapHeight : targetGapHeight;
+                const laneWavePrimary = Math.sin((framesElapsed + x * 1.56) * 0.0048) * (32 + difficulty * 72);
+                const laneWaveSecondary = Math.sin((framesElapsed + x * 0.88) * 0.0104) * (14 + difficulty * 22);
+                const targetCenter = stageHeight * TUNNEL_BASELINE + laneWavePrimary + laneWaveSecondary;
+                const turnStrength = 12 + difficulty * 22;
+                const centerY = clampTunnelCenter(
+                    lerp(previousCenter, targetCenter, 0.3) + randomBetween(-turnStrength, turnStrength),
+                    targetGapHeight
+                );
+                const gapHeight = clamp(
+                    lerp(previousGapHeight, targetGapHeight, 0.18) + randomBetween(-4, 4),
+                    MIN_GAP_HEIGHT,
+                    BASE_GAP_HEIGHT
+                );
+                const segment = {
+                    x,
+                    width: SEGMENT_WIDTH,
+                    centerY: clampTunnelCenter(centerY, gapHeight),
+                    gapHeight,
+                    topY: 0,
+                    bottomY: 0,
+                    ridgeOffset: randomBetween(0, Math.PI * 2),
+                    item: null,
+                    decorations: []
+                };
+
+                segment.topY = segment.centerY - segment.gapHeight * 0.5;
+                segment.bottomY = segment.centerY + segment.gapHeight * 0.5;
+                segment.item = createTunnelItem(segment, previewOnly);
+                segment.decorations = createSegmentDecorations(segment, previewOnly);
+                return segment;
+            }
+
+            function rebuildTunnel(previewOnly) {
+                tunnelSegments = [];
+                let previousSegment = null;
+                for (let x = -SEGMENT_WIDTH * 2; x <= stageWidth + SEGMENT_WIDTH * 3; x += SEGMENT_WIDTH) {
+                    const segment = createTunnelSegment(x, previousSegment, previewOnly);
+                    tunnelSegments.push(segment);
+                    previousSegment = segment;
+                }
+            }
+
+            function ensureTunnelCoverage(previewOnly) {
+                let previousSegment = tunnelSegments[tunnelSegments.length - 1] || null;
+                let nextX = previousSegment ? previousSegment.x + SEGMENT_WIDTH : -SEGMENT_WIDTH * 2;
+                while (nextX <= stageWidth + SEGMENT_WIDTH * 3) {
+                    const segment = createTunnelSegment(nextX, previousSegment, previewOnly);
+                    tunnelSegments.push(segment);
+                    previousSegment = segment;
+                    nextX += SEGMENT_WIDTH;
+                }
+            }
+
+            function addBubbleBurst(x, y, amount, color, spread = 1) {
+                for (let index = 0; index < amount; index += 1) {
+                    particles.push({
+                        x,
+                        y,
+                        vx: randomBetween(-2.3, 2.3) * spread,
+                        vy: randomBetween(-3.2, 1.1) * spread,
+                        radius: randomBetween(2, 6),
+                        life: randomBetween(22, 40),
+                        color,
+                        outline: Math.random() > 0.55
+                    });
+                }
+            }
+
+            function updateHud() {
+                scoreDisplay.textContent = String(score);
+                highscoreDisplay.textContent = String(highScore);
+                comboDisplay.textContent = comboLevel > 0 ? String(comboLevel) : '0';
+            }
+
+            function swimUp(force = 6.7) {
+                if (!shark) return;
+                shark.velocity = -force;
+                shark.rotation = -0.42;
+                addBubbleBurst(shark.x - 26, shark.y + 4, currentBoostTimer > 0 ? 11 : 7, 'rgba(255,255,255,0.82)', 0.88);
+            }
+
+            function resetRun(mode) {
+                shark = createShark();
+                particles = [];
+                comboLevel = 0;
+                comboTimer = 0;
+                currentBoostTimer = 0;
+                previewResetFrames = 0;
+                currentSpeed = BASE_GAME_SPEED;
+                nextPearlCooldown = 0;
+                nextHazardCooldown = 3;
+                framesElapsed = mode === 'preview' ? PREVIEW_SEED_SCORE * SCORE_DIVISOR : 0;
+                score = mode === 'preview' ? PREVIEW_SEED_SCORE : 0;
+                rebuildTunnel(mode === 'preview');
+                gameState = mode;
+                submitStatus.hidden = true;
+                submitStatus.textContent = '';
+
+                if (mode === 'preview') {
+                    shark.y = stageHeight * (TUNNEL_BASELINE + 0.02);
+                    shark.velocity = -0.8;
+                }
+
+                if (mode === 'ready') {
+                    startOverlay.classList.remove('is-hidden');
+                    gameOverOverlay.classList.add('is-hidden');
+                } else {
+                    startOverlay.classList.add('is-hidden');
+                    gameOverOverlay.classList.add('is-hidden');
+                }
+
+                updateHud();
+            }
+
+            function startDive() {
+                resetRun('playing');
+                swimUp();
+            }
+
+            function softResetPreview() {
+                resetRun('preview');
+                updateHud();
+            }
+
+            function sampleTunnelAt(x) {
+                if (!tunnelSegments.length) {
+                    const centerY = stageHeight * TUNNEL_BASELINE;
+                    return {
+                        centerY,
+                        gapHeight: BASE_GAP_HEIGHT,
+                        topY: centerY - BASE_GAP_HEIGHT * 0.5,
+                        bottomY: centerY + BASE_GAP_HEIGHT * 0.5
+                    };
+                }
+
+                if (x <= tunnelSegments[0].x) {
+                    const segment = tunnelSegments[0];
+                    return {
+                        centerY: segment.centerY,
+                        gapHeight: segment.gapHeight,
+                        topY: segment.topY,
+                        bottomY: segment.bottomY
+                    };
+                }
+
+                for (let index = 1; index < tunnelSegments.length; index += 1) {
+                    const left = tunnelSegments[index - 1];
+                    const right = tunnelSegments[index];
+                    if (x <= right.x) {
+                        const amount = clamp((x - left.x) / (right.x - left.x || 1), 0, 1);
+                        const centerY = lerp(left.centerY, right.centerY, amount);
+                        const gapHeight = lerp(left.gapHeight, right.gapHeight, amount);
+                        return {
+                            centerY,
+                            gapHeight,
+                            topY: centerY - gapHeight * 0.5,
+                            bottomY: centerY + gapHeight * 0.5
+                        };
+                    }
+                }
+
+                const last = tunnelSegments[tunnelSegments.length - 1];
+                return {
+                    centerY: last.centerY,
+                    gapHeight: last.gapHeight,
+                    topY: last.topY,
+                    bottomY: last.bottomY
+                };
+            }
+
+            function previewAutopilot() {
+                if (shark.flapLock > 0) {
+                    shark.flapLock -= 1;
+                    return;
+                }
+
+                const sample = sampleTunnelAt(shark.x + 120);
+                const targetY = sample.centerY + Math.sin(frameCount * 0.06) * 12;
+                if (shark.y > targetY + 18 || (shark.velocity > 2.4 && shark.y > targetY - 8)) {
+                    swimUp(6.5);
+                    shark.flapLock = 8;
+                }
+            }
+
+            function handleCollision() {
+                if (gameState === 'preview' || gameState === 'preview-reset') {
+                    previewResetFrames = 20;
+                    addBubbleBurst(shark.x, shark.y, 20, 'rgba(255,255,255,0.92)', 1.45);
+                    gameState = 'preview-reset';
+                    return;
+                }
+                triggerGameOver();
+            }
+
+            async function triggerGameOver() {
+                if (gameState === 'gameover') return;
+                gameState = 'gameover';
+
+                const finalScore = score;
+                finalScoreDisplay.textContent = String(finalScore);
+                resultTitle.textContent = finalScore > highScore ? '새 최고 기록입니다' : '한 번 더 헤엄쳐보세요';
+                submitStatus.hidden = true;
+                submitStatus.textContent = '';
+
+                if (finalScore > highScore) {
+                    saveLocalHighScore(finalScore);
+                    updateHud();
+                }
+
+                gameOverOverlay.classList.remove('is-hidden');
+
+                if (IS_PREVIEW_MODE) {
+                    submitStatus.hidden = true;
+                    return;
+                }
+
+                if (finalScore < MIN_SUBMIT_SCORE) {
+                    submitStatus.hidden = true;
+                    return;
+                }
+
+                submitStatus.hidden = false;
+                submitStatus.textContent = '기록 등록 중입니다.';
+
+                try {
+                    const result = await submitScore(finalScore);
+                    if (result?.accepted === false) {
+                        submitStatus.textContent = '상위 3개보다 낮아 반영되지 않았습니다.';
+                    } else {
+                        submitStatus.textContent = '기록 등록 완료';
+                    }
+                    await refreshTopEntry();
+                } catch (error) {
+                    submitStatus.textContent = text(error?.message, '점수 등록 실패');
+                }
+            }
+
+            function updateBubbles() {
+                bubbles.forEach((bubble) => {
+                    bubble.y -= bubble.speed;
+                    bubble.x += Math.sin(frameCount * 0.01 + bubble.phase) * bubble.drift;
+                    if (bubble.y < -24) {
+                        bubble.y = stageHeight + randomBetween(20, 120);
+                        bubble.x = randomBetween(0, stageWidth);
+                    }
+                });
+            }
+
+            function updateParticles() {
+                for (let index = particles.length - 1; index >= 0; index -= 1) {
+                    const particle = particles[index];
+                    particle.x += particle.vx;
+                    particle.y += particle.vy;
+                    particle.vy -= 0.01;
+                    particle.life -= 1;
+                    particle.radius *= 0.98;
+                    if (particle.life <= 0 || particle.radius <= 0.35) {
+                        particles.splice(index, 1);
+                    }
+                }
+            }
+
+            function updateTunnelSegments(previewOnly) {
+                for (const segment of tunnelSegments) {
+                    segment.x -= currentSpeed;
+                    segment.ridgeOffset += 0.02;
+                    if (segment.item) {
+                        segment.item.phase += segment.item.type === 'pearl' ? 0.12 : 0.07;
+                    }
+                }
+
+                while (tunnelSegments.length && tunnelSegments[0].x < -SEGMENT_WIDTH * 3) {
+                    tunnelSegments.shift();
+                }
+
+                ensureTunnelCoverage(previewOnly);
+            }
+
+            function updateItems(theme) {
+                for (const segment of tunnelSegments) {
+                    const item = segment.item;
+                    if (!item || item.collected) continue;
+
+                    const dx = shark.x - segment.x;
+                    const dy = shark.y - item.y;
+                    const relaxedRadius = Math.max(12, shark.radius - 5);
+                    const distance = relaxedRadius + item.radius + (item.type === 'pearl' ? 6 : -5);
+                    if (dx * dx + dy * dy > distance * distance) {
+                        continue;
+                    }
+
+                    if (item.type === 'pearl') {
+                        item.collected = true;
+                        comboLevel = clamp(comboLevel + 1, 0, MAX_COMBO);
+                        comboTimer = 190;
+                        currentBoostTimer = Math.min(150, currentBoostTimer + 36);
+                        addBubbleBurst(segment.x, item.y, 12, theme.pearl, 0.95);
+                        continue;
+                    }
+
+                    handleCollision();
+                    return;
+                }
+            }
+
+            function tunnelCollision() {
+                const collisionRadius = Math.max(12, shark.radius - 5);
+                const sampleXs = [
+                    shark.x - collisionRadius * 0.6,
+                    shark.x,
+                    shark.x + collisionRadius * 0.6
+                ];
+                for (const sampleX of sampleXs) {
+                    const sample = sampleTunnelAt(sampleX);
+                    if (shark.y - collisionRadius < sample.topY + 1 || shark.y + collisionRadius > sample.bottomY - 1) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            function updateGame() {
+                const theme = currentTheme();
+                updateBubbles();
+                updateParticles();
+
+                if (gameState === 'ready') {
+                    shark.idlePhase += 0.04;
+                    const sample = sampleTunnelAt(shark.x);
+                    shark.y = sample.centerY + Math.sin(shark.idlePhase) * 8;
+                    shark.rotation = Math.sin(shark.idlePhase * 0.7) * 0.08;
+                    return;
+                }
+
+                if (gameState !== 'playing' && gameState !== 'preview' && gameState !== 'preview-reset') {
+                    return;
+                }
+
+                if (gameState === 'preview') {
+                    previewAutopilot();
+                }
+
+                framesElapsed += 1;
+                currentSpeed = Math.min(
+                    MAX_GAME_SPEED,
+                    BASE_GAME_SPEED + Math.floor(framesElapsed / 75) * 0.15 + (currentBoostTimer > 0 ? 0.06 : 0)
+                );
+
+                shark.velocity += 0.31 + currentDifficulty() * 0.03;
+                shark.velocity = clamp(shark.velocity, -7.3, 7.2);
+                shark.y += shark.velocity;
+                shark.rotation = clamp(shark.velocity * 0.055, -0.44, 0.6);
+
+                if (comboTimer > 0) {
+                    comboTimer -= 1;
+                } else {
+                    comboLevel = 0;
+                }
+
+                if (currentBoostTimer > 0) {
+                    currentBoostTimer -= 1;
+                }
+
+                updateTunnelSegments(gameState === 'preview' || gameState === 'preview-reset');
+                updateItems(theme);
+
+                if (gameState !== 'gameover') {
+                    score = Math.floor(framesElapsed / SCORE_DIVISOR);
+                }
+
+                const boundaryRadius = Math.max(12, shark.radius - 5);
+                if (tunnelCollision() || shark.y - boundaryRadius < 8 || shark.y + boundaryRadius > stageHeight - 8) {
+                    handleCollision();
+                }
+
+                if (gameState === 'preview-reset') {
+                    previewResetFrames -= 1;
+                    if (previewResetFrames <= 0) {
+                        softResetPreview();
+                    }
+                }
+
+                updateHud();
+            }
+
+            function drawOceanBackground(theme) {
+                const gradient = ctx.createLinearGradient(0, 0, 0, stageHeight);
+                gradient.addColorStop(0, theme.top);
+                gradient.addColorStop(1, theme.bottom);
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, stageWidth, stageHeight);
+
+                lightBands.forEach((band) => {
+                    ctx.save();
+                    ctx.translate(band.x, -20);
+                    ctx.rotate(band.angle);
+                    ctx.globalAlpha = 0.32;
+                    ctx.fillStyle = theme.ray;
+                    ctx.fillRect(-band.width * 0.5, 0, band.width, stageHeight * 0.74);
+                    ctx.restore();
+                });
+                ctx.globalAlpha = 1;
+
+                for (let index = 0; index < 5; index += 1) {
+                    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                    ctx.beginPath();
+                    ctx.ellipse(stageWidth * (0.16 + index * 0.18), 90 + index * 8, 108 + index * 16, 24, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                bubbles.forEach((bubble) => {
+                    ctx.strokeStyle = theme.bubble;
+                    ctx.globalAlpha = 0.16 + (Math.sin(frameCount * 0.02 + bubble.phase) + 1) * 0.08;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(bubble.x, bubble.y, bubble.radius, 0, Math.PI * 2);
+                    ctx.stroke();
+                });
+                ctx.globalAlpha = 1;
+
+                drawHillLayer(backHills, stageHeight - 110, rgba(theme.wallShadow, 0.26), 0.08);
+                drawHillLayer(frontHills, stageHeight - 42, rgba(theme.wallShadow, 0.18), 0.14);
+
+                seaweed.forEach((weed, index) => {
+                    const sway = Math.sin(frameCount * weed.sway + weed.phase) * 8;
+                    const x = weed.x;
+                    const baseY = stageHeight - 14 + Math.sin((index + frameCount * 0.018)) * 1.5;
+                    ctx.strokeStyle = rgba('#d4fff6', 0.16);
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.moveTo(x, baseY);
+                    ctx.quadraticCurveTo(x + sway, baseY - weed.height * 0.5, x + sway * 0.4, baseY - weed.height);
+                    ctx.stroke();
+                });
+
+                ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                ctx.font = '800 12px "Segoe UI", sans-serif';
+                ctx.fillText(currentThemeLabel, 24, 30);
+            }
+
+            function drawHillLayer(layer, baseY, color, speedFactor) {
+                const totalWidth = 1600;
+                const offset = (frameCount * currentSpeed * speedFactor) % totalWidth;
+                ctx.save();
+                ctx.fillStyle = color;
+                for (let repeat = -1; repeat <= 1; repeat += 1) {
+                    ctx.beginPath();
+                    let started = false;
+                    layer.forEach((hill) => {
+                        const x = hill.x - offset + repeat * totalWidth;
+                        if (!started) {
+                            ctx.moveTo(x - 60, baseY + 120);
+                            started = true;
+                        }
+                        ctx.quadraticCurveTo(
+                            x + hill.width * 0.3,
+                            baseY - hill.height,
+                            x + hill.width,
+                            baseY + 12
+                        );
+                    });
+                    ctx.lineTo(stageWidth + 160, stageHeight);
+                    ctx.lineTo(-160, stageHeight);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            function buildTunnelPoints() {
+                if (!tunnelSegments.length) return [];
+                const points = tunnelSegments.map((segment) => ({
+                    x: segment.x,
+                    topY: segment.topY,
+                    bottomY: segment.bottomY,
+                    ridgeOffset: segment.ridgeOffset
+                }));
+                const first = points[0];
+                const last = points[points.length - 1];
+                return [
+                    {
+                        x: first.x - SEGMENT_WIDTH,
+                        topY: first.topY,
+                        bottomY: first.bottomY,
+                        ridgeOffset: first.ridgeOffset
+                    },
+                    ...points,
+                    {
+                        x: last.x + SEGMENT_WIDTH,
+                        topY: last.topY,
+                        bottomY: last.bottomY,
+                        ridgeOffset: last.ridgeOffset
+                    }
+                ];
+            }
+
+            function traceEdge(points, key) {
+                ctx.lineTo(points[0].x, points[0][key]);
+                for (let index = 0; index < points.length - 1; index += 1) {
+                    const current = points[index];
+                    const next = points[index + 1];
+                    const midX = (current.x + next.x) * 0.5;
+                    const midY = (current[key] + next[key]) * 0.5;
+                    ctx.quadraticCurveTo(current.x, current[key], midX, midY);
+                }
+                const last = points[points.length - 1];
+                ctx.lineTo(last.x, last[key]);
+            }
+
+            function strokeEdge(points, key, color, width) {
+                ctx.save();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0][key]);
+                for (let index = 0; index < points.length - 1; index += 1) {
+                    const current = points[index];
+                    const next = points[index + 1];
+                    const midX = (current.x + next.x) * 0.5;
+                    const midY = (current[key] + next[key]) * 0.5;
+                    ctx.quadraticCurveTo(current.x, current[key], midX, midY);
+                }
+                const last = points[points.length - 1];
+                ctx.lineTo(last.x, last[key]);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            function drawBottomSandRibbon(points, theme) {
+                const upper = points.map((point) => ({
+                    x: point.x,
+                    bottomY: point.bottomY + 8 + Math.sin(point.ridgeOffset) * 3
+                }));
+                const lower = points.map((point) => ({
+                    x: point.x,
+                    bottomY: point.bottomY + 34 + Math.cos(point.ridgeOffset * 0.9) * 5
+                }));
+                const reversedLower = [...lower].reverse();
+                const gradient = ctx.createLinearGradient(0, upper[0].bottomY, 0, lower[0].bottomY + 18);
+                gradient.addColorStop(0, rgba(theme.coralC, 0.44));
+                gradient.addColorStop(0.4, 'rgba(255, 208, 84, 0.28)');
+                gradient.addColorStop(0.72, rgba(theme.coralA, 0.22));
+                gradient.addColorStop(1, 'rgba(255, 129, 83, 0.18)');
+
+                ctx.save();
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.moveTo(upper[0].x, upper[0].bottomY);
+                traceEdge(upper, 'bottomY');
+                ctx.lineTo(reversedLower[0].x, reversedLower[0].bottomY);
+                traceEdge(reversedLower, 'bottomY');
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(255, 239, 201, 0.34)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(upper[0].x, upper[0].bottomY + 8);
+                traceEdge(upper.map((point) => ({ x: point.x, bottomY: point.bottomY + 8 })), 'bottomY');
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            function drawSandPebbles(points, theme) {
+                const palette = [theme.coralA, theme.coralB, theme.coralC, '#ffd65a', '#ff8b61'];
+                ctx.save();
+                for (let index = 1; index < points.length - 1; index += 2) {
+                    const point = points[index];
+                    const baseX = point.x + Math.sin(point.ridgeOffset * 1.4) * 6;
+                    const baseY = point.bottomY + 16 + Math.cos(point.ridgeOffset) * 3;
+                    const pebbleCount = 2 + (index % 3);
+                    for (let pebbleIndex = 0; pebbleIndex < pebbleCount; pebbleIndex += 1) {
+                        const color = palette[(index + pebbleIndex) % palette.length];
+                        ctx.fillStyle = rgba(color, 0.54);
+                        ctx.beginPath();
+                        ctx.ellipse(
+                            baseX + pebbleIndex * 7 - 8,
+                            baseY + (pebbleIndex % 2 === 0 ? 0 : 3),
+                            3.2 + (pebbleIndex % 2),
+                            2.2 + ((index + pebbleIndex) % 2),
+                            0,
+                            0,
+                            Math.PI * 2
+                        );
+                        ctx.fill();
+                    }
+                }
+                ctx.restore();
+            }
+
+            function drawTunnelFloorDecorations(theme) {
+                for (const segment of tunnelSegments) {
+                    if (!segment.decorations || !segment.decorations.length) continue;
+
+                    const baseX = segment.x + segment.width * 0.5;
+                    const baseY = segment.bottomY + 6;
+
+                    for (const decoration of segment.decorations) {
+                        const x = baseX + decoration.offsetX;
+
+                        if (decoration.kind === 'seaweed') {
+                            const sway = Math.sin(frameCount * decoration.sway + decoration.phase) * 5;
+                            const seaweedPalette = decoration.tint > 0.66
+                                ? [theme.coralB, '#9bf6d1']
+                                : (decoration.tint > 0.33 ? [theme.coralC, '#ffd65a'] : [theme.coralA, '#ff9e80']);
+                            ctx.strokeStyle = rgba(seaweedPalette[0], 0.74);
+                            ctx.lineWidth = 3;
+                            for (let index = -1; index <= 1; index += 1) {
+                                ctx.beginPath();
+                                ctx.moveTo(x + index * 4, baseY);
+                                ctx.quadraticCurveTo(
+                                    x + index * 4 + sway,
+                                    baseY - decoration.height * 0.48,
+                                    x + index * 2 + sway * 0.45,
+                                    baseY - decoration.height
+                                );
+                                ctx.stroke();
+                            }
+                            ctx.strokeStyle = rgba(seaweedPalette[1], 0.46);
+                            ctx.lineWidth = 1.4;
+                            ctx.beginPath();
+                            ctx.moveTo(x, baseY - 2);
+                            ctx.quadraticCurveTo(x + sway * 0.35, baseY - decoration.height * 0.42, x + sway * 0.16, baseY - decoration.height + 5);
+                            ctx.stroke();
+                            continue;
+                        }
+
+                        if (decoration.kind === 'anemone') {
+                            const pulse = Math.sin(frameCount * 0.05 + decoration.phase) * 1.4;
+                            ctx.fillStyle = decoration.tint > 0.5 ? rgba(theme.coralA, 0.62) : rgba(theme.coralC, 0.54);
+                            ctx.shadowColor = decoration.tint > 0.5 ? rgba(theme.coralA, 0.34) : rgba(theme.coralC, 0.28);
+                            ctx.shadowBlur = 10;
+                            ctx.beginPath();
+                            ctx.ellipse(x, baseY + 1, decoration.size * 0.7, decoration.size * 0.34, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            for (let index = -2; index <= 2; index += 1) {
+                                ctx.strokeStyle = rgba(theme.coralB, 0.42);
+                                ctx.lineWidth = 2;
+                                ctx.beginPath();
+                                ctx.moveTo(x + index * 2, baseY);
+                                ctx.quadraticCurveTo(
+                                    x + index * 2 + pulse,
+                                    baseY - decoration.size * 0.55,
+                                    x + index * 2 + pulse * 0.4,
+                                    baseY - decoration.size
+                                );
+                                ctx.stroke();
+                            }
+                            ctx.shadowBlur = 0;
+                            continue;
+                        }
+
+                        if (decoration.kind === 'coral') {
+                            const pulse = Math.sin(frameCount * 0.05 + decoration.phase) * 1.8;
+                            const left = decoration.tint > 0.5 ? theme.coralA : theme.coralC;
+                            const right = decoration.tint > 0.5 ? theme.coralC : theme.coralA;
+                            const fanGradient = ctx.createLinearGradient(x - decoration.size, baseY, x + decoration.size, baseY);
+                            fanGradient.addColorStop(0, rgba(left, 0.88));
+                            fanGradient.addColorStop(1, rgba(right, 0.82));
+                            ctx.shadowColor = rgba(right, 0.24);
+                            ctx.shadowBlur = 10;
+                            ctx.fillStyle = fanGradient;
+                            ctx.beginPath();
+                            ctx.moveTo(x, baseY + 2);
+                            ctx.quadraticCurveTo(x - decoration.size, baseY - decoration.size * 0.55, x - decoration.size * 0.55, baseY - decoration.size);
+                            ctx.quadraticCurveTo(x - decoration.size * 0.12, baseY - decoration.size * 0.3, x, baseY - decoration.size * 0.2 + pulse);
+                            ctx.quadraticCurveTo(x + decoration.size * 0.12, baseY - decoration.size * 0.3, x + decoration.size * 0.55, baseY - decoration.size);
+                            ctx.quadraticCurveTo(x + decoration.size, baseY - decoration.size * 0.55, x, baseY + 2);
+                            ctx.fill();
+                            ctx.strokeStyle = rgba(theme.coralB, 0.4);
+                            ctx.lineWidth = 1.6;
+                            for (let index = -2; index <= 2; index += 1) {
+                                ctx.beginPath();
+                                ctx.moveTo(x, baseY + 1);
+                                ctx.quadraticCurveTo(x + index * 2, baseY - decoration.size * 0.35, x + index * 3.4, baseY - decoration.size * 0.84);
+                                ctx.stroke();
+                            }
+                            ctx.shadowBlur = 0;
+                            continue;
+                        }
+
+                        if (decoration.kind === 'rock') {
+                            ctx.save();
+                            ctx.translate(x, baseY + 2);
+                            ctx.rotate(decoration.tilt);
+                            const rockGradient = ctx.createLinearGradient(-decoration.width * 0.5, 0, decoration.width * 0.5, 0);
+                            rockGradient.addColorStop(0, rgba(theme.coralC, 0.48));
+                            rockGradient.addColorStop(1, rgba(theme.coralA, 0.34));
+                            ctx.fillStyle = rockGradient;
+                            ctx.beginPath();
+                            ctx.ellipse(0, 0, decoration.width * 0.5, decoration.height, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.fillStyle = rgba(theme.highlight, 0.24);
+                            ctx.beginPath();
+                            ctx.ellipse(-decoration.width * 0.12, -decoration.height * 0.2, decoration.width * 0.18, decoration.height * 0.2, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.restore();
+                            continue;
+                        }
+
+                        ctx.save();
+                        ctx.translate(x, baseY + 2);
+                        ctx.scale(decoration.flip, 1);
+                        ctx.fillStyle = rgba(theme.coralC, 0.74);
+                        ctx.beginPath();
+                        ctx.moveTo(-decoration.size, 2);
+                        ctx.quadraticCurveTo(0, -decoration.size * 0.9, decoration.size, 2);
+                        ctx.quadraticCurveTo(0, decoration.size * 0.16, -decoration.size, 2);
+                        ctx.fill();
+                        ctx.fillStyle = 'rgba(255, 243, 214, 0.52)';
+                        ctx.beginPath();
+                        ctx.ellipse(0, -decoration.size * 0.18, decoration.size * 0.3, decoration.size * 0.12, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                }
+            }
+
+            function drawTunnel(theme) {
+                const points = buildTunnelPoints();
+                if (points.length < 2) return;
+
+                const topGradient = ctx.createLinearGradient(0, 0, 0, stageHeight * 0.42);
+                topGradient.addColorStop(0, theme.wallTop);
+                topGradient.addColorStop(1, theme.wallShadow);
+
+                const bottomGradient = ctx.createLinearGradient(0, stageHeight * 0.52, 0, stageHeight);
+                bottomGradient.addColorStop(0, theme.wallBottom);
+                bottomGradient.addColorStop(1, theme.wallShadow);
+
+                ctx.save();
+                ctx.shadowColor = rgba(theme.wallShadow, 0.46);
+                ctx.shadowBlur = 26;
+
+                ctx.fillStyle = topGradient;
+                ctx.beginPath();
+                ctx.moveTo(-120, -40);
+                ctx.lineTo(points[0].x, -40);
+                traceEdge(points, 'topY');
+                ctx.lineTo(points[points.length - 1].x, -40);
+                ctx.lineTo(stageWidth + 120, -40);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = bottomGradient;
+                ctx.beginPath();
+                ctx.moveTo(-120, stageHeight + 40);
+                ctx.lineTo(points[0].x, stageHeight + 40);
+                traceEdge(points, 'bottomY');
+                ctx.lineTo(points[points.length - 1].x, stageHeight + 40);
+                ctx.lineTo(stageWidth + 120, stageHeight + 40);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+
+                strokeEdge(points, 'topY', rgba(theme.highlight, 0.48), 6);
+                strokeEdge(points, 'bottomY', rgba(theme.highlight, 0.4), 6);
+                strokeEdge(points, 'topY', rgba(theme.wallShadow, 0.18), 16);
+                strokeEdge(points, 'bottomY', rgba(theme.wallShadow, 0.16), 16);
+                drawBottomSandRibbon(points, theme);
+                drawSandPebbles(points, theme);
+                drawTunnelFloorDecorations(theme);
+            }
+
+            function drawTunnelItems(theme) {
+                for (const segment of tunnelSegments) {
+                    const item = segment.item;
+                    if (!item || item.collected) continue;
+
+                    const x = segment.x;
+                    const y = item.y;
+
+                    if (item.type === 'pearl') {
+                        const pulse = (Math.sin(item.phase) + 1) * 0.5;
+                        ctx.save();
+                        ctx.translate(x, y);
+                        ctx.shadowColor = theme.pearl;
+                        ctx.shadowBlur = 18;
+                        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, item.radius + 4 + pulse * 2, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillStyle = theme.pearl;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, item.radius, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillStyle = 'rgba(186, 230, 253, 0.9)';
+                        ctx.beginPath();
+                        ctx.arc(-4, -4, item.radius * 0.32, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                        continue;
+                    }
+
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.rotate(item.phase);
+                    ctx.fillStyle = theme.urchin;
+                    for (let index = 0; index < 10; index += 1) {
+                        ctx.rotate(Math.PI / 5);
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(0, -item.radius - 12);
+                        ctx.lineTo(4, -item.radius + 1);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                    ctx.beginPath();
+                    ctx.arc(0, 0, item.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'rgba(255,255,255,0.26)';
+                    ctx.beginPath();
+                    ctx.arc(-5, -5, 4.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+
+            function drawShark(theme) {
+                if (!shark) return;
+
+                const tailSway = Math.sin(frameCount * 0.34) * 7;
+                const dorsalSway = Math.sin(frameCount * 0.18) * 2;
+                const finSway = Math.sin(frameCount * 0.24) * 2;
+
+                ctx.save();
+                ctx.translate(shark.x, shark.y);
+                ctx.rotate(shark.rotation);
+
+                if (currentBoostTimer > 0) {
+                    ctx.shadowColor = 'rgba(103, 232, 249, 0.6)';
+                    ctx.shadowBlur = 22;
+                }
+
+                ctx.fillStyle = theme.bodyDark;
+                ctx.beginPath();
+                ctx.moveTo(-28, -2);
+                ctx.lineTo(-48, -18 - tailSway * 0.18);
+                ctx.lineTo(-40, 0);
+                ctx.lineTo(-48, 18 + tailSway * 0.18);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(-4, -6);
+                ctx.lineTo(8, -31 + dorsalSway);
+                ctx.lineTo(17, -8);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = theme.fin;
+                ctx.beginPath();
+                ctx.moveTo(-2, 6);
+                ctx.lineTo(14, 18 + finSway);
+                ctx.lineTo(5, 8);
+                ctx.closePath();
+                ctx.fill();
+
+                const bodyGradient = ctx.createLinearGradient(-32, -12, 28, 16);
+                bodyGradient.addColorStop(0, theme.bodyDark);
+                bodyGradient.addColorStop(1, theme.body);
+                ctx.fillStyle = bodyGradient;
+                ctx.beginPath();
+                ctx.moveTo(-32, 0);
+                ctx.quadraticCurveTo(-10, -24, 26, -9);
+                ctx.quadraticCurveTo(38, -2, 36, 6);
+                ctx.quadraticCurveTo(20, 20, -6, 18);
+                ctx.quadraticCurveTo(-26, 16, -32, 0);
+                ctx.fill();
+
+                ctx.fillStyle = theme.belly;
+                ctx.beginPath();
+                ctx.moveTo(-10, 4);
+                ctx.quadraticCurveTo(4, 12, 24, 8);
+                ctx.quadraticCurveTo(18, 18, -2, 16);
+                ctx.quadraticCurveTo(-14, 12, -10, 4);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = rgba(theme.highlight, 0.2);
+                ctx.beginPath();
+                ctx.ellipse(2, -8, 16, 6, -0.2, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = rgba(theme.bodyDark, 0.62);
+                ctx.lineWidth = 1.8;
+                ctx.beginPath();
+                ctx.moveTo(-5, 0);
+                ctx.lineTo(-13, 0);
+                ctx.moveTo(-3, 6);
+                ctx.lineTo(-11, 6);
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(17, -5, 5.8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath();
+                ctx.arc(18.2, -5, 2.8, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            function drawParticles() {
+                particles.forEach((particle) => {
+                    const alpha = clamp(particle.life / 40, 0, 1);
+                    ctx.globalAlpha = alpha;
+                    if (particle.outline) {
+                        ctx.strokeStyle = particle.color;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+                        ctx.stroke();
+                    } else {
+                        ctx.fillStyle = particle.color;
+                        ctx.beginPath();
+                        ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                });
+                ctx.globalAlpha = 1;
+            }
+
+            function drawReadyHint() {
+                if (gameState !== 'ready') return;
+            }
+
+            function render() {
+                const theme = currentTheme();
+                drawOceanBackground(theme);
+                drawTunnel(theme);
+                drawTunnelItems(theme);
+                drawParticles();
+                drawShark(theme);
+                drawReadyHint();
+            }
+
+            function handlePrimaryAction() {
+                if (gameState === 'ready') {
+                    startDive();
+                    return;
+                }
+                if (gameState === 'playing') {
+                    swimUp(currentBoostTimer > 0 ? 6.95 : 6.7);
+                    return;
+                }
+                if (gameState === 'gameover') {
+                    startDive();
+                }
+            }
+
+            let animationFrameId = 0;
+            let isDisposed = false;
+
+            function handleWindowKeydown(event) {
+                if (event.code !== 'Space') return;
+                event.preventDefault();
+                if (gameState === 'playing') {
+                    swimUp(currentBoostTimer > 0 ? 6.95 : 6.7);
+                    return;
+                }
+                if (gameState === 'ready' || gameState === 'gameover') {
+                    handlePrimaryAction();
+                }
+            }
+
+            function handleWindowPointerdown(event) {
+                if (IS_PREVIEW_MODE) return;
+                if (event.target.closest('button')) return;
+                if (gameState === 'ready' || gameState === 'playing') {
+                    event.preventDefault();
+                    handlePrimaryAction();
+                }
+            }
+
+            function handleStartButtonClick() {
+                startDive();
+            }
+
+            function handleRestartButtonClick() {
+                startDive();
+            }
+
+            function handleLobbyButtonClick(event) {
+                event.preventDefault();
+                returnToMinigameHub();
+            }
+
+            function bindEvents() {
+                window.addEventListener('keydown', handleWindowKeydown);
+                window.addEventListener('pointerdown', handleWindowPointerdown, { passive: false });
+                startButton.addEventListener('click', handleStartButtonClick);
+                restartButton.addEventListener('click', handleRestartButtonClick);
+                lobbyButton.addEventListener('click', handleLobbyButtonClick);
+            }
+
+            function loop() {
+                if (isDisposed) return;
+                frameCount += 1;
+                updateGame();
+                render();
+                animationFrameId = requestAnimationFrame(loop);
+            }
+
+            function cleanupGame() {
+                isDisposed = true;
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = 0;
+                }
+
+                window.removeEventListener('keydown', handleWindowKeydown);
+                window.removeEventListener('pointerdown', handleWindowPointerdown);
+                startButton.removeEventListener('click', handleStartButtonClick);
+                restartButton.removeEventListener('click', handleRestartButtonClick);
+                lobbyButton.removeEventListener('click', handleLobbyButtonClick);
+                window.removeEventListener('beforeunload', cleanupGame);
+            }
+
+            async function init() {
+                highscoreDisplay.textContent = String(highScore);
+                updateHud();
+                bindEvents();
+                window.addEventListener('beforeunload', cleanupGame);
+
+                if (IS_PREVIEW_MODE) {
+                    softResetPreview();
+                } else {
+                    resetRun('ready');
+                    ensureLeaderboardBridgeReady()
+                        .then(() => refreshTopEntry())
+                        .catch((error) => {
+                            console.warn('OceanTap leaderboard bootstrap failed:', error);
+                        });
+                }
+
+                animationFrameId = requestAnimationFrame(loop);
+            }
+
+            init().catch((error) => {
+                console.error('OceanTap initialization failed:', error);
+            });
+        })();
+    </script>
+</body>
+</html>
