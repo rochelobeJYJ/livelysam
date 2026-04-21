@@ -36,6 +36,7 @@ $releaseTag = Get-StringValue -Value $versionInfo.releaseTag
 $defaultChannel = Get-StringValue -Value $versionInfo.defaultChannel -Default "stable"
 $githubRepo = Get-StringValue -Value $versionInfo.githubRepo
 $installerBaseName = Get-StringValue -Value $versionInfo.installerBaseName -Default "LivelySamSetup"
+$proxyBaseUrl = Get-StringValue -Value $versionInfo.proxyBaseUrl
 
 if ([string]::IsNullOrWhiteSpace($version)) {
     throw "version.json must contain a non-empty version."
@@ -87,6 +88,26 @@ $jsVersionContent = @"
 "@
 Write-Utf8File -Path $jsVersionPath -Content $jsVersionContent
 
+$proxyBaseUrlJs = $proxyBaseUrl.Replace('\', '\\').Replace("'", "\'")
+$jsPublicRuntimeConfigPath = Join-Path $rootPath "js\public-runtime-config.js"
+$jsPublicRuntimeConfigContent = @"
+(function () {
+  'use strict';
+
+  window.LivelySamPublicConfig = window.LivelySamPublicConfig || {};
+  window.LivelySamPublicConfig.dataServices = window.LivelySamPublicConfig.dataServices || {};
+
+  const configuredProxyBaseUrl = typeof window.LivelySamPublicConfig.dataServices.proxyBaseUrl === 'string'
+    ? window.LivelySamPublicConfig.dataServices.proxyBaseUrl.trim()
+    : '';
+  const defaultProxyBaseUrl = '$proxyBaseUrlJs';
+
+  // NEIS and default weather requests share the same public data proxy URL.
+  window.LivelySamPublicConfig.dataServices.proxyBaseUrl = configuredProxyBaseUrl || defaultProxyBaseUrl;
+})();
+"@
+Write-Utf8File -Path $jsPublicRuntimeConfigPath -Content $jsPublicRuntimeConfigContent
+
 $issIncludePath = Join-Path $rootPath "release\installer\version.iss.inc"
 $issIncludeContent = @"
 #define MyAppVersion "$version"
@@ -135,6 +156,7 @@ Write-Utf8File -Path $betaManifestPath -Content ((New-ManifestPayload -Channel "
     installerFileName = $installerFileName
     generated = @(
         (Resolve-Path $jsVersionPath).Path,
+        (Resolve-Path $jsPublicRuntimeConfigPath).Path,
         (Resolve-Path $issIncludePath).Path,
         (Resolve-Path $stableManifestPath).Path,
         (Resolve-Path $betaManifestPath).Path

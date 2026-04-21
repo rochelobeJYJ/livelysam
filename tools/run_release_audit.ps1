@@ -249,6 +249,7 @@ function Assert-VersionMetadata {
   $appId = Get-StringValue -Value $versionInfo.appId -Default 'livelysam'
   $defaultChannel = Get-StringValue -Value $versionInfo.defaultChannel -Default 'stable'
   $installerBaseName = Get-StringValue -Value $versionInfo.installerBaseName -Default 'LivelySamSetup'
+  $proxyBaseUrl = Get-StringValue -Value $versionInfo.proxyBaseUrl
   $installerFileName = "$installerBaseName-$version.exe"
   $releaseNotesUrl = "https://github.com/$repo/releases/tag/$releaseTag"
   $downloadUrl = "https://github.com/$repo/releases/download/$releaseTag/$installerFileName"
@@ -259,6 +260,9 @@ function Assert-VersionMetadata {
   Assert-TextContains -RelativePath 'js\version.js' -Pattern "defaultChannel: '$defaultChannel'" -Name 'version:js-channel'
   Assert-TextContains -RelativePath 'js\version.js' -Pattern "githubRepo: '$repo'" -Name 'version:js-repo'
   Assert-TextContains -RelativePath 'js\version.js' -Pattern "installerFileName: '$installerFileName'" -Name 'version:js-installer'
+  Assert-JsonNotBlank -RelativePath 'version.json' -Name 'proxy:url' -Actual $proxyBaseUrl
+  Assert-TextContains -RelativePath 'js\public-runtime-config.js' -Pattern "const defaultProxyBaseUrl = '$proxyBaseUrl';" -Name 'proxy:js-default-url'
+  Assert-TextContains -RelativePath 'js\public-runtime-config.js' -Pattern 'window.LivelySamPublicConfig.dataServices.proxyBaseUrl = configuredProxyBaseUrl || defaultProxyBaseUrl;' -Name 'proxy:js-assignment'
   Assert-JsonValue -RelativePath 'version.json' -Name 'version:source-manifest-base' -Actual $manifestBaseUrl -Expected "https://raw.githubusercontent.com/$repo/$branch/release/updates"
   Assert-TextContains -RelativePath 'index.html' -Pattern 'js/version.js' -Name 'version:index-loader'
   Assert-TextContains -RelativePath 'release\installer\version.iss.inc' -Pattern "#define MyAppVersion ""$version""" -Name 'version:iss-version'

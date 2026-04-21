@@ -1,10 +1,11 @@
 {
   "appId": "livelysam",
-  "version": "1.0.7",
-  "releaseTag": "v1.0.7",
+  "version": "1.0.8",
+  "releaseTag": "v1.0.8",
   "defaultChannel": "stable",
   "githubRepo": "rochelobeJYJ/livelysam",
   "githubBranch": "main",
+  "proxyBaseUrl": "https://livelysam-data-proxy-477938837801.asia-northeast3.run.app",
   "updateManifestBaseUrl": "https://raw.githubusercontent.com/rochelobeJYJ/livelysam/main/release/updates",
   "installerBaseName": "LivelySamSetup"
 }

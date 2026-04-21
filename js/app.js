@@ -477,12 +477,42 @@
       } catch (e) {
         console.error('[LivelySam] 학교 자동 설정 실패:', e);
         if (requestId !== this._schoolResolveRequestId) return;
+        const failureMessage = await this._buildSchoolSearchFailureMessage();
         this._schoolResolveState = {
           status: 'error',
-          message: '학교 정보를 가져오지 못했습니다. 기본 학교 서버 상태를 확인한 뒤 다시 시도해 주세요.'
+          message: failureMessage
         };
         this._refreshLivelySetupNotice();
       }
+    },
+
+    async _buildSchoolSearchFailureMessage() {
+      const directKeyConfigured = typeof LS.NeisAPI.hasDirectKey === 'function'
+        ? LS.NeisAPI.hasDirectKey()
+        : Boolean((LS.Config.get('neisApiKey') || '').trim());
+      if (directKeyConfigured) {
+        return '학교 정보를 가져오지 못했습니다. 입력한 NEIS 직접 키와 네트워크 상태를 확인해 주세요.';
+      }
+
+      const baseUrl = String(LS.DataService?.getBaseUrl?.() || '').trim();
+      const usingLocalProxy = /^http:\/\/(127\.0\.0\.1|localhost):\d+\/api$/i.test(baseUrl);
+
+      try {
+        const health = await LS.DataService.fetchJson('health', {}, { timeoutMs: 2500 });
+        if (health && typeof health === 'object' && health.configured && health.configured.neis === false) {
+          return usingLocalProxy
+            ? '학교 검색에 실패했습니다. 이 배포본은 공용 학교 서버가 아직 연결되지 않았습니다. 운영자가 공용 프록시를 배포했는지 확인하거나, 직접 NEIS 키를 입력해 주세요.'
+            : '학교 검색에 실패했습니다. 공용 학교 서버에 NEIS 키가 설정되지 않았습니다. 운영자에게 서버 설정을 요청해 주세요.';
+        }
+      } catch (healthError) {
+        console.warn('[LivelySam] 학교 서버 상태 확인 실패:', healthError);
+      }
+
+      if (usingLocalProxy) {
+        return '학교 검색에 실패했습니다. 로컬 기본 학교 서버와 통신하지 못했습니다. 런처를 다시 실행한 뒤 시도하거나, 운영자에게 공용 학교 서버 배포 상태를 확인해 주세요.';
+      }
+
+      return '학교 정보를 가져오지 못했습니다. 기본 학교 서버 상태를 확인한 뒤 다시 시도해 주세요.';
     },
 
     async _resolveWeatherFromConfig() {
@@ -3722,7 +3752,7 @@
       const title = isWeather ? '개인 OpenWeather API 키 사용 안내' : 'NEIS 직접 키 사용 안내';
       const message = isWeather
         ? '기본 서버로 바로 시작할 수는 있지만, 가장 빠르고 안정적인 사용은 개인 키 직접 연결을 권장합니다. 개인 키는 이 PC에만 저장됩니다.'
-        : '일반 사용자는 기본 학교 서버를 사용하시면 됩니다. 직접 키가 꼭 필요한 특수한 운영 환경일 때만 참고해 주세요.';
+        : '운영자가 기본 학교 서버를 배포한 환경에서는 일반 사용자가 NEIS 키를 따로 입력하실 필요가 없습니다. 학교 검색이 되지 않으면 먼저 기본 학교 서버 상태를 확인해 주세요.';
       const guideText = isWeather
         ? [
             '1. https://openweathermap.org 에서 무료 회원가입을 합니다.',
@@ -3734,7 +3764,7 @@
             '7. 공용 기본 서버는 바로 쓸 수 있지만, 응답 속도와 사용량 면에서는 개인 키 쪽이 더 유리합니다.'
           ].join('\n')
         : [
-            '1. 기본 학교 서버를 쓰는 일반 사용자라면 이 절차가 필요하지 않습니다.',
+            '1. 운영자가 기본 학교 서버를 배포한 환경의 일반 사용자라면 이 절차가 필요하지 않습니다.',
             '2. 직접 키가 꼭 필요한 운영 환경이면 https://open.neis.go.kr 에 로그인합니다.',
             '3. 인증키 신청 메뉴에서 활용 용도를 작성해 승인받습니다.',
             '4. 발급된 키를 운영 환경에만 별도로 설정합니다.',
@@ -5821,7 +5851,8 @@
           });
         });
       } catch (e) {
-        resultBox.innerHTML = '<div class="search-error">검색에 실패했습니다. 기본 학교 서버 상태를 확인해 주세요.</div>';
+        const failureMessage = await this._buildSchoolSearchFailureMessage();
+        resultBox.innerHTML = `<div class="search-error">${LS.Helpers.escapeHtml(failureMessage)}</div>`;
       }
     },
 

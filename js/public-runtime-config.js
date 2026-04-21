@@ -7,8 +7,8 @@
   const configuredProxyBaseUrl = typeof window.LivelySamPublicConfig.dataServices.proxyBaseUrl === 'string'
     ? window.LivelySamPublicConfig.dataServices.proxyBaseUrl.trim()
     : '';
+  const defaultProxyBaseUrl = 'https://livelysam-data-proxy-477938837801.asia-northeast3.run.app';
 
-  // Keep the default empty so local preview falls back to localhost and
-  // production or staging can inject an explicit proxy endpoint.
-  window.LivelySamPublicConfig.dataServices.proxyBaseUrl = configuredProxyBaseUrl;
+  // NEIS and default weather requests share the same public data proxy URL.
+  window.LivelySamPublicConfig.dataServices.proxyBaseUrl = configuredProxyBaseUrl || defaultProxyBaseUrl;
 })();
