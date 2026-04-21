@@ -14,6 +14,7 @@ on:
       - "js/**"
       - "tools/**"
       - "release/**"
+      - "README.md"
 
 permissions:
   contents: write
@@ -114,19 +115,29 @@ jobs:
         run: |
           $tag = "${{ steps.release_meta.outputs.release_tag }}"
           $title = "LivelySam $tag"
+          $notesPath = Join-Path (Resolve-Path '.').Path "release\release-notes.md"
           $releaseExists = $true
           gh release view $tag --repo $env:GITHUB_REPOSITORY | Out-Null
           if ($LASTEXITCODE -ne 0) {
             $releaseExists = $false
           }
           if (-not $releaseExists) {
-            $args = @("release", "create", $tag, "--repo", $env:GITHUB_REPOSITORY, "--title", $title, "--generate-notes")
+            $args = @("release", "create", $tag, "--repo", $env:GITHUB_REPOSITORY, "--title", $title, "--notes-file", $notesPath)
             if ("${{ steps.release_meta.outputs.is_prerelease }}" -eq "true") {
               $args += "--prerelease"
             }
             & gh @args
             if ($LASTEXITCODE -ne 0) {
               throw "Failed to create GitHub release for $tag."
+            }
+          } else {
+            $args = @("release", "edit", $tag, "--repo", $env:GITHUB_REPOSITORY, "--title", $title, "--notes-file", $notesPath)
+            if ("${{ steps.release_meta.outputs.is_prerelease }}" -eq "true") {
+              $args += "--prerelease"
+            }
+            & gh @args
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to update GitHub release for $tag."
             }
           }
 
