@@ -16,7 +16,7 @@
 아래 4개는 먼저 정해 두십시오.
 
 1. Google Cloud 프로젝트 ID
-   - 예: `livelysam-prod`
+   - 예: `livelysam`
 2. 리전
    - 권장: `asia-northeast3` (서울)
 3. Cloud Run 서비스 이름
@@ -27,7 +27,7 @@
 이 문서에서는 아래 예시 값으로 설명합니다.
 
 ```text
-PROJECT_ID=livelysam-prod
+PROJECT_ID=livelysam
 REGION=asia-northeast3
 SERVICE_NAME=livelysam-data-proxy
 REPOSITORY=livelysam-images
@@ -135,7 +135,7 @@ gcloud config set project PROJECT_ID
 예시:
 
 ```bash
-gcloud config set project livelysam-prod
+gcloud config set project livelysam
 ```
 
 ---
@@ -256,7 +256,7 @@ REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/SERVICE_NAME
 예시:
 
 ```text
-asia-northeast3-docker.pkg.dev/livelysam-prod/livelysam-images/livelysam-data-proxy
+asia-northeast3-docker.pkg.dev/livelysam/livelysam-images/livelysam-data-proxy
 ```
 
 이제 빌드를 실행합니다.
@@ -272,7 +272,7 @@ gcloud builds submit . \
 ```bash
 gcloud builds submit . \
   --config=deploy/cloudrun/cloudbuild.yaml \
-  --substitutions=_IMAGE_URI=asia-northeast3-docker.pkg.dev/livelysam-prod/livelysam-images/livelysam-data-proxy
+  --substitutions=_IMAGE_URI=asia-northeast3-docker.pkg.dev/livelysam/livelysam-images/livelysam-data-proxy
 ```
 
 이 단계가 끝나면:
@@ -305,7 +305,7 @@ gcloud run deploy SERVICE_NAME \
 
 ```bash
 gcloud run deploy livelysam-data-proxy \
-  --image=asia-northeast3-docker.pkg.dev/livelysam-prod/livelysam-images/livelysam-data-proxy \
+  --image=asia-northeast3-docker.pkg.dev/livelysam/livelysam-images/livelysam-data-proxy \
   --region=asia-northeast3 \
   --allow-unauthenticated \
   --min-instances=0 \

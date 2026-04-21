@@ -1,7 +1,7 @@
 {
   "appId": "livelysam",
-  "version": "1.0.8",
-  "releaseTag": "v1.0.8",
+  "version": "1.0.9",
+  "releaseTag": "v1.0.9",
   "defaultChannel": "stable",
   "githubRepo": "rochelobeJYJ/livelysam",
   "githubBranch": "main",

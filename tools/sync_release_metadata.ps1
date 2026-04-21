@@ -108,6 +108,25 @@ $jsPublicRuntimeConfigContent = @"
 "@
 Write-Utf8File -Path $jsPublicRuntimeConfigPath -Content $jsPublicRuntimeConfigContent
 
+$indexHtmlPath = Join-Path $rootPath "index.html"
+$indexHtmlContent = Get-Content -LiteralPath $indexHtmlPath -Raw -Encoding UTF8
+$assetVersion = $version
+$assetRelativePaths = @(
+    'js/public-runtime-config.js',
+    'js/api/data-service.js',
+    'js/api/neis.js',
+    'js/api/openweather.js',
+    'js/version.js',
+    'js/app.js'
+)
+foreach ($assetRelativePath in $assetRelativePaths) {
+    $escapedRelativePath = [Regex]::Escape($assetRelativePath)
+    $pattern = "(<script\s+src=""$escapedRelativePath\?v=)[^""]+(""[^>]*></script>)"
+    $replacement = '${1}' + $assetVersion + '${2}'
+    $indexHtmlContent = [Regex]::Replace($indexHtmlContent, $pattern, $replacement)
+}
+Write-Utf8File -Path $indexHtmlPath -Content $indexHtmlContent
+
 $issIncludePath = Join-Path $rootPath "release\installer\version.iss.inc"
 $issIncludeContent = @"
 #define MyAppVersion "$version"
@@ -157,6 +176,7 @@ Write-Utf8File -Path $betaManifestPath -Content ((New-ManifestPayload -Channel "
     generated = @(
         (Resolve-Path $jsVersionPath).Path,
         (Resolve-Path $jsPublicRuntimeConfigPath).Path,
+        (Resolve-Path $indexHtmlPath).Path,
         (Resolve-Path $issIncludePath).Path,
         (Resolve-Path $stableManifestPath).Path,
         (Resolve-Path $betaManifestPath).Path

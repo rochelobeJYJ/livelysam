@@ -3,12 +3,12 @@
 
   const versionInfo = Object.freeze({
     appId: 'livelysam',
-    version: '1.0.8',
-    releaseTag: 'v1.0.8',
+    version: '1.0.9',
+    releaseTag: 'v1.0.9',
     defaultChannel: 'stable',
     githubRepo: 'rochelobeJYJ/livelysam',
     installerBaseName: 'LivelySamSetup',
-    installerFileName: 'LivelySamSetup-1.0.8.exe'
+    installerFileName: 'LivelySamSetup-1.0.9.exe'
   });
 
   global.LivelySamVersion = versionInfo;

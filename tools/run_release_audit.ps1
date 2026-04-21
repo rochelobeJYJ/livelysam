@@ -1,4 +1,6 @@
-param()
+param(
+  [switch]$VerifyPublicProxy
+)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -263,6 +265,12 @@ function Assert-VersionMetadata {
   Assert-JsonNotBlank -RelativePath 'version.json' -Name 'proxy:url' -Actual $proxyBaseUrl
   Assert-TextContains -RelativePath 'js\public-runtime-config.js' -Pattern "const defaultProxyBaseUrl = '$proxyBaseUrl';" -Name 'proxy:js-default-url'
   Assert-TextContains -RelativePath 'js\public-runtime-config.js' -Pattern 'window.LivelySamPublicConfig.dataServices.proxyBaseUrl = configuredProxyBaseUrl || defaultProxyBaseUrl;' -Name 'proxy:js-assignment'
+  Assert-TextContains -RelativePath 'index.html' -Pattern 'js/public-runtime-config.js?v=' + $version -Name 'cache:public-runtime-config'
+  Assert-TextContains -RelativePath 'index.html' -Pattern 'js/api/data-service.js?v=' + $version -Name 'cache:data-service'
+  Assert-TextContains -RelativePath 'index.html' -Pattern 'js/api/neis.js?v=' + $version -Name 'cache:neis'
+  Assert-TextContains -RelativePath 'index.html' -Pattern 'js/api/openweather.js?v=' + $version -Name 'cache:openweather'
+  Assert-TextContains -RelativePath 'index.html' -Pattern 'js/version.js?v=' + $version -Name 'cache:version-js'
+  Assert-TextContains -RelativePath 'index.html' -Pattern 'js/app.js?v=' + $version -Name 'cache:app-js'
   Assert-JsonValue -RelativePath 'version.json' -Name 'version:source-manifest-base' -Actual $manifestBaseUrl -Expected "https://raw.githubusercontent.com/$repo/$branch/release/updates"
   Assert-TextContains -RelativePath 'index.html' -Pattern 'js/version.js' -Name 'version:index-loader'
   Assert-TextContains -RelativePath 'release\installer\version.iss.inc' -Pattern "#define MyAppVersion ""$version""" -Name 'version:iss-version'
@@ -322,6 +330,25 @@ function Assert-VersionMetadata {
   }
 }
 
+function Invoke-PublicProxyVerification {
+  $verifyScript = Get-FullPath 'tools\verify_public_proxy.ps1'
+  if (-not (Test-Path -LiteralPath $verifyScript)) {
+    Add-CheckResult -Name 'proxy:verify-script' -Passed $false -Detail 'verify_public_proxy.ps1 is missing.' -Path $verifyScript
+    return
+  }
+
+  try {
+    $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $verifyScript -Root $root 2>&1
+    if ($LASTEXITCODE -eq 0) {
+      Add-CheckResult -Name 'proxy:verify-live' -Passed $true -Detail 'Public proxy health, school search, and weather bundle checks passed.' -Path $verifyScript
+    } else {
+      Add-CheckResult -Name 'proxy:verify-live' -Passed $false -Detail (($output | Out-String).Trim()) -Path $verifyScript
+    }
+  } catch {
+    Add-CheckResult -Name 'proxy:verify-live' -Passed $false -Detail $_.Exception.Message -Path $verifyScript
+  }
+}
+
 $requiredFiles = @(
   'index.html',
   'README.md',
@@ -338,6 +365,8 @@ $requiredFiles = @(
   'tools\sign_windows_artifacts.ps1',
   'tools\publish_release_manifest.ps1',
   'tools\sync_release_metadata.ps1',
+  'tools\verify_public_proxy.py',
+  'tools\verify_public_proxy.ps1',
   'tools\livelysam_launcher_gui.py',
   'tools\run_release_audit.ps1',
   'tools\run_review_fix_validation.ps1',
@@ -396,6 +425,10 @@ Assert-TextContains -RelativePath 'RELEASE_CHECKLIST.md' -Pattern 'tools\sign_wi
 Assert-TextContains -RelativePath 'RELEASE_CHECKLIST.md' -Pattern 'WINDOWS_SIGN_PFX_BASE64' -Name 'checklist:signing-secret'
 
 Assert-VersionMetadata
+
+if ($VerifyPublicProxy) {
+  Invoke-PublicProxyVerification
+}
 
 $summary = [ordered]@{
   status = $(if ($failed) { 'failed' } else { 'passed' })

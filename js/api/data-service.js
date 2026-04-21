@@ -185,7 +185,13 @@
 
       if (!response.ok) {
         const message = text(payload?.error, `HTTP ${response.status}`);
-        throw new Error(message);
+        const error = new Error(message);
+        error.status = response.status;
+        error.code = text(payload?.code);
+        error.detail = text(payload?.detail);
+        error.payload = payload;
+        error.url = normalizedUrl;
+        throw error;
       }
 
       return payload;

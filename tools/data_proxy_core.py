@@ -22,6 +22,7 @@ OWM_GEO_BASE = "https://api.openweathermap.org/geo/1.0"
 CACHE_VERSION = 1
 
 SCHOOL_SEARCH_TTL = 24 * 60 * 60
+SCHOOL_DIRECTORY_TTL = 7 * 24 * 60 * 60
 MEALS_WEEK_TTL = 6 * 60 * 60
 SCHEDULE_MONTH_TTL = 6 * 60 * 60
 TIMETABLE_WEEK_TTL = 60 * 60
@@ -43,6 +44,37 @@ def text(value: Any, fallback: str = "") -> str:
         return fallback
     normalized = str(value).strip()
     return normalized or fallback
+
+
+def strip_wrapping_quotes(value: Any) -> str:
+    normalized = text(value)
+    if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {'"', "'"}:
+        return normalized[1:-1].strip()
+    return normalized
+
+
+def looks_url_encoded(value: Any) -> bool:
+    normalized = text(value)
+    if "%" not in normalized:
+        return False
+    try:
+        return urllib.parse.unquote(normalized) != normalized
+    except Exception:
+        return False
+
+
+def normalize_service_key(value: Any) -> str:
+    normalized = strip_wrapping_quotes(value)
+    if not normalized:
+        return ""
+    if looks_url_encoded(normalized):
+        try:
+            decoded = urllib.parse.unquote(normalized)
+            if decoded:
+                return strip_wrapping_quotes(decoded)
+        except Exception:
+            return normalized
+    return normalized
 
 
 def clone_json(value: Any) -> Any:
@@ -91,8 +123,8 @@ def extract_service_keys_from_shared_snapshot(raw: Any) -> dict[str, str]:
         }
 
     return {
-        "neisApiKey": text(config.get("neisApiKey")),
-        "weatherApiKey": text(config.get("weatherApiKey")),
+        "neisApiKey": normalize_service_key(config.get("neisApiKey")),
+        "weatherApiKey": normalize_service_key(config.get("weatherApiKey")),
     }
 
 
@@ -187,8 +219,8 @@ class DataProxyService:
 
     def _persist_service_config(self, config: dict[str, str]) -> None:
         next_config = {
-            "neisApiKey": text(config.get("neisApiKey")),
-            "weatherApiKey": text(config.get("weatherApiKey")),
+            "neisApiKey": normalize_service_key(config.get("neisApiKey")),
+            "weatherApiKey": normalize_service_key(config.get("weatherApiKey")),
         }
         if not next_config["neisApiKey"] and not next_config["weatherApiKey"]:
             return
@@ -211,11 +243,11 @@ class DataProxyService:
 
         bootstrap_config = self._read_bootstrap_config()
         merged_file_config = {
-            "neisApiKey": text(
+            "neisApiKey": normalize_service_key(
                 file_config.get("neisApiKey")
                 or file_config.get("LIVELYSAM_NEIS_API_KEY")
             ),
-            "weatherApiKey": text(
+            "weatherApiKey": normalize_service_key(
                 file_config.get("weatherApiKey")
                 or file_config.get("LIVELYSAM_WEATHER_API_KEY")
             ),
@@ -232,11 +264,11 @@ class DataProxyService:
             self._persist_service_config(recovered_config)
 
         return {
-            "neisApiKey": text(
+            "neisApiKey": normalize_service_key(
                 os.environ.get("LIVELYSAM_NEIS_API_KEY")
                 or recovered_config.get("neisApiKey")
             ),
-            "weatherApiKey": text(
+            "weatherApiKey": normalize_service_key(
                 os.environ.get("LIVELYSAM_WEATHER_API_KEY")
                 or recovered_config.get("weatherApiKey")
             ),
@@ -248,6 +280,10 @@ class DataProxyService:
             "configured": {
                 "neis": bool(self._config.get("neisApiKey")),
                 "weather": bool(self._config.get("weatherApiKey")),
+            },
+            "keyHints": {
+                "neisUrlEncoded": looks_url_encoded(os.environ.get("LIVELYSAM_NEIS_API_KEY") or ""),
+                "weatherUrlEncoded": looks_url_encoded(os.environ.get("LIVELYSAM_WEATHER_API_KEY") or ""),
             },
             "cachePath": str(self.cache.path),
             "updatedAt": utc_now_iso(),
@@ -278,7 +314,6 @@ class DataProxyService:
             url,
             headers={
                 "User-Agent": "LivelySamDataProxy/1.0",
-                "Accept": "application/json",
             },
         )
         try:
@@ -359,6 +394,123 @@ class DataProxyService:
                 detail=text(result.get("MESSAGE")),
             )
 
+    def _normalize_school_search_text(self, value: Any) -> str:
+        return "".join(text(value).lower().split())
+
+    def _map_school_row(self, row: Any) -> dict[str, Any] | None:
+        if not isinstance(row, dict):
+            return None
+        name = text(row.get("SCHUL_NM"))
+        atpt_code = text(row.get("ATPT_OFCDC_SC_CODE"))
+        school_code = text(row.get("SD_SCHUL_CODE"))
+        if not (name and atpt_code and school_code):
+            return None
+        return {
+            "name": name,
+            "atptCode": atpt_code,
+            "schoolCode": school_code,
+            "address": text(row.get("ORG_RDNMA") or row.get("ORG_RDNDA")),
+            "schoolType": text(row.get("SCHUL_KND_SC_NM")),
+            "region": text(row.get("ATPT_OFCDC_SC_NM")),
+        }
+
+    def _extract_school_rows(self, payload: Any) -> list[dict[str, Any]]:
+        section = payload.get("schoolInfo") if isinstance(payload, dict) else None
+        rows = section[1].get("row", []) if isinstance(section, list) and len(section) > 1 else []
+        if not isinstance(rows, list):
+            return []
+        result = []
+        for row in rows:
+            mapped = self._map_school_row(row)
+            if mapped:
+                result.append(mapped)
+        return result
+
+    def _get_school_directory(self) -> list[dict[str, Any]]:
+        def producer() -> list[dict[str, Any]]:
+            page_size = 1000
+            page_index = 1
+            total_count = None
+            schools: list[dict[str, Any]] = []
+            seen: set[str] = set()
+
+            while True:
+                payload = self._fetch_neis(
+                    "schoolInfo",
+                    {
+                        "pIndex": str(page_index),
+                        "pSize": str(page_size),
+                    },
+                )
+                self._check_neis_error(payload, "schoolInfo")
+                if total_count is None:
+                    result = self._get_neis_result(payload, "schoolInfo") or {}
+                    head = payload.get("schoolInfo") if isinstance(payload, dict) else None
+                    total_candidate = None
+                    if isinstance(head, list) and head:
+                        metadata_head = head[0].get("head") if isinstance(head[0], dict) else None
+                        if isinstance(metadata_head, list) and metadata_head:
+                            total_candidate = metadata_head[0].get("list_total_count") if isinstance(metadata_head[0], dict) else None
+                    total_count = int(total_candidate or 0)
+                    if text(result.get("CODE")) == "INFO-200":
+                        break
+
+                page_rows = self._extract_school_rows(payload)
+                if not page_rows:
+                    break
+
+                for school in page_rows:
+                    signature = f"{school['atptCode']}|{school['schoolCode']}"
+                    if signature in seen:
+                        continue
+                    seen.add(signature)
+                    schools.append(school)
+
+                if total_count and len(schools) >= total_count:
+                    break
+                if len(page_rows) < page_size:
+                    break
+                page_index += 1
+
+            return schools
+
+        return self._remember("school-directory", "all-schools-v1", SCHOOL_DIRECTORY_TTL, producer)
+
+    def _search_school_directory(self, school_name: Any) -> list[dict[str, Any]]:
+        token = self._normalize_school_search_text(school_name)
+        if not token:
+            return []
+
+        def score(school: dict[str, Any]) -> tuple[int, int, str, str]:
+            normalized_name = self._normalize_school_search_text(school.get("name"))
+            normalized_region = self._normalize_school_search_text(school.get("region"))
+            if normalized_name == token:
+                rank = 0
+            elif normalized_name.startswith(token):
+                rank = 1
+            elif token in normalized_name:
+                rank = 2
+            elif token in normalized_region:
+                rank = 3
+            else:
+                rank = 9
+            return (rank, len(normalized_name), text(school.get("region")), text(school.get("name")))
+
+        matches = []
+        for school in self._get_school_directory():
+            normalized_name = self._normalize_school_search_text(school.get("name"))
+            normalized_region = self._normalize_school_search_text(school.get("region"))
+            normalized_address = self._normalize_school_search_text(school.get("address"))
+            if (
+                token in normalized_name or
+                token in normalized_region or
+                token in normalized_address
+            ):
+                matches.append(school)
+
+        matches.sort(key=score)
+        return matches
+
     def search_school(self, school_name: Any) -> list[dict[str, Any]]:
         name = text(school_name)
         if not name:
@@ -367,24 +519,18 @@ class DataProxyService:
         cache_key = name.replace(" ", "").lower()
 
         def producer() -> list[dict[str, Any]]:
-            payload = self._fetch_neis("schoolInfo", {"SCHUL_NM": name})
-            self._check_neis_error(payload, "schoolInfo")
-            section = payload.get("schoolInfo") if isinstance(payload, dict) else None
-            rows = section[1].get("row", []) if isinstance(section, list) and len(section) > 1 else []
-            if not isinstance(rows, list):
-                return []
-            return [
-                {
-                    "name": text(row.get("SCHUL_NM")),
-                    "atptCode": text(row.get("ATPT_OFCDC_SC_CODE")),
-                    "schoolCode": text(row.get("SD_SCHUL_CODE")),
-                    "address": text(row.get("ORG_RDNMA") or row.get("ORG_RDNDA")),
-                    "schoolType": text(row.get("SCHUL_KND_SC_NM")),
-                    "region": text(row.get("ATPT_OFCDC_SC_NM")),
-                }
-                for row in rows
-                if isinstance(row, dict)
-            ]
+            try:
+                payload = self._fetch_neis("schoolInfo", {"SCHUL_NM": name})
+                self._check_neis_error(payload, "schoolInfo")
+                return self._extract_school_rows(payload)
+            except ProxyServiceError as exc:
+                should_fallback = (
+                    exc.code == "ERROR-500" or
+                    (exc.code == "upstream_http_error" and "500" in text(exc.detail))
+                )
+                if not should_fallback:
+                    raise
+                return self._search_school_directory(name)
 
         return self._remember("school-search", cache_key, SCHOOL_SEARCH_TTL, producer)
 

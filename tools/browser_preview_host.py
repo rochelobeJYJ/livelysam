@@ -119,7 +119,9 @@ def get_root_path() -> Path:
 
 ROOT_PATH = get_root_path()
 SCRIPT_PATH = Path(__file__).resolve()
-RUNTIME_DIR = ROOT_PATH / "runtime" / "browser-preview"
+LOCAL_APPDATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
+APPDATA_DIR = LOCAL_APPDATA / "LivelySam"
+RUNTIME_DIR = APPDATA_DIR / "runtime" / "browser-preview"
 STATE_FILE = RUNTIME_DIR / "state.json"
 RESULT_FILE = RUNTIME_DIR / "last-result.json"
 PROFILE_DIR = RUNTIME_DIR / "browser-profile"
@@ -650,18 +652,29 @@ def start_preview() -> int:
 
     browser_process = None
     browser_path = detect_browser()
-    try:
-        if browser_path:
+    resolved_browser_pid = 0
+    launch_errors: list[str] = []
+
+    if browser_path:
+        try:
             browser_process = launch_browser_app(browser_path, PROFILE_DIR, launch_url)
             resolved_browser_pid = resolve_browser_pid(browser_process.pid, browser_path, PROFILE_DIR, timeout=6.0)
             if resolved_browser_pid <= 0:
                 raise RuntimeError(f"Browser process did not stay running: {browser_path}")
-        else:
+        except Exception as app_browser_error:
+            launch_errors.append(str(app_browser_error))
+            browser_path = None
+            browser_process = None
+            resolved_browser_pid = 0
+
+    if resolved_browser_pid <= 0:
+        try:
             start_system_browser(launch_url)
             resolved_browser_pid = 0
-    except Exception as fallback_error:
-        stop_pid(server_process.pid)
-        raise RuntimeError(f"Failed to open the default browser: {fallback_error}") from fallback_error
+        except Exception as fallback_error:
+            stop_pid(server_process.pid)
+            launch_errors.append(str(fallback_error))
+            raise RuntimeError("Failed to open a browser: " + " | ".join(launch_errors)) from fallback_error
 
     state = {
         "mode": "browser_preview",

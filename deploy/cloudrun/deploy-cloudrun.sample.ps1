@@ -1,4 +1,4 @@
-$ProjectId = "YOUR_PROJECT_ID"
+$ProjectId = "livelysam"
 $Region = "asia-northeast3"
 $ServiceName = "livelysam-data-proxy"
 $ArtifactRepository = "livelysam-images"

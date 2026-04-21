@@ -25,7 +25,8 @@ $ErrorActionPreference = "Stop"
 
 $rootPath = [System.IO.Path]::GetFullPath($Root)
 $statusScript = Join-Path $rootPath "tools\local_wallpaper_host.ps1"
-$runtimeDir = Join-Path $rootPath "runtime\desktop-host"
+$localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME "AppData\Local" }
+$runtimeDir = Join-Path $localAppData "LivelySam\runtime\desktop-host"
 $stateFile = Join-Path $runtimeDir "state.json"
 $resultFile = Join-Path $runtimeDir "last-result.json"
 $logFile = Join-Path $runtimeDir "host.log"
@@ -87,6 +88,7 @@ $allowPrimaryFallbackLiteral = if ($AllowPrimaryFallback) { '$true' } else { '$f
 $bridgePortLiteral = if ($bridgeInfo -and [int]$bridgeInfo.port -gt 0) { [string][int]$bridgeInfo.port } else { '0' }
 $bridgeTokenLiteral = if ($bridgeInfo) { [string]$bridgeInfo.auth_token } else { '' }
 $bridgeTokenLiteral = $bridgeTokenLiteral.Replace("'", "''")
+$runtimeDirLiteral = $runtimeDir.Replace("'", "''")
 $launcherScript = @"
 `$ErrorActionPreference = 'Stop'
 `$RootPath = '$rootPathLiteral'
@@ -100,7 +102,7 @@ $launcherScript = @"
 `$AllowPrimaryFallback = $allowPrimaryFallbackLiteral
 `$BridgePort = $bridgePortLiteral
 `$BridgeToken = '$bridgeTokenLiteral'
-`$RuntimeDir = Join-Path `$RootPath 'runtime\desktop-host'
+`$RuntimeDir = '$runtimeDirLiteral'
 `$StateFile = Join-Path `$RuntimeDir 'state.json'
 `$ResultFile = Join-Path `$RuntimeDir 'last-result.json'
 `$StopFile = Join-Path `$RuntimeDir 'stop.flag'
@@ -1733,7 +1735,7 @@ while ($attemptCount -lt $maxAttempts) {
     $shouldRetry = (
         $attemptCount -lt $maxAttempts -and
         $failureText -and
-        ($failureText -match "WebView2 initialization failed" -or
+        ($failureText -match "WebView2" -or
          $failureText -match "0x8000FFFF" -or
          $failureText -match "0x800700AA" -or
          $failureText -match "E_UNEXPECTED")
@@ -1751,7 +1753,7 @@ $shouldUseBrowserFallback = (
     -not ($outcome -and $outcome.attached) -and
     (
         -not $failureText -or
-        $failureText -match "WebView2 initialization failed" -or
+        $failureText -match "WebView2" -or
         $failureText -match "0x8000FFFF" -or
         $failureText -match "E_UNEXPECTED" -or
         $failureText -match "Timed out waiting for the wallpaper host to attach"

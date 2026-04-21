@@ -477,7 +477,7 @@
       } catch (e) {
         console.error('[LivelySam] 학교 자동 설정 실패:', e);
         if (requestId !== this._schoolResolveRequestId) return;
-        const failureMessage = await this._buildSchoolSearchFailureMessage();
+        const failureMessage = await this._buildSchoolSearchFailureMessage(e);
         this._schoolResolveState = {
           status: 'error',
           message: failureMessage
@@ -486,7 +486,7 @@
       }
     },
 
-    async _buildSchoolSearchFailureMessage() {
+    async _buildSchoolSearchFailureMessage(error = null) {
       const directKeyConfigured = typeof LS.NeisAPI.hasDirectKey === 'function'
         ? LS.NeisAPI.hasDirectKey()
         : Boolean((LS.Config.get('neisApiKey') || '').trim());
@@ -496,6 +496,26 @@
 
       const baseUrl = String(LS.DataService?.getBaseUrl?.() || '').trim();
       const usingLocalProxy = /^http:\/\/(127\.0\.0\.1|localhost):\d+\/api$/i.test(baseUrl);
+      const errorCode = String(error?.code || '').trim();
+      const errorDetail = String(error?.detail || '').trim();
+
+      if (errorCode === 'ERROR-290') {
+        return usingLocalProxy
+          ? '학교 검색에 실패했습니다. 이 PC의 NEIS 키가 유효하지 않습니다. 설정에서 직접 입력한 키를 다시 확인해 주세요.'
+          : '학교 검색에 실패했습니다. 공용 학교 서버의 NEIS 키가 유효하지 않습니다. 운영자가 Cloud Run 비밀키를 다시 확인해야 합니다.';
+      }
+
+      if (errorCode === 'ERROR-500') {
+        return usingLocalProxy
+          ? '학교 검색에 실패했습니다. NEIS가 서버 오류를 반환했습니다. 이 PC의 NEIS 키 상태를 다시 확인해 주세요.'
+          : '학교 검색에 실패했습니다. 공용 학교 서버는 연결됐지만 NEIS가 서버 오류를 반환했습니다. 운영자가 공용 NEIS 키와 서비스 상태를 점검해야 합니다.';
+      }
+
+      if (errorCode === 'upstream_http_error' && /500/i.test(errorDetail)) {
+        return usingLocalProxy
+          ? '학교 검색에 실패했습니다. NEIS 서버가 HTTP 500을 반환했습니다. 이 PC의 NEIS 키 상태를 다시 확인해 주세요.'
+          : '학교 검색에 실패했습니다. 공용 학교 서버가 NEIS에서 HTTP 500을 받고 있습니다. 공용 NEIS 키가 잘못 인코딩되었거나 권한에 문제가 있을 수 있습니다.';
+      }
 
       try {
         const health = await LS.DataService.fetchJson('health', {}, { timeoutMs: 2500 });
@@ -5851,7 +5871,7 @@
           });
         });
       } catch (e) {
-        const failureMessage = await this._buildSchoolSearchFailureMessage();
+        const failureMessage = await this._buildSchoolSearchFailureMessage(e);
         resultBox.innerHTML = `<div class="search-error">${LS.Helpers.escapeHtml(failureMessage)}</div>`;
       }
     },

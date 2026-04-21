@@ -9,7 +9,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $rootPath = [System.IO.Path]::GetFullPath($Root)
-$runtimeDir = Join-Path $rootPath "runtime\desktop-host"
+$localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME "AppData\Local" }
+$runtimeDir = Join-Path $localAppData "LivelySam\runtime\desktop-host"
 $stateFile = Join-Path $runtimeDir "state.json"
 $resultFile = Join-Path $runtimeDir "last-result.json"
 $stopFile = Join-Path $runtimeDir "stop.flag"
