@@ -110,6 +110,7 @@
     _googleProgressBound: false,
     _googleProgressHandler: null,
     _googleSyncPromise: null,
+    _googleSyncActiveOptions: null,
     _googleSyncSuppressUntil: 0,
     _googleStatusRefreshPromise: null,
     _lastGoogleDiagnostics: null,
@@ -2347,24 +2348,42 @@
         return LS.GoogleWorkspace?.getStatus?.() || {};
       }
       if (this._googleSyncPromise) {
-        return this._googleSyncPromise;
+        const requestedInteractive = Boolean(options.interactive);
+        const activeInteractive = Boolean(this._googleSyncActiveOptions?.interactive);
+        if (!requestedInteractive || activeInteractive) {
+          return this._googleSyncPromise;
+        }
+
+        try {
+          await this._googleSyncPromise;
+        } catch {
+          // Ignore the previous non-interactive failure and retry with an
+          // interactive run so the user can reopen Google login immediately.
+        }
+
+        if (this._googleSyncPromise) {
+          return this._googleSyncPromise;
+        }
       }
 
+      const nextOptions = {
+        interactive: Boolean(options.interactive),
+        silent: Boolean(options.silent)
+      };
       this._googleSyncSuppressUntil = Date.now() + 1800;
       this._lastGoogleDiagnostics = this._getGoogleDiagnosticsSnapshot();
       this._refreshGoogleSettingsStatus();
       this._refreshGoogleSyncDockButton();
       let syncTask = null;
+      this._googleSyncActiveOptions = nextOptions;
       syncTask = (async () => {
         try {
-          return await LS.GoogleWorkspace.sync({
-            interactive: Boolean(options.interactive),
-            silent: Boolean(options.silent)
-          });
+          return await LS.GoogleWorkspace.sync(nextOptions);
         } finally {
           this._googleSyncSuppressUntil = Date.now() + 1800;
           if (this._googleSyncPromise === syncTask) {
             this._googleSyncPromise = null;
+            this._googleSyncActiveOptions = null;
           }
           this._refreshGoogleSettingsStatus();
           this._refreshGoogleSyncDockButton();
