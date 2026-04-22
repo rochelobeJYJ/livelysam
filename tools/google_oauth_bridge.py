@@ -75,6 +75,18 @@ def write_json_file(path: Path, payload: Any) -> None:
     os.replace(temp_path, path)
 
 
+def is_revoked_token_error(message: Any) -> bool:
+    normalized = text(message).lower()
+    if not normalized:
+        return False
+    return (
+        "invalid_grant" in normalized
+        or "expired or revoked" in normalized
+        or "token has been expired or revoked" in normalized
+        or "revoked" in normalized
+    )
+
+
 def normalize_scopes(scopes: Any) -> list[str]:
     if isinstance(scopes, str):
         items = scopes.split()
@@ -593,8 +605,18 @@ class GoogleOAuthBridge:
             raise RuntimeError("Google 로그인이 필요합니다.")
 
         if not self._has_valid_access_token(auth):
-            auth = self._refresh_access_token(config, auth)
-            self._write_auth(auth)
+            try:
+                auth = self._refresh_access_token(config, auth)
+                self._write_auth(auth)
+            except Exception as exc:
+                if is_revoked_token_error(exc):
+                    self._clear_auth()
+                    self._set_login_state(
+                        in_progress=False,
+                        message="Google 연결이 만료되었거나 취소되었습니다. 다시 로그인해 주세요.",
+                        last_error=str(exc),
+                    )
+                raise
 
         return {
             "auth": build_public_auth(auth, include_access_token=True),

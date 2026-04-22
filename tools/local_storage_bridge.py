@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from data_proxy_core import DataProxyService, ProxyServiceError
-from google_oauth_bridge import GoogleOAuthBridge
+from google_oauth_bridge import GoogleOAuthBridge, is_revoked_token_error
 
 
 APP_NAME = "LivelySam"
@@ -588,7 +588,9 @@ class LivelySamStorageHandler(BaseHTTPRequestHandler):
                 self._send_json(200, {"ok": True, "status": status})
                 return
         except Exception as exc:
-            self._send_json(400, {"ok": False, "error": str(exc), "status": bridge.get_status()})
+            status_code = 401 if is_revoked_token_error(exc) else 400
+            error_code = "auth_revoked" if status_code == 401 else "google_auth_error"
+            self._send_json(status_code, {"ok": False, "error": str(exc), "code": error_code, "status": bridge.get_status()})
             return
 
         self._send_json(404, {"ok": False, "error": "Not found"})

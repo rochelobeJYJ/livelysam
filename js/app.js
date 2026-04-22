@@ -138,10 +138,10 @@
       LS.Lively.init();
       LS.WallpaperEngine?.init?.();
       this._initEnvironment();
-      {
-        const savedLayoutEditMode = LS.Storage.get('layoutEditMode', false);
-        this._layoutEditMode = savedLayoutEditMode === true || savedLayoutEditMode === 'true';
-      }
+      // Layout edit mode is session-only. Always start in the completed state
+      // so users do not reopen the app into an editable, unsaved-feeling layout.
+      this._layoutEditMode = false;
+      LS.Storage.remove('layoutEditMode');
       await LS.Records.init();
       this._initGrid();
       this._seedLayoutPersistence();
@@ -1472,7 +1472,6 @@
         widgetVisibility: snapshot.widgetVisibility
       });
       LS.Storage.remove(LAYOUT_RESTORE_PENDING_STORAGE_KEY);
-      LS.Storage.set('layoutEditMode', true);
       await this._applyLayoutSnapshotToGrid(snapshot.layout, snapshot.widgetVisibility);
       this._layoutEditMode = true;
       this._applyLayoutEditMode();
@@ -1844,7 +1843,6 @@
       }
 
       if (options.reload !== false) {
-        LS.Storage.set('layoutEditMode', this._layoutEditMode);
         this._reloadAfterStorageFlush(options.reloadDelay || 180);
       }
 
@@ -1899,7 +1897,6 @@
         toastMessage: `${meta.title} 위젯을 기본 위치로 다시 열었습니다.`,
         toastTone: 'success'
       });
-      LS.Storage.set('layoutEditMode', this._layoutEditMode);
       this._reloadAfterStorageFlush(160);
       return true;
     },
@@ -1920,7 +1917,6 @@
         reason: 'widget-hide',
         widgetVisibility: nextVisibility
       });
-      LS.Storage.set('layoutEditMode', this._layoutEditMode);
       await this._applyLayoutSnapshotToGrid(nextLayout, nextVisibility);
       this._layoutEditMode = true;
       this._applyLayoutEditMode();
@@ -1952,7 +1948,6 @@
         reason: 'show-hidden-widget',
         widgetVisibility: nextVisibility
       });
-      LS.Storage.set('layoutEditMode', this._layoutEditMode);
       await this._applyLayoutSnapshotToGrid(nextLayout, nextVisibility);
       this._layoutEditMode = true;
       this._applyLayoutEditMode();
@@ -1996,7 +1991,7 @@
       const button = document.getElementById('layout-mode-btn');
       if (button) {
         button.classList.toggle('is-active', isEditing);
-        button.textContent = isEditing ? '완료' : '배치';
+        button.textContent = isEditing ? '완료' : '배치 시작';
         button.title = isEditing ? '배치 편집 종료' : '배치 편집 시작';
         button.setAttribute('aria-label', button.title);
       }
@@ -2019,7 +2014,6 @@
         this._lastSafeVisibleLayout = this._cloneLayout(this._captureCurrentVisibleGridLayout());
       }
       this._layoutEditMode = nextState;
-      LS.Storage.set('layoutEditMode', nextState);
       this._applyLayoutEditMode();
       LS.Helpers.showToast(
         nextState ? '배치 편집 모드를 켰습니다. 위젯을 자유롭게 옮기고 크기를 조절할 수 있으며, 빈 공간을 클릭하면 숨겨진 위젯을 기본 위치로 다시 열 수 있습니다.' : '배치 편집 모드를 종료했습니다.',
@@ -3623,7 +3617,7 @@
         return button;
       };
 
-      const layoutBtn = ensureButton('layout-mode-btn', '배치', '배치 편집 시작');
+      const layoutBtn = ensureButton('layout-mode-btn', '배치 시작', '배치 편집 시작');
       const revertBtn = ensureButton('layout-revert-btn', '원복', '편집 시작 전 배치로 되돌리기');
       const minigameBtn = ensureButton('minigame-dock-btn', '미니게임', '미니게임 열기');
       const quickBtn = ensureButton('quick-add-btn', '추가', '빠른 추가');
@@ -4356,7 +4350,7 @@
       if (diagnostics?.bridgeReachable === false) {
         return '연결 확인 도구에 응답이 없습니다. 앱을 다시 실행한 뒤 상태 새로고침을 눌러 주세요.';
       }
-      if (/invalid_grant/i.test(raw)) {
+      if (/invalid_grant|expired or revoked|token has been expired or revoked|revoked/i.test(raw)) {
         return 'Google 연결이 만료되었거나 취소되었습니다. 다시 로그인을 눌러 주세요.';
       }
       if (/access blocked|app not verified/i.test(raw)) {

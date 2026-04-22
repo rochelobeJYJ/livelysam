@@ -240,6 +240,17 @@
     persistAuthState();
   }
 
+  function isRevokedAuthError(error) {
+    const raw = text(error?.message).toLowerCase();
+    return Boolean(
+      error?.status === 401
+      || /invalid_grant/.test(raw)
+      || /expired or revoked/.test(raw)
+      || /token has been expired or revoked/.test(raw)
+      || /revoked/.test(raw)
+    );
+  }
+
   function hasNativeBridgeConfigured() {
     return Boolean(nativeBridgeStatus.available && nativeBridgeStatus.configured);
   }
@@ -778,16 +789,45 @@
       await requestNativeLogin();
     }
 
-    const payload = await fetchJson(NATIVE_TOKEN_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        scopes: getEnabledScopes()
-      }),
-      timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.long)
-    });
+    let payload;
+    try {
+      payload = await fetchJson(NATIVE_TOKEN_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          scopes: getEnabledScopes()
+        }),
+        timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.long)
+      });
+    } catch (error) {
+      if (!isRevokedAuthError(error)) {
+        throw error;
+      }
+
+      clearAuthState();
+      await refreshNativeBridgeStatus({
+        emit: false,
+        clearLocalAuthWhenDisconnected: true
+      });
+
+      if (!options.interactive) {
+        throw new Error('Google 연결이 만료되었거나 취소되었습니다. 다시 로그인해 주세요.');
+      }
+
+      await requestNativeLogin();
+      payload = await fetchJson(NATIVE_TOKEN_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          scopes: getEnabledScopes()
+        }),
+        timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.long)
+      });
+    }
 
     updateNativeBridgeStatus(payload?.status, { emit: false });
     const accessToken = applyNativeTokenResponse(payload?.auth || {});
