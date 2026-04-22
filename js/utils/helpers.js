@@ -449,6 +449,8 @@
         const bodyEl = document.getElementById('prompt-modal-body');
         const btnConfirm = document.getElementById('prompt-modal-confirm');
         const btnCancel = document.getElementById('prompt-modal-cancel');
+        const contentEl = overlay?.querySelector('.prompt-modal-content');
+        const appliedContentClasses = [];
 
         if (!overlay || !bodyEl || !titleEl || !btnConfirm || !btnCancel) {
           resolve(null);
@@ -468,10 +470,31 @@
           bodyEl.appendChild(messageEl);
         }
 
+        if (contentEl) {
+          contentEl.style.width = options.width || '';
+          contentEl.style.maxWidth = options.maxWidth || '';
+          String(options.contentClassName || '')
+            .split(/\s+/)
+            .map((name) => name.trim())
+            .filter(Boolean)
+            .forEach((name) => {
+              contentEl.classList.add(name);
+              appliedContentClasses.push(name);
+            });
+        }
+
         const inputs = {};
+        let autofocusField = null;
         fields.forEach((f) => {
           const row = document.createElement('div');
           row.className = 'prompt-input-row';
+          row.dataset.fieldId = f.id || '';
+          row.dataset.fieldType = f.type || 'text';
+          String(f.rowClassName || '')
+            .split(/\s+/)
+            .map((name) => name.trim())
+            .filter(Boolean)
+            .forEach((name) => row.classList.add(name));
 
           if (f.label) {
             const label = document.createElement('label');
@@ -484,6 +507,7 @@
           if (f.type === 'textarea') {
             el = document.createElement('textarea');
             if (f.rows) el.rows = f.rows;
+            if (f.minHeight) el.style.minHeight = f.minHeight;
           } else if (f.type === 'select') {
             el = document.createElement('select');
             (f.options || []).forEach((opt) => {
@@ -553,6 +577,11 @@
             if (f.readonly) el.readOnly = true;
             el.className = 'prompt-input';
             el.id = 'prompt-input-' + f.id;
+            String(f.inputClassName || '')
+              .split(/\s+/)
+              .map((name) => name.trim())
+              .filter(Boolean)
+              .forEach((name) => el.classList.add(name));
           }
 
           row.appendChild(el);
@@ -564,6 +593,9 @@
           }
           bodyEl.appendChild(row);
           inputs[f.id] = el;
+          if (f.autofocus && !autofocusField && f.type !== 'icon-grid') {
+            autofocusField = el;
+          }
         });
 
         const allDayInput = inputs.allDay;
@@ -597,6 +629,11 @@
           document.body.classList.remove('prompt-open');
           document.body.classList.toggle('settings-open', Boolean(settingsActive));
           document.body.classList.toggle('modal-open', Boolean(settingsActive));
+          if (contentEl) {
+            appliedContentClasses.forEach((name) => contentEl.classList.remove(name));
+            contentEl.style.width = '';
+            contentEl.style.maxWidth = '';
+          }
           overlay.removeEventListener('click', handleOverlayClick);
           document.removeEventListener('keydown', handleKeydown);
           btnConfirm.onclick = null;
@@ -649,7 +686,7 @@
         document.body.classList.add('modal-open', 'prompt-open');
         overlay.classList.add('active');
 
-        const firstField = fields[0] ? inputs[fields[0].id] : null;
+        const firstField = autofocusField || (fields[0] ? inputs[fields[0].id] : null);
         if (firstField) {
           firstField.focus();
           if (typeof firstField.select === 'function' && !firstField.readOnly) {

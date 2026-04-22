@@ -2553,7 +2553,7 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   justify-content: space-between;
   margin-bottom: calc(6px * var(--widget-space-scale));
 }
-.memo-pin, .memo-delete {
+.memo-pin, .memo-copy, .memo-delete {
   width: 24px;
   height: 24px;
   border: none;
@@ -2564,8 +2564,9 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   opacity: 0.5;
   transition: opacity var(--transition-fast);
 }
-.memo-pin:hover, .memo-delete:hover { opacity: 1; }
+.memo-pin:hover, .memo-copy:hover, .memo-delete:hover { opacity: 1; }
 .memo-pin.pinned { opacity: 1; }
+.memo-copy:hover { background: rgba(0, 0, 0, 0.06); }
 .memo-delete:hover { background: #FFEBEE; }
 
 .memo-card-body {
@@ -3126,6 +3127,7 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   gap: calc(4px * var(--widget-space-scale));
 }
 
+.memo-copy,
 .memo-edit,
 .todo-edit,
 .dday-edit {
@@ -3141,6 +3143,7 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   transition: opacity var(--transition-fast), background var(--transition-fast);
 }
 
+.memo-copy:hover,
 .memo-edit:hover,
 .todo-edit:hover,
 .dday-edit:hover {
@@ -3500,6 +3503,19 @@ body.layout-edit-mode #widget-timetable .tt-toolbar-meta {
   color: var(--text-secondary);
   font-size: 0.82em;
   line-height: 1.5;
+}
+
+.prompt-modal-record-editor {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.prompt-modal-note-editor .prompt-input-row[data-field-id="body"] {
+  gap: 8px;
+}
+
+.prompt-modal-note-editor .record-editor-note-body-input {
+  min-height: 260px;
+  line-height: 1.55;
 }
 
 /* ================================================================

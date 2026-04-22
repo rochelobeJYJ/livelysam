@@ -45,6 +45,15 @@
     return { title, preview, fallback };
   }
 
+  function buildMemoCopyText(record) {
+    const title = String(record?.title || '').trim();
+    const body = String(LS.Records.getDisplayBody(record) || '').trim();
+    if (title && body) {
+      return `${title}\n\n${body}`;
+    }
+    return body || title;
+  }
+
   LS.MemoWidget = {
     _bound: false,
     _query: '',
@@ -122,6 +131,7 @@
       html += '<div class="memo-card-header">';
       html += `<button class="memo-pin ${record.pinned ? 'pinned' : ''}" data-action="pin" title="${record.pinned ? '고정 해제' : '상단 고정'}">📌</button>`;
       html += '<div class="memo-card-actions-right">';
+      html += '<button class="memo-copy" data-action="copy" title="복사">📋</button>';
       html += '<button class="memo-edit" data-action="edit" title="편집">✏️</button>';
       html += '<button class="memo-delete" data-action="delete" title="삭제">✕</button>';
       html += '</div></div>';
@@ -229,6 +239,18 @@
 
       if (action === 'color') {
         await LS.Records.setColor(recordId, event.target.dataset.color);
+        return;
+      }
+
+      if (action === 'copy') {
+        const record = LS.Records.getById(recordId);
+        const text = buildMemoCopyText(record);
+        if (!text) {
+          LS.Helpers.showToast('복사할 메모 내용이 없습니다.', 'warning', 2400);
+          return;
+        }
+        const copied = await LS.App?._copyTextToClipboard?.(text);
+        LS.Helpers.showToast(copied ? '메모를 복사했습니다.' : '메모 복사에 실패했습니다.', copied ? 'success' : 'warning', copied ? 2200 : 2800);
         return;
       }
 

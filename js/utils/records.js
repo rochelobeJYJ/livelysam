@@ -1094,6 +1094,45 @@
       }
     ];
 
+    const noteFields = [
+      {
+        id: 'title',
+        type: 'text',
+        label: '제목',
+        value: record.title,
+        placeholder: '제목 없이 내용만 저장해도 됩니다.'
+      },
+      {
+        id: 'body',
+        type: 'textarea',
+        label: '내용',
+        value: record.body,
+        rows: 12,
+        minHeight: '260px',
+        placeholder: '메모 내용을 입력하세요. 체크리스트는 - [ ] 형식으로 적을 수 있습니다.',
+        autofocus: true,
+        rowClassName: 'record-editor-note-body-row',
+        inputClassName: 'record-editor-note-body-input'
+      },
+      {
+        id: 'color',
+        type: 'select',
+        label: '색상',
+        value: record.color,
+        options: COLORS.map((item) => ({ value: item.value, text: item.label }))
+      },
+      {
+        id: 'pinned',
+        type: 'select',
+        label: '상단 고정',
+        value: record.pinned ? '1' : '0',
+        options: [
+          { value: '0', text: '아니오' },
+          { value: '1', text: '예' }
+        ]
+      }
+    ];
+
     const taskQuickFields = [
       { id: 'title', type: 'text', label: '할 일', value: record.title, placeholder: '예: 수행평가 점검하기' },
       { id: 'dueDate', type: 'date', label: '마감일', value: record.task.dueDate },
@@ -1187,10 +1226,7 @@
     };
 
     const fieldMap = {
-      note: [
-        ...common,
-        ...bookmarkFields
-      ],
+      note: noteFields,
       task: [
         ...common,
         ...bookmarkFields,
@@ -1281,15 +1317,24 @@
       bookmark: '북마크 편집'
     };
 
-    const promptFields = mode === 'task'
+    const promptFields = mode === 'note'
+      ? noteFields
+      : mode === 'task'
       ? taskQuickFields
       : mode === 'schedule'
         ? scheduleQuickFields
         : fieldMap[mode] || common;
 
-    const result = await LS.Helpers.promptModal(titleMap[mode] || '항목 편집', promptFields, {
+    const promptOptions = {
       confirmText: '저장'
-    });
+    };
+    if (mode === 'note') {
+      promptOptions.width = 'min(720px, calc(100vw - 32px))';
+      promptOptions.maxWidth = 'calc(100vw - 24px)';
+      promptOptions.contentClassName = 'prompt-modal-record-editor prompt-modal-note-editor';
+    }
+
+    const result = await LS.Helpers.promptModal(titleMap[mode] || '항목 편집', promptFields, promptOptions);
 
     if (!result) return null;
 

@@ -546,6 +546,7 @@
       return false;
     }
     return normalized === 'seed'
+      || normalized === 'seed-default-layout'
       || normalized === 'repair'
       || normalized === 'fit-layout'
       || normalized === 'fit-layout-noop'

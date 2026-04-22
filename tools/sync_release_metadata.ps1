@@ -65,6 +65,22 @@ function Write-Utf8File {
     [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
 }
 
+function Read-ManifestState {
+    param(
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    try {
+        return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
 $jsVersionPath = Join-Path $rootPath "js\version.js"
 $jsVersionContent = @"
 (function (global) {
@@ -142,8 +158,22 @@ Write-Utf8File -Path $issIncludePath -Content $issIncludeContent
 function New-ManifestPayload {
     param(
         [string]$Channel,
-        [bool]$Prerelease
+        [bool]$Prerelease,
+        [object]$ExistingManifest = $null
     )
+
+    $preservedPublishedAt = ""
+    $preservedSha256 = ""
+
+    if (
+        $ExistingManifest `
+        -and (Get-StringValue -Value $ExistingManifest.version) -eq $version `
+        -and (Get-StringValue -Value $ExistingManifest.releaseTag) -eq $releaseTag `
+        -and (Get-StringValue -Value $ExistingManifest.installer.fileName) -eq $installerFileName
+    ) {
+        $preservedPublishedAt = Get-StringValue -Value $ExistingManifest.publishedAt
+        $preservedSha256 = Get-StringValue -Value $ExistingManifest.installer.sha256
+    }
 
     return [ordered]@{
         manifestVersion = 1
@@ -152,12 +182,12 @@ function New-ManifestPayload {
         version = $version
         releaseTag = $releaseTag
         prerelease = $Prerelease
-        publishedAt = ""
+        publishedAt = $preservedPublishedAt
         releaseNotesUrl = $releaseNotesUrl
         installer = [ordered]@{
             fileName = $installerFileName
             downloadUrl = $downloadUrl
-            sha256 = ""
+            sha256 = $preservedSha256
         }
     }
 }
@@ -165,8 +195,11 @@ function New-ManifestPayload {
 $stableManifestPath = Join-Path $rootPath "release\updates\latest-stable.json"
 $betaManifestPath = Join-Path $rootPath "release\updates\latest-beta.json"
 
-Write-Utf8File -Path $stableManifestPath -Content ((New-ManifestPayload -Channel "stable" -Prerelease $false) | ConvertTo-Json -Depth 6)
-Write-Utf8File -Path $betaManifestPath -Content ((New-ManifestPayload -Channel "beta" -Prerelease $true) | ConvertTo-Json -Depth 6)
+$existingStableManifest = Read-ManifestState -Path $stableManifestPath
+$existingBetaManifest = Read-ManifestState -Path $betaManifestPath
+
+Write-Utf8File -Path $stableManifestPath -Content ((New-ManifestPayload -Channel "stable" -Prerelease $false -ExistingManifest $existingStableManifest) | ConvertTo-Json -Depth 6)
+Write-Utf8File -Path $betaManifestPath -Content ((New-ManifestPayload -Channel "beta" -Prerelease $true -ExistingManifest $existingBetaManifest) | ConvertTo-Json -Depth 6)
 
 [ordered]@{
     ok = $true
