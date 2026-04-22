@@ -81,6 +81,26 @@ function Read-ManifestState {
     }
 }
 
+function Should-PreserveManifestContent {
+    param(
+        [object]$ExistingManifest
+    )
+
+    if ($null -eq $ExistingManifest) {
+        return $false
+    }
+
+    $existingVersion = Get-StringValue -Value $ExistingManifest.version
+    $existingReleaseTag = Get-StringValue -Value $ExistingManifest.releaseTag
+    $existingInstallerFileName = Get-StringValue -Value $ExistingManifest.installer.fileName
+
+    return (
+        $existingVersion -eq $version `
+        -and $existingReleaseTag -eq $releaseTag `
+        -and $existingInstallerFileName -eq $installerFileName
+    )
+}
+
 $jsVersionPath = Join-Path $rootPath "js\version.js"
 $jsVersionContent = @"
 (function (global) {
@@ -165,12 +185,7 @@ function New-ManifestPayload {
     $preservedPublishedAt = ""
     $preservedSha256 = ""
 
-    if (
-        $ExistingManifest `
-        -and (Get-StringValue -Value $ExistingManifest.version) -eq $version `
-        -and (Get-StringValue -Value $ExistingManifest.releaseTag) -eq $releaseTag `
-        -and (Get-StringValue -Value $ExistingManifest.installer.fileName) -eq $installerFileName
-    ) {
+    if (Should-PreserveManifestContent -ExistingManifest $ExistingManifest) {
         $preservedPublishedAt = Get-StringValue -Value $ExistingManifest.publishedAt
         $preservedSha256 = Get-StringValue -Value $ExistingManifest.installer.sha256
     }
@@ -198,8 +213,13 @@ $betaManifestPath = Join-Path $rootPath "release\updates\latest-beta.json"
 $existingStableManifest = Read-ManifestState -Path $stableManifestPath
 $existingBetaManifest = Read-ManifestState -Path $betaManifestPath
 
-Write-Utf8File -Path $stableManifestPath -Content ((New-ManifestPayload -Channel "stable" -Prerelease $false -ExistingManifest $existingStableManifest) | ConvertTo-Json -Depth 6)
-Write-Utf8File -Path $betaManifestPath -Content ((New-ManifestPayload -Channel "beta" -Prerelease $true -ExistingManifest $existingBetaManifest) | ConvertTo-Json -Depth 6)
+if (Should-PreserveManifestContent -ExistingManifest $existingStableManifest) {
+    Write-Utf8File -Path $stableManifestPath -Content ((New-ManifestPayload -Channel "stable" -Prerelease $false -ExistingManifest $existingStableManifest) | ConvertTo-Json -Depth 6)
+}
+
+if (Should-PreserveManifestContent -ExistingManifest $existingBetaManifest) {
+    Write-Utf8File -Path $betaManifestPath -Content ((New-ManifestPayload -Channel "beta" -Prerelease $true -ExistingManifest $existingBetaManifest) | ConvertTo-Json -Depth 6)
+}
 
 [ordered]@{
     ok = $true

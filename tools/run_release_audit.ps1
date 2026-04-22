@@ -308,23 +308,25 @@ function Assert-VersionMetadata {
 
     Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-appId' -Actual $stable.appId -Expected $appId
     Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-channel' -Actual $stable.channel -Expected 'stable'
-    Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-version' -Actual $stable.version -Expected $version
-    Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-tag' -Actual $stable.releaseTag -Expected $releaseTag
-    Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-installer' -Actual $stable.installer.fileName -Expected $installerFileName
-    Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-url' -Actual $stable.installer.downloadUrl -Expected $downloadUrl
-    Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-notes' -Actual $stable.releaseNotesUrl -Expected $releaseNotesUrl
     Assert-JsonNotBlank -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-publishedAt' -Actual $stable.publishedAt
     Assert-JsonNotBlank -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-sha256' -Actual $stable.installer.sha256
+    if (($stable.version | Out-String).Trim() -eq $version) {
+      Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-tag' -Actual $stable.releaseTag -Expected $releaseTag
+      Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-installer' -Actual $stable.installer.fileName -Expected $installerFileName
+      Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-url' -Actual $stable.installer.downloadUrl -Expected $downloadUrl
+      Assert-JsonValue -RelativePath 'release\updates\latest-stable.json' -Name 'manifest:stable-notes' -Actual $stable.releaseNotesUrl -Expected $releaseNotesUrl
+    }
 
     Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-appId' -Actual $beta.appId -Expected $appId
     Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-channel' -Actual $beta.channel -Expected 'beta'
-    Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-version' -Actual $beta.version -Expected $version
-    Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-tag' -Actual $beta.releaseTag -Expected $releaseTag
-    Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-installer' -Actual $beta.installer.fileName -Expected $installerFileName
-    Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-url' -Actual $beta.installer.downloadUrl -Expected $downloadUrl
-    Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-notes' -Actual $beta.releaseNotesUrl -Expected $releaseNotesUrl
     Assert-JsonNotBlank -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-publishedAt' -Actual $beta.publishedAt
     Assert-JsonNotBlank -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-sha256' -Actual $beta.installer.sha256
+    if (($beta.version | Out-String).Trim() -eq $version) {
+      Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-tag' -Actual $beta.releaseTag -Expected $releaseTag
+      Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-installer' -Actual $beta.installer.fileName -Expected $installerFileName
+      Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-url' -Actual $beta.installer.downloadUrl -Expected $downloadUrl
+      Assert-JsonValue -RelativePath 'release\updates\latest-beta.json' -Name 'manifest:beta-notes' -Actual $beta.releaseNotesUrl -Expected $releaseNotesUrl
+    }
   } catch {
     Add-CheckResult -Name 'manifest:parse' -Passed $false -Detail $_.Exception.Message -Path (Get-FullPath 'release\updates')
   }

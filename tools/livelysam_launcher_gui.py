@@ -199,12 +199,35 @@ def get_update_channel_label(channel: str | None) -> str:
     return "테스트" if normalize_update_channel(channel) == "beta" else "안정"
 
 
-def get_update_manifest_url(channel: str | None) -> str:
-    manifest_base_url = str(UPDATE_MANIFEST_BASE_URL or "").rstrip("/")
-    if not manifest_base_url:
-        raise RuntimeError("Update manifest URL is not configured.")
+def get_update_manifest_urls(channel: str | None) -> list[str]:
     normalized = normalize_update_channel(channel)
-    return f"{manifest_base_url}/latest-{normalized}.json"
+    urls: list[str] = []
+
+    github_repo = str(VERSION_INFO.get("githubRepo") or "").strip().strip("/")
+    if normalized == "stable" and github_repo:
+        urls.append(f"https://github.com/{github_repo}/releases/latest/download/latest-stable.json")
+
+    manifest_base_url = str(UPDATE_MANIFEST_BASE_URL or "").rstrip("/")
+    if manifest_base_url:
+        urls.append(f"{manifest_base_url}/latest-{normalized}.json")
+
+    deduped_urls: list[str] = []
+    seen_urls: set[str] = set()
+    for url in urls:
+        normalized_url = str(url or "").strip()
+        if not normalized_url or normalized_url in seen_urls:
+            continue
+        seen_urls.add(normalized_url)
+        deduped_urls.append(normalized_url)
+
+    if not deduped_urls:
+        raise RuntimeError("Update manifest URL is not configured.")
+
+    return deduped_urls
+
+
+def get_update_manifest_url(channel: str | None) -> str:
+    return get_update_manifest_urls(channel)[0]
 
 
 def _version_key(version: str) -> tuple[tuple[int, ...], int, str]:
@@ -231,19 +254,29 @@ def compare_versions(left: str, right: str) -> int:
 
 
 def fetch_update_manifest(channel: str | None, timeout: float = 8.0) -> dict:
-    manifest_url = get_update_manifest_url(channel)
-    request = urllib.request.Request(
-        manifest_url,
-        headers={"User-Agent": f"LivelySamLauncher/{CURRENT_VERSION}"},
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    manifest_errors: list[str] = []
+    for manifest_url in get_update_manifest_urls(channel):
+        try:
+            request = urllib.request.Request(
+                manifest_url,
+                headers={
+                    "User-Agent": f"LivelySamLauncher/{CURRENT_VERSION}",
+                    "Cache-Control": "no-cache",
+                    "Pragma": "no-cache",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
 
-    if not isinstance(payload, dict):
-        raise RuntimeError("Update manifest response is not a JSON object.")
+            if not isinstance(payload, dict):
+                raise RuntimeError("Update manifest response is not a JSON object.")
 
-    payload["manifestUrl"] = manifest_url
-    return payload
+            payload["manifestUrl"] = manifest_url
+            return payload
+        except Exception as exc:  # noqa: BLE001
+            manifest_errors.append(f"{manifest_url}: {exc}")
+
+    raise RuntimeError(" / ".join(manifest_errors) or "Unable to load update manifest.")
 
 
 def check_for_updates(channel: str | None = None) -> dict:
