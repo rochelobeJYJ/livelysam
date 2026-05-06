@@ -134,6 +134,8 @@ BROWSER_PREVIEW_EXE_CANDIDATES = [
     ROOT_PATH / "BrowserPreviewHost.exe",
     ROOT_PATH / "dist" / "launcher" / "BrowserPreviewHost.exe",
 ]
+BRIDGE_STARTUP_TIMEOUT_SECONDS = 45
+BRIDGE_BOOTSTRAP_TIMEOUT_SECONDS = 75
 PREVIEW_PORT = 58672
 PREVIEW_HOST = "localhost"
 MINIGAME_CATALOG_OUTPUT = ROOT_PATH / "js" / "minigames" / "games-catalog.js"
@@ -258,20 +260,27 @@ def ensure_storage_bridge() -> dict:
     if not ENSURE_BRIDGE_SCRIPT.exists():
         raise RuntimeError("ensure_local_storage_bridge.ps1 not found.")
 
-    result = run_hidden_process(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(ENSURE_BRIDGE_SCRIPT),
-            "-Root",
-            str(ROOT_PATH),
-        ],
-        cwd=ROOT_PATH,
-        timeout=20,
-    )
+    try:
+        result = run_hidden_process(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ENSURE_BRIDGE_SCRIPT),
+                "-Root",
+                str(ROOT_PATH),
+                "-StartupTimeoutSeconds",
+                str(BRIDGE_STARTUP_TIMEOUT_SECONDS),
+            ],
+            cwd=ROOT_PATH,
+            timeout=BRIDGE_BOOTSTRAP_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            "로컬 저장 브리지가 첫 실행 준비 중입니다. 잠시 후 다시 시도해 주세요."
+        ) from exc
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "Failed to start local storage bridge.").strip()
         raise RuntimeError(detail)

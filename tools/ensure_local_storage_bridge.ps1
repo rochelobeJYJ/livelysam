@@ -1,6 +1,7 @@
 param(
     [string]$Root = (Join-Path $PSScriptRoot ".."),
-    [int]$Port = 58671
+    [int]$Port = 58671,
+    [int]$StartupTimeoutSeconds = 45
 )
 
 $ErrorActionPreference = "Stop"
@@ -88,6 +89,21 @@ function Test-PortAvailable {
             $listener.Stop()
         } catch {
         }
+    }
+}
+
+function Test-ProcessRunning {
+    param([int]$ProcessId)
+
+    if ($ProcessId -le 0) {
+        return $true
+    }
+
+    try {
+        Get-Process -Id $ProcessId -ErrorAction Stop | Out-Null
+        return $true
+    } catch {
+        return $false
     }
 }
 
@@ -200,11 +216,14 @@ function Start-BridgeProcess {
 function Wait-ForBridgeEndpoint {
     param(
         [int]$BridgePort,
-        [int]$FallbackPid
+        [int]$FallbackPid,
+        [int]$StartupTimeoutSeconds = 45
     )
 
     $urls = Get-BridgeHealthUrls -BridgePort $BridgePort
-    $deadline = (Get-Date).AddSeconds(12)
+    $startedAt = Get-Date
+    $deadline = $startedAt.AddSeconds([Math]::Max(10, $StartupTimeoutSeconds))
+    $sawRunningProcess = $false
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 250
         $health = Test-BridgeHealth -Url $urls.health
@@ -228,6 +247,14 @@ function Wait-ForBridgeEndpoint {
                 health_url = $urls.health
                 api_health_url = $urls.api
                 origin = "http://127.0.0.1:$BridgePort"
+            }
+        }
+
+        if ($FallbackPid -gt 0) {
+            if (Test-ProcessRunning -ProcessId $FallbackPid) {
+                $sawRunningProcess = $true
+            } elseif ($sawRunningProcess -or (((Get-Date) - $startedAt).TotalSeconds -ge 1.5)) {
+                return $null
             }
         }
     }
@@ -262,7 +289,7 @@ foreach ($candidatePort in $portCandidates) {
     }
 
     $process = Start-BridgeProcess -BridgePort $candidatePort
-    $startedEndpoint = Wait-ForBridgeEndpoint -BridgePort $candidatePort -FallbackPid $process.Id
+    $startedEndpoint = Wait-ForBridgeEndpoint -BridgePort $candidatePort -FallbackPid $process.Id -StartupTimeoutSeconds $StartupTimeoutSeconds
     if ($startedEndpoint) {
         $startedEndpoint | ConvertTo-Json -Depth 5
         exit 0

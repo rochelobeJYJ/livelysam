@@ -1003,7 +1003,6 @@ class LauncherApp:
         self._set_busy(True, "배경 모드를 시작하는 중입니다.", "잠시만 기다려 주십시오.")
 
         def work():
-            backend.ensure_storage_bridge()
             try:
                 backend.stop_browser_preview()
             except Exception as exc:  # noqa: BLE001
@@ -1076,7 +1075,6 @@ class LauncherApp:
         self._set_busy(True, "브라우저 미리보기를 여는 중입니다.", "")
 
         def work():
-            backend.ensure_storage_bridge()
             try:
                 backend.stop_wallpaper()
             except Exception as exc:  # noqa: BLE001
@@ -1160,7 +1158,6 @@ class LauncherApp:
                 backend.stop_browser_preview()
             except Exception as exc:  # noqa: BLE001
                 self._log_warning("failed to stop browser preview before refresh restart", exc)
-            backend.ensure_storage_bridge()
 
             if wallpaper_running:
                 monitor = selected
