@@ -29,8 +29,22 @@
     return /^\d{2,5}$/.test(candidate) ? candidate : '58671';
   }
 
+  let bridgeAuthTokenCache = String(getBridgeQueryParam('livelySamToken') || '').trim();
+
+  function setBridgeAuthToken(token) {
+    const normalized = String(token || '').trim();
+    bridgeAuthTokenCache = normalized;
+
+    const helper = LS.Helpers?.setRuntimeQueryParam;
+    if (typeof helper === 'function') {
+      helper('livelySamToken', normalized);
+    }
+
+    return bridgeAuthTokenCache;
+  }
+
   function buildBridgeHeaders(headers = {}) {
-    const token = String(getBridgeQueryParam('livelySamToken') || '').trim();
+    const token = bridgeAuthTokenCache;
     if (!token) return { ...(headers || {}) };
     return {
       ...(headers || {}),
@@ -1292,27 +1306,84 @@
   }
 
   async function fetchJson(url, options = {}) {
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeoutId = controller
-      ? window.setTimeout(() => controller.abort(), options.timeout || 1800)
-      : null;
-    const headers = buildBridgeHeaders(options.headers || {});
+    const fetchOnce = async () => {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutId = controller
+        ? window.setTimeout(() => controller.abort(), options.timeout || 1800)
+        : null;
+      const headers = buildBridgeHeaders(options.headers || {});
+
+      try {
+        const response = await fetch(url, {
+          method: options.method || 'GET',
+          headers,
+          body: options.body,
+          cache: 'no-store',
+          mode: 'cors',
+          signal: controller?.signal
+        });
+
+        if (!response.ok) {
+          const error = new Error(`HTTP ${response.status}`);
+          error.status = response.status;
+          throw error;
+        }
+
+        return await response.json();
+      } finally {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+        }
+      }
+    };
 
     try {
-      const response = await fetch(url, {
-        method: options.method || 'GET',
-        headers,
-        body: options.body,
+      return await fetchOnce();
+    } catch (error) {
+      const isBridgeRequest = typeof url === 'string' && url.startsWith(BRIDGE_ORIGIN);
+      const shouldRetryWithRecoveredToken = isBridgeRequest
+        && !options._bridgeRetried
+        && Number(error?.status || 0) === 403;
+
+      if (shouldRetryWithRecoveredToken) {
+        await hydrateBridgeAuthTokenFromHealth({ force: true });
+        if (bridgeAuthTokenCache) {
+          return fetchJson(url, { ...options, _bridgeRetried: true });
+        }
+      }
+
+      throw error;
+    }
+  }
+
+  async function hydrateBridgeAuthTokenFromHealth(options = {}) {
+    if (!options.force && bridgeAuthTokenCache) {
+      return bridgeAuthTokenCache;
+    }
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller
+      ? window.setTimeout(() => controller.abort(), options.timeout || BRIDGE_HEALTH_TIMEOUT)
+      : null;
+
+    try {
+      const response = await fetch(BRIDGE_HEALTH_URL, {
+        method: 'GET',
+        headers: options.headers || {},
         cache: 'no-store',
         mode: 'cors',
         signal: controller?.signal
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        return bridgeAuthTokenCache;
       }
 
-      return await response.json();
+      const payload = await response.json();
+      if (payload?.auth_token) {
+        setBridgeAuthToken(payload.auth_token);
+      }
+      return bridgeAuthTokenCache;
     } finally {
       if (timeoutId) {
         window.clearTimeout(timeoutId);
@@ -1328,7 +1399,13 @@
 
   async function probeBridgeHealth() {
     try {
-      const result = await fetchJson(BRIDGE_HEALTH_URL, { timeout: BRIDGE_HEALTH_TIMEOUT });
+      const result = await fetchJson(BRIDGE_HEALTH_URL, {
+        timeout: BRIDGE_HEALTH_TIMEOUT,
+        headers: {}
+      });
+      if (result?.auth_token) {
+        setBridgeAuthToken(result.auth_token);
+      }
       return !!result?.ok;
     } catch {
       return false;
@@ -1336,6 +1413,7 @@
   }
 
   async function loadBridgeSnapshot() {
+    await hydrateBridgeAuthTokenFromHealth();
     return normalizeBridgeState(await fetchJson(BRIDGE_URL, { timeout: BRIDGE_SNAPSHOT_TIMEOUT }));
   }
 

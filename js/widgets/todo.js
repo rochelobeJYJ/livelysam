@@ -6,6 +6,28 @@
   const PRIORITY_LABELS = { high: '높음', medium: '보통', low: '낮음' };
   const PRIORITY_COLORS = { high: '#E03131', medium: '#F08C00', low: '#2B8A3E' };
 
+  const TODO_VIEW_STATE_STORAGE_KEY = 'todoWidgetViewState';
+  const TODO_SORT_VALUES = new Set(['priority', 'dueDate', 'updatedAt', 'title']);
+
+  function normalizeSortBy(value) {
+    const normalized = String(value || '').trim();
+    return TODO_SORT_VALUES.has(normalized) ? normalized : 'priority';
+  }
+
+  function normalizeTodoViewState(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return {
+        sortBy: 'priority',
+        showArchived: false
+      };
+    }
+
+    return {
+      sortBy: normalizeSortBy(raw.sortBy),
+      showArchived: raw.showArchived === true
+    };
+  }
+
   function isOverdue(record) {
     const dueDate = record?.task?.dueDate;
     if (!dueDate || record?.task?.status === 'done') return false;
@@ -99,6 +121,7 @@
 
     async init() {
       await LS.Records.init();
+      this._restoreViewState();
 
       if (!this._bound) {
         this._bound = true;
@@ -192,9 +215,23 @@
       }[sortBy] || '우선순위';
     },
 
+    _restoreViewState() {
+      const savedState = normalizeTodoViewState(LS.Storage.get(TODO_VIEW_STATE_STORAGE_KEY, null));
+      this._sortBy = savedState.sortBy;
+      this._showArchived = savedState.showArchived;
+    },
+
+    _persistViewState() {
+      LS.Storage.set(TODO_VIEW_STATE_STORAGE_KEY, {
+        sortBy: normalizeSortBy(this._sortBy),
+        showArchived: this._showArchived === true
+      });
+    },
+
     async _handleToolbarAction(action) {
       if (action === 'toggle-archive') {
         this._showArchived = !this._showArchived;
+        this._persistViewState();
         this.render();
         return;
       }
@@ -240,7 +277,8 @@
       });
       if (!result) return;
 
-      this._sortBy = result.sortBy || 'priority';
+      this._sortBy = normalizeSortBy(result.sortBy);
+      this._persistViewState();
       this.render();
     },
 

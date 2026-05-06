@@ -1,7 +1,7 @@
 param(
     [string]$Root = (Join-Path $PSScriptRoot ".."),
     [int]$Port = 58671,
-    [int]$StartupTimeoutSeconds = 45
+    [int]$StartupTimeoutSeconds = 60
 )
 
 $ErrorActionPreference = "Stop"
@@ -92,19 +92,26 @@ function Test-PortAvailable {
     }
 }
 
-function Test-ProcessRunning {
-    param([int]$ProcessId)
+function Get-ListeningProcessIdForPort {
+    param([int]$BridgePort)
 
-    if ($ProcessId -le 0) {
-        return $true
+    if ($BridgePort -le 0) {
+        return 0
     }
 
+    $pattern = "^\s*TCP\s+\S+:$BridgePort\s+\S+\s+LISTENING\s+(\d+)\s*$"
     try {
-        Get-Process -Id $ProcessId -ErrorAction Stop | Out-Null
-        return $true
+        $lines = netstat -ano -p tcp 2>$null
+        foreach ($line in $lines) {
+            $match = [regex]::Match($line, $pattern)
+            if ($match.Success) {
+                return [int]$match.Groups[1].Value
+            }
+        }
     } catch {
-        return $false
     }
+
+    return 0
 }
 
 function Resolve-PortCandidates {
@@ -183,6 +190,16 @@ function Get-HealthyBridgeByPort {
         $bridgePid = [int]($endpoint.pid | ForEach-Object { $_ })
     }
 
+    if ([string]::IsNullOrWhiteSpace($authToken)) {
+        $authToken = [string]($health.auth_token | ForEach-Object { $_ })
+    }
+    if ($bridgePid -le 0) {
+        $bridgePid = Get-ListeningProcessIdForPort -BridgePort $BridgePort
+    }
+    if ([string]::IsNullOrWhiteSpace($authToken)) {
+        return $null
+    }
+
     return [ordered]@{
         ok = $true
         port = $BridgePort
@@ -192,6 +209,45 @@ function Get-HealthyBridgeByPort {
         health_url = $urls.health
         api_health_url = $urls.api
         origin = "http://127.0.0.1:$BridgePort"
+    }
+}
+
+function Test-HealthyBridgeMissingToken {
+    param([int]$BridgePort)
+
+    if ($BridgePort -le 0) {
+        return $false
+    }
+
+    $urls = Get-BridgeHealthUrls -BridgePort $BridgePort
+    $health = Test-BridgeHealth -Url $urls.health
+    $apiHealth = Test-BridgeHealth -Url $urls.api
+    if (-not ($health -and $health.ok -and $apiHealth -and $apiHealth.ok)) {
+        return $false
+    }
+
+    $endpoint = Read-JsonFile -Path $endpointPath
+    if ($endpoint -and [int]$endpoint.port -eq $BridgePort -and -not [string]::IsNullOrWhiteSpace([string]$endpoint.auth_token)) {
+        return $false
+    }
+
+    return $true
+}
+
+function Remove-OrphanedBridgeForPort {
+    param([int]$BridgePort)
+
+    $processId = Get-ListeningProcessIdForPort -BridgePort $BridgePort
+    if ($processId -le 0) {
+        return $false
+    }
+
+    try {
+        Stop-Process -Id $processId -Force -ErrorAction Stop
+        Start-Sleep -Milliseconds 500
+        return $true
+    } catch {
+        return $false
     }
 }
 
@@ -217,13 +273,11 @@ function Wait-ForBridgeEndpoint {
     param(
         [int]$BridgePort,
         [int]$FallbackPid,
-        [int]$StartupTimeoutSeconds = 45
+        [int]$StartupTimeoutSeconds = 60
     )
 
     $urls = Get-BridgeHealthUrls -BridgePort $BridgePort
-    $startedAt = Get-Date
-    $deadline = $startedAt.AddSeconds([Math]::Max(10, $StartupTimeoutSeconds))
-    $sawRunningProcess = $false
+    $deadline = (Get-Date).AddSeconds([Math]::Max(15, $StartupTimeoutSeconds))
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 250
         $health = Test-BridgeHealth -Url $urls.health
@@ -238,6 +292,15 @@ function Wait-ForBridgeEndpoint {
                     $resolvedPid = [int]$endpoint.pid
                 }
             }
+            if ([string]::IsNullOrWhiteSpace($authToken)) {
+                $authToken = [string]($health.auth_token | ForEach-Object { $_ })
+            }
+            if ($resolvedPid -le 0) {
+                $resolvedPid = Get-ListeningProcessIdForPort -BridgePort $BridgePort
+            }
+            if ([string]::IsNullOrWhiteSpace($authToken)) {
+                continue
+            }
             return [ordered]@{
                 ok = $true
                 port = $BridgePort
@@ -247,14 +310,6 @@ function Wait-ForBridgeEndpoint {
                 health_url = $urls.health
                 api_health_url = $urls.api
                 origin = "http://127.0.0.1:$BridgePort"
-            }
-        }
-
-        if ($FallbackPid -gt 0) {
-            if (Test-ProcessRunning -ProcessId $FallbackPid) {
-                $sawRunningProcess = $true
-            } elseif ($sawRunningProcess -or (((Get-Date) - $startedAt).TotalSeconds -ge 1.5)) {
-                return $null
             }
         }
     }
@@ -280,6 +335,10 @@ foreach ($candidatePort in $portCandidates) {
     if ($healthyBridge) {
         $healthyBridge | ConvertTo-Json -Depth 5
         exit 0
+    }
+
+    if (Test-HealthyBridgeMissingToken -BridgePort $candidatePort) {
+        [void](Remove-OrphanedBridgeForPort -BridgePort $candidatePort)
     }
 }
 

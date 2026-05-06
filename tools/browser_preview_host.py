@@ -134,8 +134,8 @@ BROWSER_PREVIEW_EXE_CANDIDATES = [
     ROOT_PATH / "BrowserPreviewHost.exe",
     ROOT_PATH / "dist" / "launcher" / "BrowserPreviewHost.exe",
 ]
-BRIDGE_STARTUP_TIMEOUT_SECONDS = 45
-BRIDGE_BOOTSTRAP_TIMEOUT_SECONDS = 75
+BRIDGE_STARTUP_TIMEOUT_SECONDS = 60
+BRIDGE_BOOTSTRAP_TIMEOUT_SECONDS = 90
 PREVIEW_PORT = 58672
 PREVIEW_HOST = "localhost"
 MINIGAME_CATALOG_OUTPUT = ROOT_PATH / "js" / "minigames" / "games-catalog.js"
@@ -283,6 +283,8 @@ def ensure_storage_bridge() -> dict:
         ) from exc
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "Failed to start local storage bridge.").strip()
+        if "Local storage bridge failed to start." in detail:
+            raise RuntimeError("로컬 저장 브리지가 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.")
         raise RuntimeError(detail)
     payload = json.loads((result.stdout or "").lstrip("\ufeff").strip() or "{}")
     if not isinstance(payload, dict) or int(payload.get("port") or 0) <= 0:

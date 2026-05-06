@@ -2,21 +2,67 @@
   'use strict';
   const LS = window.LivelySam = window.LivelySam || {};
   const SENSITIVE_RUNTIME_QUERY_KEYS = new Set(['bridgePort', 'livelySamToken']);
+  const RUNTIME_QUERY_SESSION_KEY = '__livelysam_runtime_query_params';
   let runtimeQueryParamCache = null;
+
+  function readPersistedRuntimeQueryParams() {
+    try {
+      const raw = window.sessionStorage?.getItem(RUNTIME_QUERY_SESSION_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return {};
+      }
+      return parsed;
+    } catch {
+      return {};
+    }
+  }
+
+  function writePersistedRuntimeQueryParams(values) {
+    try {
+      const payload = values && typeof values === 'object' ? values : {};
+      const entries = Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && `${value}` !== '');
+      if (entries.length === 0) {
+        window.sessionStorage?.removeItem(RUNTIME_QUERY_SESSION_KEY);
+        return;
+      }
+      window.sessionStorage?.setItem(RUNTIME_QUERY_SESSION_KEY, JSON.stringify(Object.fromEntries(entries)));
+    } catch {
+      // ignore session storage persistence failures
+    }
+  }
 
   function readRuntimeQueryParams() {
     if (runtimeQueryParamCache) {
       return runtimeQueryParamCache;
     }
 
-    const cached = {};
+    const cached = readPersistedRuntimeQueryParams();
     try {
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.forEach((value, key) => {
         if (!Object.prototype.hasOwnProperty.call(cached, key)) {
           cached[key] = value;
+          return;
         }
+        cached[key] = value;
       });
+
+      const runtimeKind = String(cached.runtime || '').trim().toLowerCase();
+      const shouldPersistSensitiveParams = runtimeKind === 'browserpreview' || runtimeKind === 'desktophost';
+      if (shouldPersistSensitiveParams) {
+        const sensitiveParams = {};
+        SENSITIVE_RUNTIME_QUERY_KEYS.forEach((key) => {
+          const value = cached[key];
+          if (value !== undefined && value !== null && `${value}` !== '') {
+            sensitiveParams[key] = value;
+          }
+        });
+        writePersistedRuntimeQueryParams(sensitiveParams);
+      } else {
+        writePersistedRuntimeQueryParams(null);
+      }
 
       let stripped = false;
       SENSITIVE_RUNTIME_QUERY_KEYS.forEach((key) => {
@@ -54,6 +100,32 @@
       if (!normalizedKey) return fallback;
       const value = readRuntimeQueryParams()[normalizedKey];
       return value === undefined || value === null ? fallback : value;
+    },
+
+    setRuntimeQueryParam(key, value) {
+      const normalizedKey = String(key || '').trim();
+      if (!normalizedKey) return '';
+      const normalizedValue = value === undefined || value === null ? '' : String(value).trim();
+      const cached = readRuntimeQueryParams();
+
+      if (normalizedValue) {
+        cached[normalizedKey] = normalizedValue;
+      } else {
+        delete cached[normalizedKey];
+      }
+
+      if (SENSITIVE_RUNTIME_QUERY_KEYS.has(normalizedKey)) {
+        const sensitiveParams = {};
+        SENSITIVE_RUNTIME_QUERY_KEYS.forEach((sensitiveKey) => {
+          const sensitiveValue = cached[sensitiveKey];
+          if (sensitiveValue !== undefined && sensitiveValue !== null && `${sensitiveValue}` !== '') {
+            sensitiveParams[sensitiveKey] = sensitiveValue;
+          }
+        });
+        writePersistedRuntimeQueryParams(sensitiveParams);
+      }
+
+      return normalizedValue;
     },
 
     /* ── 요일 ── */

@@ -83,8 +83,8 @@ DESKTOP_HOST_RUNTIME_DIR = APPDATA_DIR / "runtime" / "desktop-host"
 DESKTOP_HOST_STATE_FILE = DESKTOP_HOST_RUNTIME_DIR / "state.json"
 DESKTOP_HOST_RESULT_FILE = DESKTOP_HOST_RUNTIME_DIR / "last-result.json"
 STORAGE_BRIDGE_SCRIPT = ROOT_PATH / "tools" / "ensure_local_storage_bridge.ps1"
-BRIDGE_STARTUP_TIMEOUT_SECONDS = 45
-BRIDGE_BOOTSTRAP_TIMEOUT_SECONDS = 75
+BRIDGE_STARTUP_TIMEOUT_SECONDS = 60
+BRIDGE_BOOTSTRAP_TIMEOUT_SECONDS = 90
 _BROWSER_PREVIEW_MODULE = None
 
 
@@ -681,8 +681,11 @@ def ensure_storage_bridge():
             "로컬 저장 브리지가 첫 실행 준비 중입니다. 잠시 후 다시 시도해 주세요."
         ) from exc
     if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        if "Local storage bridge failed to start." in detail:
+            raise RuntimeError("로컬 저장 브리지가 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.")
         raise RuntimeError(
-            (result.stderr or result.stdout or "공유 저장 브리지를 시작하지 못했습니다.").strip()
+            detail or "공유 저장 브리지를 시작하지 못했습니다."
         )
     return parse_json_output(result.stdout) or {}
 
@@ -728,7 +731,7 @@ def start_wallpaper(
     if preferred_monitor_primary in (0, 1):
         args.extend(["-PreferredMonitorPrimary", str(int(preferred_monitor_primary))])
 
-    return run_powershell_script(WALLPAPER_START_SCRIPT, *args, timeout=120)
+    return run_powershell_script(WALLPAPER_START_SCRIPT, *args, timeout=140)
 
 
 def stop_wallpaper():
@@ -741,7 +744,7 @@ def get_browser_status() -> dict:
 
 
 def start_browser_preview():
-    return run_browser_preview("start", timeout=100)
+    return run_browser_preview("start", timeout=120)
 
 
 def stop_browser_preview():

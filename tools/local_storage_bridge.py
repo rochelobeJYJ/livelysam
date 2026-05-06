@@ -462,6 +462,7 @@ class LivelySamStorageHandler(BaseHTTPRequestHandler):
                     "app": APP_NAME,
                     "version": SNAPSHOT_VERSION,
                     "port": int(getattr(self.server, "server_port", DEFAULT_PORT)),
+                    "auth_token": text(getattr(self.server, "auth_token", "")),
                     "storage_path": str(self.server.snapshot_path),  # type: ignore[attr-defined]
                     "data_proxy": self.server.data_proxy.health_snapshot(),  # type: ignore[attr-defined]
                 },
