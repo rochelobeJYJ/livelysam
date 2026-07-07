@@ -306,6 +306,8 @@
     _hallRequestSerialByGame: new Map(),
     _hallRefreshTimerByGame: new Map(),
     _runnerCleanup: null,
+    _persistedSelectedGameId: null,
+    _persistedActiveTab: null,
 
     init() {
       if (this._initialized) {
@@ -318,6 +320,8 @@
       if (!['games', 'hall'].includes(this._activeTab)) {
         this._activeTab = 'games';
       }
+      this._persistedActiveTab = this._activeTab;
+      this._persistedSelectedGameId = this._selectedGameId;
 
       this._ensureDom();
       this._bindEvents();
@@ -1250,8 +1254,15 @@
         this._selectedGameId = games[0]?.id || '';
       }
 
-      LS.Storage?.set?.(SELECTED_GAME_STORAGE_KEY, this._selectedGameId);
-      LS.Storage?.set?.(TAB_STORAGE_KEY, this._activeTab);
+      // 값이 실제로 바뀐 렌더에서만 저장한다 (브리지 모드에선 쓰기마다 flush POST가 따라온다).
+      if (this._persistedSelectedGameId !== this._selectedGameId) {
+        LS.Storage?.set?.(SELECTED_GAME_STORAGE_KEY, this._selectedGameId);
+        this._persistedSelectedGameId = this._selectedGameId;
+      }
+      if (this._persistedActiveTab !== this._activeTab) {
+        LS.Storage?.set?.(TAB_STORAGE_KEY, this._activeTab);
+        this._persistedActiveTab = this._activeTab;
+      }
 
       this._renderProfileSummary();
       this._renderGamesPanel();

@@ -1,6 +1,14 @@
 (function () {
   'use strict';
   const LS = window.LivelySam = window.LivelySam || {};
+  const HTML_ESCAPE_RE = /[&<>"']/g;
+  const HTML_ESCAPE_MAP = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  };
   const SENSITIVE_RUNTIME_QUERY_KEYS = new Set(['bridgePort', 'livelySamToken']);
   const RUNTIME_QUERY_SESSION_KEY = '__livelysam_runtime_query_params';
   let runtimeQueryParamCache = null;
@@ -475,10 +483,10 @@
     },
 
     /* ── HTML 이스케이프 ── */
+    /* 따옴표까지 치환해야 속성 컨텍스트(title="...", data-*="...")에서 안전하다. */
     escapeHtml(str) {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
+      if (str === null || str === undefined) return '';
+      return String(str).replace(HTML_ESCAPE_RE, (ch) => HTML_ESCAPE_MAP[ch]);
     },
 
     safeParse(raw, fallback = null) {

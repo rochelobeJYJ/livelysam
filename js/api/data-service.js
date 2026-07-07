@@ -5,37 +5,8 @@
   const LOCAL_RUNTIME_VALUES = new Set(['desktophost', 'browserpreview']);
   const DEFAULT_FETCH_TIMEOUT_MS = 8000;
 
-  function getBridgeQueryParam(key) {
-    const helper = LS.Helpers?.getRuntimeQueryParam;
-    if (typeof helper === 'function') {
-      return helper(key, '');
-    }
-    try {
-      return new URLSearchParams(window.location.search || '').get(key) || '';
-    } catch {
-      return '';
-    }
-  }
-
-  function resolveBridgePort() {
-    const candidate = String(getBridgeQueryParam('bridgePort') || '').trim();
-    return /^\d{2,5}$/.test(candidate) ? candidate : '58671';
-  }
-
-  function getBridgeAuthToken() {
-    return String(getBridgeQueryParam('livelySamToken') || '').trim();
-  }
-
-  function buildBridgeHeaders(headers = {}) {
-    const token = getBridgeAuthToken();
-    if (!token) return { ...(headers || {}) };
-    return {
-      ...(headers || {}),
-      'X-LivelySam-Token': token
-    };
-  }
-
-  const LOCAL_PROXY_ORIGIN = `http://127.0.0.1:${resolveBridgePort()}`;
+  const BridgeClient = LS.BridgeClient;
+  const LOCAL_PROXY_ORIGIN = BridgeClient.ORIGIN;
 
   function text(value, fallback = '') {
     if (value === null || value === undefined) return fallback;
@@ -124,8 +95,9 @@
       const timeoutMs = resolveTimeout(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS);
       const requestOptions = { ...options };
       delete requestOptions.timeoutMs;
-      const requestHeaders = normalizedUrl.startsWith(`${LOCAL_PROXY_ORIGIN}/`)
-        ? buildBridgeHeaders({
+      const isLocalProxyRequest = normalizedUrl.startsWith(`${LOCAL_PROXY_ORIGIN}/`);
+      const requestHeaders = isLocalProxyRequest
+        ? BridgeClient.buildHeaders({
             Accept: 'application/json',
             ...(requestOptions.headers || {})
           })
@@ -134,6 +106,7 @@
             ...(requestOptions.headers || {})
           };
       delete requestOptions.headers;
+      delete requestOptions._bridgeRetried;
 
       const hasExternalSignal = Boolean(requestOptions.signal);
       const controller = typeof AbortController !== 'undefined' && !hasExternalSignal
@@ -184,6 +157,14 @@
       }
 
       if (!response.ok) {
+        if (isLocalProxyRequest && response.status === 403 && !options._bridgeRetried) {
+          // 브리지 재시작으로 토큰이 회전된 경우: 새 토큰을 받아 1회 재시도.
+          await BridgeClient.hydrateTokenFromHealth({ force: true });
+          if (BridgeClient.getToken()) {
+            return LS.DataService.fetchJson(path, params, { ...options, _bridgeRetried: true });
+          }
+        }
+
         const message = text(payload?.error, `HTTP ${response.status}`);
         const error = new Error(message);
         error.status = response.status;

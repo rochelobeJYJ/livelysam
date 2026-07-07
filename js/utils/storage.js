@@ -12,50 +12,10 @@
   const STORE_META_STORAGE_KEY = '__storageStoreMeta';
   const LAYOUT_STORAGE_KEYS = ['gridLayout', 'gridLayoutState', 'gridLayoutBackup'];
 
-  function getBridgeQueryParam(key) {
-    const helper = LS.Helpers?.getRuntimeQueryParam;
-    if (typeof helper === 'function') {
-      return helper(key, '');
-    }
-    try {
-      return new URLSearchParams(window.location.search || '').get(key) || '';
-    } catch {
-      return '';
-    }
-  }
-
-  function resolveBridgePort() {
-    const candidate = String(getBridgeQueryParam('bridgePort') || '').trim();
-    return /^\d{2,5}$/.test(candidate) ? candidate : '58671';
-  }
-
-  let bridgeAuthTokenCache = String(getBridgeQueryParam('livelySamToken') || '').trim();
-
-  function setBridgeAuthToken(token) {
-    const normalized = String(token || '').trim();
-    bridgeAuthTokenCache = normalized;
-
-    const helper = LS.Helpers?.setRuntimeQueryParam;
-    if (typeof helper === 'function') {
-      helper('livelySamToken', normalized);
-    }
-
-    return bridgeAuthTokenCache;
-  }
-
-  function buildBridgeHeaders(headers = {}) {
-    const token = bridgeAuthTokenCache;
-    if (!token) return { ...(headers || {}) };
-    return {
-      ...(headers || {}),
-      'X-LivelySam-Token': token
-    };
-  }
-
-  const BRIDGE_ORIGIN = `http://127.0.0.1:${resolveBridgePort()}`;
+  const BridgeClient = LS.BridgeClient;
+  const BRIDGE_ORIGIN = BridgeClient.ORIGIN;
   const BRIDGE_URL = `${BRIDGE_ORIGIN}/__livelysam__/storage`;
   const BRIDGE_OPS_URL = `${BRIDGE_ORIGIN}/__livelysam__/storage/ops`;
-  const BRIDGE_HEALTH_URL = `${BRIDGE_ORIGIN}/__livelysam__/health`;
   const BRIDGE_HEALTH_TIMEOUT = 2500;
   const BRIDGE_SNAPSHOT_TIMEOUT = 12000;
   const BRIDGE_FLUSH_TIMEOUT = 8000;
@@ -1306,89 +1266,10 @@
   }
 
   async function fetchJson(url, options = {}) {
-    const fetchOnce = async () => {
-      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const timeoutId = controller
-        ? window.setTimeout(() => controller.abort(), options.timeout || 1800)
-        : null;
-      const headers = buildBridgeHeaders(options.headers || {});
-
-      try {
-        const response = await fetch(url, {
-          method: options.method || 'GET',
-          headers,
-          body: options.body,
-          cache: 'no-store',
-          mode: 'cors',
-          signal: controller?.signal
-        });
-
-        if (!response.ok) {
-          const error = new Error(`HTTP ${response.status}`);
-          error.status = response.status;
-          throw error;
-        }
-
-        return await response.json();
-      } finally {
-        if (timeoutId) {
-          window.clearTimeout(timeoutId);
-        }
-      }
-    };
-
-    try {
-      return await fetchOnce();
-    } catch (error) {
-      const isBridgeRequest = typeof url === 'string' && url.startsWith(BRIDGE_ORIGIN);
-      const shouldRetryWithRecoveredToken = isBridgeRequest
-        && !options._bridgeRetried
-        && Number(error?.status || 0) === 403;
-
-      if (shouldRetryWithRecoveredToken) {
-        await hydrateBridgeAuthTokenFromHealth({ force: true });
-        if (bridgeAuthTokenCache) {
-          return fetchJson(url, { ...options, _bridgeRetried: true });
-        }
-      }
-
-      throw error;
-    }
-  }
-
-  async function hydrateBridgeAuthTokenFromHealth(options = {}) {
-    if (!options.force && bridgeAuthTokenCache) {
-      return bridgeAuthTokenCache;
-    }
-
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeoutId = controller
-      ? window.setTimeout(() => controller.abort(), options.timeout || BRIDGE_HEALTH_TIMEOUT)
-      : null;
-
-    try {
-      const response = await fetch(BRIDGE_HEALTH_URL, {
-        method: 'GET',
-        headers: options.headers || {},
-        cache: 'no-store',
-        mode: 'cors',
-        signal: controller?.signal
-      });
-
-      if (!response.ok) {
-        return bridgeAuthTokenCache;
-      }
-
-      const payload = await response.json();
-      if (payload?.auth_token) {
-        setBridgeAuthToken(payload.auth_token);
-      }
-      return bridgeAuthTokenCache;
-    } finally {
-      if (timeoutId) {
-        window.clearTimeout(timeoutId);
-      }
-    }
+    return BridgeClient.fetchJson(url, {
+      ...options,
+      timeout: options.timeout || 1800
+    });
   }
 
   function sleep(ms) {
@@ -1398,22 +1279,12 @@
   }
 
   async function probeBridgeHealth() {
-    try {
-      const result = await fetchJson(BRIDGE_HEALTH_URL, {
-        timeout: BRIDGE_HEALTH_TIMEOUT,
-        headers: {}
-      });
-      if (result?.auth_token) {
-        setBridgeAuthToken(result.auth_token);
-      }
-      return !!result?.ok;
-    } catch {
-      return false;
-    }
+    const result = await BridgeClient.fetchHealth({ timeout: BRIDGE_HEALTH_TIMEOUT });
+    return !!result?.ok;
   }
 
   async function loadBridgeSnapshot() {
-    await hydrateBridgeAuthTokenFromHealth();
+    await BridgeClient.hydrateTokenFromHealth();
     return normalizeBridgeState(await fetchJson(BRIDGE_URL, { timeout: BRIDGE_SNAPSHOT_TIMEOUT }));
   }
 
@@ -1562,30 +1433,23 @@
 
     const ops = bridgePendingOps.splice(0, bridgePendingOps.length);
     try {
-      const requestBody = JSON.stringify({ ops });
-      const requestHeaders = buildBridgeHeaders({ 'Content-Type': 'application/json' });
-      if (requestHeaders['X-LivelySam-Token']) {
-        fetch(BRIDGE_OPS_URL, {
-          method: 'POST',
-          headers: requestHeaders,
-          body: requestBody,
-          cache: 'no-store',
-          keepalive: true,
-          mode: 'cors'
-        }).catch(() => {
-          bridgePendingOps = ops.concat(bridgePendingOps);
-        });
-        return;
-      }
-      if (typeof navigator.sendBeacon !== 'function') {
+      const requestHeaders = BridgeClient.buildHeaders({ 'Content-Type': 'application/json' });
+      if (!requestHeaders[BridgeClient.TOKEN_HEADER]) {
+        // 토큰 없는 요청은 서버가 403으로 버리므로 보내지 않는다.
+        // 값은 브라우저 로컬 미러에 남아 있어 다음 부팅 시 병합 복구된다.
         bridgePendingOps = ops.concat(bridgePendingOps);
         return;
       }
-      const payload = new Blob([requestBody], { type: 'application/json' });
-      const sent = navigator.sendBeacon(BRIDGE_OPS_URL, payload);
-      if (!sent) {
+      fetch(BRIDGE_OPS_URL, {
+        method: 'POST',
+        headers: requestHeaders,
+        body: JSON.stringify({ ops }),
+        cache: 'no-store',
+        keepalive: true,
+        mode: 'cors'
+      }).catch(() => {
         bridgePendingOps = ops.concat(bridgePendingOps);
-      }
+      });
     } catch {
       bridgePendingOps = ops.concat(bridgePendingOps);
     }

@@ -455,18 +455,17 @@ class LivelySamStorageHandler(BaseHTTPRequestHandler):
         if not self._authorize_request(path):
             return
         if path == "/__livelysam__/health":
-            self._send_json(
-                200,
-                {
-                    "ok": True,
-                    "app": APP_NAME,
-                    "version": SNAPSHOT_VERSION,
-                    "port": int(getattr(self.server, "server_port", DEFAULT_PORT)),
-                    "auth_token": text(getattr(self.server, "auth_token", "")),
-                    "storage_path": str(self.server.snapshot_path),  # type: ignore[attr-defined]
-                    "data_proxy": self.server.data_proxy.health_snapshot(),  # type: ignore[attr-defined]
-                },
-            )
+            payload = {
+                "ok": True,
+                "app": APP_NAME,
+                "version": SNAPSHOT_VERSION,
+                "port": int(getattr(self.server, "server_port", DEFAULT_PORT)),
+                "storage_path": str(self.server.snapshot_path),  # type: ignore[attr-defined]
+                "data_proxy": self.server.data_proxy.health_snapshot(),  # type: ignore[attr-defined]
+            }
+            if self._may_disclose_auth_token():
+                payload["auth_token"] = text(getattr(self.server, "auth_token", ""))
+            self._send_json(200, payload)
             return
 
         if path == "/__livelysam__/storage":
@@ -514,6 +513,16 @@ class LivelySamStorageHandler(BaseHTTPRequestHandler):
 
     def _get_request_origin(self) -> str:
         return text(self.headers.get("Origin"))
+
+    def _may_disclose_auth_token(self) -> bool:
+        # The health endpoint bootstraps trusted local runtimes with the auth
+        # token. An opaque origin ("null", e.g. a sandboxed iframe hosted on
+        # an arbitrary website) must never receive it, or the token check on
+        # every other endpoint becomes bypassable.
+        origin = self._get_request_origin()
+        if not origin:
+            return True
+        return bool(ALLOWED_ORIGIN_RE.match(origin))
 
     def _requires_auth(self, path: str) -> bool:
         if path in {"/__livelysam__/health", "/api/health"}:

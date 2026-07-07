@@ -52,3 +52,9 @@ js/minigames/games/fix*.py
 js/minigames/games/restore_overlays.py
 js/minigames/games/scan.py
 js/minigames/games/scan_broken_strings.txt
+
+# Local marketing materials
+marketing/
+
+# Local scratch space
+tmp/

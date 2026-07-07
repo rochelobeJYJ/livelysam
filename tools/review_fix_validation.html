@@ -12,6 +12,7 @@
   </main>
 
   <script src="../js/utils/helpers.js?v=review-fix"></script>
+  <script src="../js/utils/bridge-client.js?v=review-fix"></script>
   <script src="../js/utils/storage.js?v=review-fix"></script>
   <script src="../js/utils/records.js?v=review-fix"></script>
   <script>
@@ -75,10 +76,17 @@
         assert(localStorage.getItem('ls_staleKey') === null, 'import-clears-stale-local-key', 'ls_staleKey removed');
         assert(localStorage.getItem('ls_newKey') === JSON.stringify('fresh-value'), 'import-restores-local-key', 'ls_newKey restored');
 
+        // v1.1.4부터 import는 백업 저장소를 건드리지 않는다:
+        // localStorage 미러 키는 삭제 대상에서 제외되고, IndexedDB backups 스토어는
+        // 복원 대상에서 제외된다. 두 소스를 미러로 병합하지는 않는다.
         const backupStoreRaw = localStorage.getItem('ls_db_store_backups');
         const backupStore = JSON.parse(backupStoreRaw || '[]');
-        const backupIds = Array.isArray(backupStore) ? backupStore.map((item) => item.id).sort() : [];
-        assert(backupIds.length === 2 && backupIds[0] === 'backup-local' && backupIds[1] === 'keep-backup', 'import-preserves-backup-history', 'existing backup history kept and imported backups ignored');
+        const mirrorIds = Array.isArray(backupStore) ? backupStore.map((item) => item.id) : [];
+        assert(mirrorIds.includes('keep-backup'), 'import-preserves-backup-mirror', 'localStorage backup mirror untouched');
+        const dbBackups = await window.LivelySam.Storage.dbGetAll('backups');
+        const dbBackupIds = dbBackups.map((item) => item.id);
+        assert(dbBackupIds.includes('backup-local'), 'import-preserves-db-backups', 'IndexedDB backup history untouched');
+        assert(!mirrorIds.includes('imported-backup') && !dbBackupIds.includes('imported-backup'), 'import-ignores-imported-backups', 'imported backups are not restored');
 
         const importedRecords = await window.LivelySam.Storage.dbGetAll('records');
         assert(importedRecords.length === 1 && importedRecords[0].id === 'imported-record', 'import-replaces-record-store', 'records store replaced');

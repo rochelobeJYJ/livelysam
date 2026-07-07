@@ -8,34 +8,8 @@
   const DELETE_QUEUE_KEY = 'googleWorkspaceDeleteQueue';
   const GOOGLE_GSI_SRC = 'https://accounts.google.com/gsi/client';
 
-  function getBridgeQueryParam(key) {
-    const helper = LS.Helpers?.getRuntimeQueryParam;
-    if (typeof helper === 'function') {
-      return helper(key, '');
-    }
-    try {
-      return new URLSearchParams(window.location.search || '').get(key) || '';
-    } catch {
-      return '';
-    }
-  }
-
-  function resolveBridgePort() {
-    const candidate = String(getBridgeQueryParam('bridgePort') || '').trim();
-    return /^\d{2,5}$/.test(candidate) ? candidate : '58671';
-  }
-
-  function buildBridgeHeaders(headers = {}) {
-    const token = String(getBridgeQueryParam('livelySamToken') || '').trim();
-    if (!token) return { ...(headers || {}) };
-    return {
-      ...(headers || {}),
-      'X-LivelySam-Token': token
-    };
-  }
-
-  const BRIDGE_ORIGIN = `http://127.0.0.1:${resolveBridgePort()}`;
-  const BRIDGE_HEALTH_URL = `${BRIDGE_ORIGIN}/__livelysam__/health`;
+  const BridgeClient = LS.BridgeClient;
+  const BRIDGE_ORIGIN = BridgeClient.ORIGIN;
   const NATIVE_STATUS_URL = `${BRIDGE_ORIGIN}/__livelysam__/google-auth/status`;
   const NATIVE_LOGIN_URL = `${BRIDGE_ORIGIN}/__livelysam__/google-auth/login`;
   const NATIVE_TOKEN_URL = `${BRIDGE_ORIGIN}/__livelysam__/google-auth/token`;
@@ -279,7 +253,7 @@
   async function fetchJson(url, options = {}) {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeout = resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.default);
-    const headers = buildBridgeHeaders(options.headers || {});
+    const headers = BridgeClient.buildHeaders(options.headers || {});
     let timeoutId = null;
 
     try {
@@ -327,6 +301,14 @@
 
       return payload;
     } catch (error) {
+      const isBridgeRequest = BridgeClient.isBridgeUrl(url);
+      if (isBridgeRequest && !options._bridgeRetried && Number(error?.status || 0) === 403) {
+        await BridgeClient.hydrateTokenFromHealth({ force: true });
+        if (BridgeClient.getToken()) {
+          return fetchJson(url, { ...options, _bridgeRetried: true });
+        }
+      }
+
       if (error?.name === 'AbortError') {
         const timeoutError = new Error(`요청 시간이 초과되었습니다. (${timeout}ms)`);
         timeoutError.name = 'TimeoutError';
@@ -371,13 +353,9 @@
   }
 
   async function probeBridgeHealth(options = {}) {
-    try {
-      return await fetchJson(BRIDGE_HEALTH_URL, {
-        timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.health)
-      });
-    } catch {
-      return null;
-    }
+    return BridgeClient.fetchHealth({
+      timeout: resolveTimeout(options.timeout, GOOGLE_TIMEOUTS.health)
+    });
   }
 
   function getRuntimeMode() {
@@ -2879,12 +2857,29 @@
       loadPersistedState();
       const targetDate = text(dateStr);
       const boundKeys = getBoundRemoteCalendarKeys();
-      return clone(
-        cacheState.events
-          .filter((item) => (!targetDate || text(item.date) === targetDate))
-          .filter((item) => !boundKeys.has(`${text(item.calendarId)}:${text(item.id)}`))
-          .map((item) => toGoogleCalendarEntry(item))
-      );
+      return cacheState.events
+        .filter((item) => (!targetDate || text(item.date) === targetDate))
+        .filter((item) => !boundKeys.has(`${text(item.calendarId)}:${text(item.id)}`))
+        .map((item) => toGoogleCalendarEntry(item));
+    },
+
+    /*
+     * 렌더 핫패스용: 캐시 상태 로드/필터를 1회만 수행하고
+     * 날짜(YYYY-MM-DD)별로 묶은 인덱스를 돌려준다.
+     * 달력처럼 여러 날짜를 한 번에 그릴 때 getCalendarEntries를
+     * 날짜마다 부르는 대신 이 결과를 조회한다.
+     */
+    getCalendarEntriesByDate() {
+      loadPersistedState();
+      const boundKeys = getBoundRemoteCalendarKeys();
+      const byDate = {};
+      cacheState.events.forEach((item) => {
+        const dateKey = text(item.date);
+        if (!dateKey) return;
+        if (boundKeys.has(`${text(item.calendarId)}:${text(item.id)}`)) return;
+        (byDate[dateKey] = byDate[dateKey] || []).push(toGoogleCalendarEntry(item));
+      });
+      return byDate;
     },
 
     getTasks() {

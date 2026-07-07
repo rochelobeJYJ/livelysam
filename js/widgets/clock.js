@@ -5,9 +5,20 @@
   LS.ClockWidget = {
     _interval: null,
     _analogCtx: null,
+    _moonRenderKey: '',
+    _moonRenderCanvas: null,
 
     init() {
       this._startClock();
+    },
+
+    /* 캔버스는 CSS 변수를 해석하지 못하므로 실제 색상값으로 변환해서 쓴다. */
+    _getThemeColors() {
+      const styles = getComputedStyle(document.documentElement);
+      return {
+        primary: styles.getPropertyValue('--theme-primary').trim() || '#4DABF7',
+        accent: styles.getPropertyValue('--theme-accent').trim() || '#228BE6'
+      };
     },
 
     _startClock() {
@@ -148,6 +159,7 @@
       const size = canvas.width;
       const center = size / 2;
       const radius = center - 8;
+      const colors = this._getThemeColors();
 
       ctx.clearRect(0, 0, size, size);
 
@@ -156,7 +168,7 @@
       ctx.arc(center, center, radius, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255,255,255,0.15)';
       ctx.fill();
-      ctx.strokeStyle = 'var(--theme-primary)';
+      ctx.strokeStyle = colors.primary;
       ctx.lineWidth = 2;
       ctx.stroke();
 
@@ -168,7 +180,7 @@
         ctx.beginPath();
         ctx.moveTo(center + innerR * Math.cos(angle), center + innerR * Math.sin(angle));
         ctx.lineTo(center + (radius - 3) * Math.cos(angle), center + (radius - 3) * Math.sin(angle));
-        ctx.strokeStyle = isMain ? 'var(--theme-accent)' : 'rgba(100,100,100,0.5)';
+        ctx.strokeStyle = isMain ? colors.accent : 'rgba(100,100,100,0.5)';
         ctx.lineWidth = isMain ? 2.5 : 1;
         ctx.stroke();
       }
@@ -178,9 +190,9 @@
       const s = now.getSeconds();
 
       // 시침
-      this._drawHand(ctx, center, (h + m / 60) * 30 - 90, radius * 0.5, 3.5, 'var(--theme-accent)');
+      this._drawHand(ctx, center, (h + m / 60) * 30 - 90, radius * 0.5, 3.5, colors.accent);
       // 분침
-      this._drawHand(ctx, center, (m + s / 60) * 6 - 90, radius * 0.7, 2.5, 'var(--theme-primary)');
+      this._drawHand(ctx, center, (m + s / 60) * 6 - 90, radius * 0.7, 2.5, colors.primary);
       // 초침
       if (LS.Config.get('showSeconds')) {
         this._drawHand(ctx, center, s * 6 - 90, radius * 0.8, 1, '#FF6B6B');
@@ -189,7 +201,7 @@
       // 중심점
       ctx.beginPath();
       ctx.arc(center, center, 4, 0, Math.PI * 2);
-      ctx.fillStyle = 'var(--theme-accent)';
+      ctx.fillStyle = colors.accent;
       ctx.fill();
     },
 
@@ -208,6 +220,15 @@
       const moonWrap = document.getElementById('clock-moon');
       const moonCanvas = document.getElementById('clock-moon-canvas');
       if (!moonWrap || !moonCanvas || !LS.Helpers?.getMoonPhaseInfo) return;
+
+      // 달 위상은 하루 단위로만 바뀌므로 픽셀 렌더를 매초 반복하지 않는다.
+      // 위젯 재마운트로 캔버스 요소가 교체되면 날짜가 같아도 다시 그린다.
+      const dateKey = LS.Helpers.formatDate(now, 'YYYY-MM-DD');
+      if (this._moonRenderKey === dateKey && this._moonRenderCanvas === moonCanvas) {
+        return;
+      }
+      this._moonRenderKey = dateKey;
+      this._moonRenderCanvas = moonCanvas;
 
       const info = LS.Helpers.getMoonPhaseInfo(now);
 

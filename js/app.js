@@ -61,6 +61,8 @@
   const GOOGLE_REALTIME_SYNC_INTERVAL_MS = 60 * 1000;
   const GOOGLE_REALTIME_SYNC_STALE_MS = 60 * 1000;
   const GOOGLE_FOCUS_SYNC_STALE_MS = 15 * 1000;
+  /* 버전 고정 필수: 미고정 CDN 경로는 배포본이 예고 없이 바뀐다. */
+  const XLSX_LIBRARY_SRC = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
 
   LS.App = {
     grid: null,
@@ -93,6 +95,7 @@
     _settingsSessionSnapshot: null,
     _settingsSyncing: false,
     _settingsTimetableRefreshTimer: 0,
+    _xlsxLoadPromise: null,
     _floatingDockExpanded: false,
     _floatingDockCollapseTimer: 0,
     _googleAutoSyncTimer: 0,
@@ -2154,16 +2157,27 @@
 
     async _initWidgets() {
       LS.ClockWidget.init();
-      await LS.TimetableWidget.init();
-      await LS.MealWidget.init();
-      await LS.WeatherWidget.init();
-      await LS.CalendarWidget.init();
-      await LS.MemoWidget.init();
-      await LS.TodoWidget.init();
       LS.TimerWidget.init();
       LS.DdayWidget.init();
-      await LS.BookmarksWidget.init();
-      await LS.ShortcutsWidget.init();
+
+      // 서로 독립적인 위젯이므로 병렬 초기화한다. 직렬 await는 느린 API
+      // (예: 날씨 지오코딩) 하나가 나머지 위젯 표시까지 지연시킨다.
+      const asyncWidgets = [
+        ['timetable', LS.TimetableWidget],
+        ['meal', LS.MealWidget],
+        ['weather', LS.WeatherWidget],
+        ['calendar', LS.CalendarWidget],
+        ['memo', LS.MemoWidget],
+        ['todo', LS.TodoWidget],
+        ['bookmarks', LS.BookmarksWidget],
+        ['shortcuts', LS.ShortcutsWidget]
+      ];
+      const results = await Promise.allSettled(asyncWidgets.map(([, widget]) => widget.init()));
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.warn(`[LivelySam] ${asyncWidgets[index][0]} 위젯 초기화 실패:`, result.reason);
+        }
+      });
     },
 
     async _refreshData() {
@@ -2395,7 +2409,7 @@
       return syncTask;
     },
 
-    /* ?? ?ㅼ젙 紐⑤떖 ?? */
+    /* ── 설정 모달 ── */
     _initSettingsModal() {
       this._mountSettingsModal();
       const settingsBtn = this._ensureSettingsButton();
@@ -4627,6 +4641,12 @@
     },
 
     _refreshGoogleSettingsStatus() {
+      // 설정 모달이 닫혀 있으면 건너뛴다. 동기화 진행 이벤트마다 보이지 않는
+      // 패널을 다시 그릴 필요가 없고, 모달을 열 때 _populateSettingsForm이
+      // 어차피 최신 상태로 다시 그린다.
+      if (!document.getElementById('settings-modal')?.classList.contains('active')) {
+        return;
+      }
       const statusBox = document.getElementById('google-status-display');
       const connectBtn = document.getElementById('google-connect-btn');
       const syncBtn = document.getElementById('google-sync-btn');
@@ -5658,9 +5678,30 @@
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
     },
 
-    _downloadTeacherTimetableTemplate() {
-      if (!window.XLSX) {
-        LS.Helpers.showToast('엑셀 라이브러리를 불러오지 못했습니다.', 'error', 3200);
+    /* SheetJS(~1MB)는 엑셀 가져오기/내보내기에서만 쓰이므로 그때 로드한다. */
+    async _ensureXlsxLoaded() {
+      if (window.XLSX) return window.XLSX;
+      if (!this._xlsxLoadPromise) {
+        this._xlsxLoadPromise = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = XLSX_LIBRARY_SRC;
+          script.onload = () => resolve(window.XLSX);
+          script.onerror = () => {
+            this._xlsxLoadPromise = null;
+            script.remove();
+            reject(new Error('엑셀 라이브러리를 불러오지 못했습니다.'));
+          };
+          document.head.appendChild(script);
+        });
+      }
+      return this._xlsxLoadPromise;
+    },
+
+    async _downloadTeacherTimetableTemplate() {
+      try {
+        await this._ensureXlsxLoaded();
+      } catch {
+        LS.Helpers.showToast('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.', 'error', 3200);
         return;
       }
 
@@ -5698,9 +5739,11 @@
       LS.Helpers.showToast('교사용 시간표 양식을 다운로드했습니다.', 'success');
     },
 
-    _importTeacherTimetableExcel() {
-      if (!window.XLSX) {
-        LS.Helpers.showToast('엑셀 라이브러리를 불러오지 못했습니다.', 'error', 3200);
+    async _importTeacherTimetableExcel() {
+      try {
+        await this._ensureXlsxLoaded();
+      } catch {
+        LS.Helpers.showToast('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.', 'error', 3200);
         return;
       }
 

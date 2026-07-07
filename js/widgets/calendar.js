@@ -580,6 +580,7 @@
     _schoolScheduleCache: {},
     _astronomySchedule: [],
     _astronomyScheduleCache: {},
+    _googleEntriesByDate: null,
     _bound: false,
 
     async init() {
@@ -751,6 +752,10 @@
     },
 
     render() {
+      // 렌더 시작 시 무효화: 셀마다 Google 캐시 전체를 복제하지 않도록
+      // 이번 렌더에서 처음 필요할 때 한 번만 날짜 인덱스를 만든다.
+      this._googleEntriesByDate = null;
+
       const titleEl = document.getElementById('cal-title');
       if (titleEl) {
         titleEl.textContent = this._getTitle();
@@ -1091,6 +1096,13 @@
       });
     },
 
+    _getGoogleEntriesByDate() {
+      if (!this._googleEntriesByDate) {
+        this._googleEntriesByDate = LS.GoogleWorkspace?.getCalendarEntriesByDate?.() || {};
+      }
+      return this._googleEntriesByDate;
+    },
+
     _getEventsForDate(dateStr) {
       const events = [];
       const includeSchool = this._filter !== 'personal';
@@ -1132,7 +1144,7 @@
         LS.Records.getCalendarEntries(dateStr).forEach((entry) => {
           events.push(entry);
         });
-        LS.GoogleWorkspace?.getCalendarEntries?.(dateStr)?.forEach((entry) => {
+        (this._getGoogleEntriesByDate()[dateStr] || []).forEach((entry) => {
           events.push(entry);
         });
       }

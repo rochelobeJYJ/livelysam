@@ -1,11 +1,11 @@
 ﻿
-// --- (異붽?) 1. ?ъ슜???대쫫 諛??쒕쾭 URL ?ㅼ젙 ---
+// --- (추가) 1. 사용자 이름 및 서버 URL 설정 ---
         const MINIGAME_ID = 'wing-tap-2';
         const IS_PREVIEW_MODE = new URLSearchParams(window.location.search).get('preview') === '1';
         const gameUsername = localStorage.getItem('j_game_username') || 'Guest';
         console.log(gameUsername + "?섏씠 寃뚯엫???쒖옉?⑸땲??");
 
-        const GAME_ID = "game2"; // ?숉꺆 2?대?濡?"game2"
+        const GAME_ID = "game2"; // 윙탭 2이므로 "game2"
 
         function returnToMinigameHub() {
             try {
@@ -29,7 +29,7 @@
             return window.LivelySam?.Leaderboard || null;
         }
 
-        // --- 珥덇린 ?ㅼ젙 ---
+        // --- 초기 설정 ---
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const WIDTH = canvas.width;
@@ -83,7 +83,7 @@
         const FONT_30 = 'bold 30px consolas';
         const FONT_70 = 'bold 70px consolas';
         const FONT_18 = 'bold 18px consolas';
-// --- (異붽?) 寃뚯엫?ㅻ쾭 ?붾㈃ 踰꾪듉 ?곸뿭 ---
+// --- (추가) 게임오버 화면 버튼 영역 ---
     	const RESTART_BTN_RECT = { x: WIDTH/2 - 141, y: HEIGHT/2 + 150, w: 280, h: 50 };
     	const LOBBY_BTN_RECT = { x: WIDTH/2 - 141, y: HEIGHT/2 + 210, w: 280, h: 50 };
 	
@@ -170,10 +170,10 @@
         let currentSpawnRate;
         let scoreSubmitted; 
 
-	let isSubmitting = false; // (異붽?) ?먯닔 ?꾩넚以??뚮옒洹?
-	let serverStatusMessage = ""; // (異붽?) ?쒕쾭 硫붿떆吏 ?쒖떆??
+	let isSubmitting = false; // (추가) 점수 전송중 플래그
+	let serverStatusMessage = ""; // (추가) 서버 메시지 표시용
 
-        // --- ?대옒???뺤쓽 ---
+        // --- 클래스 정의 ---
 
         class Plane {
             constructor(x, y, typeKey) {
@@ -303,7 +303,7 @@
                     ctx.fill();
                 }
                 
-                // ?대뱶 (v15.2: ??媛源앷쾶)
+                // 필드 (v15.2: 더 가깝게)
                 if (this.hasShield) {
                     const shieldCenterX = 55; 
                     const shieldAngle = Math.PI / 2.2; 
@@ -947,9 +947,9 @@
             );
         }
 
-// --- (異붽?) 5. ?쒕쾭 ?듭떊 ?⑥닔 (?숉꺆1?먯꽌 蹂듭궗) ---
+// --- (추가) 5. 서버 통신 함수 (윙탭1에서 복사) ---
       /**
-     * ?먯닔 '?꾩넚'留??대떦?섎뒗 ?⑥닔
+     * 점수 '전송'만 담당하는 함수
      */
     async function submitScore(finalScore) {
         const leaderboard = getLeaderboardBridge();
@@ -1232,7 +1232,7 @@
                 }
                 explosionDone = true;
 
-                // 2. (異붽?) ?쒕쾭 濡쒖쭅??泥섎━??鍮꾨룞湲??⑥닔
+                // 2. (추가) 서버 로직을 처리할 비동기 함수
                 async function handleGameOverLogic() {
                     const finalScore = score;
 
@@ -1268,7 +1268,7 @@
                     isSubmitting = false; // (以묒슂) ?좉툑 ?댁젣
                 }
 
-                // 6. (異붽?) 鍮꾨룞湲??⑥닔 ?ㅽ뻾
+                // 6. (추가) 비동기 함수 실행
                 handleGameOverLogic();
                 }
             }
@@ -1417,13 +1417,13 @@
                 particles.forEach(p => p.draw(ctx)); 
                 plane.draw(ctx); 
 
-// 3. (異붽?) 留덉슦???몃쾭 媛먯? (?붿껌 1)
+// 3. (추가) 마우스 호버 감지 (요청 1)
             const restartHover = (mouseX > RESTART_BTN_RECT.x && mouseX < RESTART_BTN_RECT.x + RESTART_BTN_RECT.w &&
                                 mouseY > RESTART_BTN_RECT.y && mouseY < RESTART_BTN_RECT.y + RESTART_BTN_RECT.h);
             const lobbyHover = (mouseX > LOBBY_BTN_RECT.x && mouseX < LOBBY_BTN_RECT.x + LOBBY_BTN_RECT.w &&
                               mouseY > LOBBY_BTN_RECT.y && mouseY < LOBBY_BTN_RECT.y + LOBBY_BTN_RECT.h);
 
-            // 4. (異붽?) ?명꽣?숉떚釉?諛뺤뒪 踰꾪듉 洹몃━湲?(?붿껌 1)
+            // 4. (추가) 인터랙티브 박스 버튼 그리기 (요청 1)
 
             // RESTART 踰꾪듉
             ctx.fillStyle = restartHover ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.1)';
@@ -1435,7 +1435,7 @@
             ctx.fillRect(LOBBY_BTN_RECT.x, LOBBY_BTN_RECT.y, LOBBY_BTN_RECT.w, LOBBY_BTN_RECT.h);
             drawTextWithShadow(ctx, "[ LOBBY ]", FONT_RETRO_24, WHITE, LOBBY_BTN_RECT.x + LOBBY_BTN_RECT.w / 2, LOBBY_BTN_RECT.y + LOBBY_BTN_RECT.h / 2, 'center', 'middle');
 
-            // 5. (?섏젙) 以꾨컮轅덉씠 ?곸슜???쒕쾭 硫붿떆吏 異쒕젰 (?붿껌 2, 5)
+            // 5. (수정) 줄바꿈이 적용된 서버 메시지 출력 (요청 2, 5)
             drawMultilineTextWithShadow(ctx, serverStatusMessage, FONT_24, THRUST_YELLOW, WIDTH / 2, HEIGHT / 2 + 80, 'center', 'middle', 18);
             }
 
@@ -1444,7 +1444,7 @@
 
 
 
-        // --- ?대깽??由ъ뒪??---
+        // --- 이벤트 리스너 ---
         const handleInput = (e) => {
      if (isSubmitting) return; // ?꾩넚 以묒씪 ???꾨Т寃껊룄 ????
 
@@ -1532,17 +1532,17 @@ window.addEventListener('mousedown', (e) => {
                  handleInput(e); 
             } else if (gameState === 'gameOver') {
                 // (?섏젙) 'gameOver' ?곹깭???뚮뒗 踰꾪듉 濡쒖쭅留?吏곸젒 泥섎━
-                // (?대븣 handleInput()???몄텧?섏? ?딆뒿?덈떎!)
+                // (이때 handleInput()은 호출되지 않습니다!)
                 
                 if (isSubmitting) return; // ?꾩넚 以묒씠硫??꾨Т寃껊룄 ????
 
-                // RESTART 踰꾪듉 ?대┃ ?뺤씤
+                // RESTART 버튼 클릭 확인
                 if (clickX > RESTART_BTN_RECT.x && clickX < RESTART_BTN_RECT.x + RESTART_BTN_RECT.w &&
                     clickY > RESTART_BTN_RECT.y && clickY < RESTART_BTN_RECT.y + RESTART_BTN_RECT.h) {
                     startGame(); // 踰꾪듉???뚮????뚮쭔 ?ъ떆??
                 }
                 
-                // LOBBY 踰꾪듉 ?대┃ ?뺤씤
+                // LOBBY 버튼 클릭 확인
                 if (clickX > LOBBY_BTN_RECT.x && clickX < LOBBY_BTN_RECT.x + LOBBY_BTN_RECT.w &&
                     clickY > LOBBY_BTN_RECT.y && clickY < LOBBY_BTN_RECT.y + LOBBY_BTN_RECT.h) {
                     returnToMinigameHub();
@@ -1568,7 +1568,7 @@ window.addEventListener('mousedown', (e) => {
                  handleInput(e);
             } else if (gameState === 'gameOver') {
                 // (?섏젙) 'gameOver' ?곹깭???뚮뒗 踰꾪듉 濡쒖쭅留?吏곸젒 泥섎━
-                // (?대븣 handleInput()???몄텧?섏? ?딆뒿?덈떎!)
+                // (이때 handleInput()은 호출되지 않습니다!)
                 
                 if (isSubmitting) return; // ?꾩넚 以묒씠硫??꾨Т寃껊룄 ????
 

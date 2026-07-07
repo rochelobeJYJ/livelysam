@@ -5,33 +5,13 @@
 
   const STORAGE_KEY = 'shortcutItems';
 
-  function getBridgeQueryParam(key) {
-    const helper = LS.Helpers?.getRuntimeQueryParam;
-    if (typeof helper === 'function') {
-      return helper(key, '');
-    }
-    try {
-      return new URLSearchParams(window.location.search || '').get(key) || '';
-    } catch {
-      return '';
-    }
-  }
-
-  function resolveBridgePort() {
-    const candidate = String(getBridgeQueryParam('bridgePort') || '').trim();
-    return /^\d{2,5}$/.test(candidate) ? candidate : '58671';
-  }
+  const BridgeClient = LS.BridgeClient;
 
   function buildBridgeHeaders(headers = {}) {
-    const token = String(getBridgeQueryParam('livelySamToken') || '').trim();
-    if (!token) return { ...(headers || {}) };
-    return {
-      ...(headers || {}),
-      'X-LivelySam-Token': token
-    };
+    return BridgeClient.buildHeaders(headers);
   }
 
-  const BRIDGE_ORIGIN = `http://127.0.0.1:${resolveBridgePort()}`;
+  const BRIDGE_ORIGIN = BridgeClient.ORIGIN;
   const SHELL_OPEN_URL = `${BRIDGE_ORIGIN}/__livelysam__/shell/open`;
   const SHELL_INSPECT_URL = `${BRIDGE_ORIGIN}/__livelysam__/shell/inspect`;
   const ICON_SCALES = new Set(['small', 'medium', 'large']);

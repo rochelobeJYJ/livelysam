@@ -42,6 +42,12 @@ DEFAULT_SCOPES = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/tasks",
 ]
+# Google's token responses report the shorthand scopes below with their full
+# canonical URIs, so scope comparisons must normalize both sides first.
+SCOPE_ALIASES = {
+    "email": "https://www.googleapis.com/auth/userinfo.email",
+    "profile": "https://www.googleapis.com/auth/userinfo.profile",
+}
 AUTH_FILE_NAME = "google-native-auth.json"
 CONFIG_FILE_NAME = "google-oauth-desktop.json"
 
@@ -440,7 +446,21 @@ class GoogleOAuthBridge:
         digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()
         return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
-    def _run_loopback_flow(self, config: dict[str, Any], scopes: list[str]) -> dict[str, Any]:
+    def _needs_consent_prompt(self, auth: dict[str, Any] | None, scopes: list[str]) -> bool:
+        if not auth or not text(auth.get("refreshToken")):
+            return True
+
+        granted = {
+            SCOPE_ALIASES.get(scope, scope)
+            for scope in text(auth.get("scope")).split()
+            if scope
+        }
+        return any(
+            SCOPE_ALIASES.get(scope, scope) not in granted
+            for scope in normalize_scopes(scopes)
+        )
+
+    def _run_loopback_flow(self, config: dict[str, Any], scopes: list[str], current_auth: dict[str, Any] | None = None) -> dict[str, Any]:
         event = threading.Event()
         server = LoopbackOAuthServer(("127.0.0.1", 0), LoopbackOAuthHandler)
         server.oauth_event = event  # type: ignore[attr-defined]
@@ -451,20 +471,19 @@ class GoogleOAuthBridge:
         redirect_uri = f"http://127.0.0.1:{server.server_port}/oauth2/callback"
         code_verifier = self._build_code_verifier()
         state = secrets.token_urlsafe(24)
-        query = urllib.parse.urlencode(
-            {
-                "client_id": config["client_id"],
-                "redirect_uri": redirect_uri,
-                "response_type": "code",
-                "scope": " ".join(normalize_scopes(scopes)),
-                "access_type": "offline",
-                "include_granted_scopes": "true",
-                "prompt": "consent select_account",
-                "state": state,
-                "code_challenge": self._build_code_challenge(code_verifier),
-                "code_challenge_method": "S256",
-            }
-        )
+        auth_params = {
+            "client_id": config["client_id"],
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(normalize_scopes(scopes)),
+            "access_type": "offline",
+            "include_granted_scopes": "true",
+            "prompt": "consent select_account" if self._needs_consent_prompt(current_auth, scopes) else "select_account",
+            "state": state,
+            "code_challenge": self._build_code_challenge(code_verifier),
+            "code_challenge_method": "S256",
+        }
+        query = urllib.parse.urlencode(auth_params)
         auth_url = f"{config['auth_uri']}?{query}"
 
         self._set_login_state(in_progress=True, message="브라우저에서 Google 로그인을 진행해 주세요.")
@@ -533,8 +552,9 @@ class GoogleOAuthBridge:
 
     def _login_worker(self, config: dict[str, Any], scopes: list[str]) -> None:
         try:
-            result = self._run_loopback_flow(config, scopes)
-            merged = self._merge_auth(self._read_auth(), result)
+            current_auth = self._read_auth()
+            result = self._run_loopback_flow(config, scopes, current_auth)
+            merged = self._merge_auth(current_auth, result)
             if not text(merged.get("refreshToken")):
                 raise RuntimeError("Google에서 갱신 토큰을 주지 않았습니다. 같은 계정으로 다시 시도해 주세요.")
             self._write_auth(merged)
