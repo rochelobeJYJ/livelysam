@@ -196,8 +196,48 @@ Write-Result @{
   updated_at = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
 }
 
-`$managedDir = if (`$env:LIVELYSAM_WEBVIEW2_MANAGED_DIR) { `$env:LIVELYSAM_WEBVIEW2_MANAGED_DIR } else { 'C:\Program Files (x86)\Hnc\Office 2024\HncUtils\Service' }
-`$loaderDir = if (`$env:LIVELYSAM_WEBVIEW2_LOADER_DIR) { `$env:LIVELYSAM_WEBVIEW2_LOADER_DIR } elseif (Test-Path 'C:\Program Files\Microsoft Office\root\Office16\WebView2Loader.dll') { 'C:\Program Files\Microsoft Office\root\Office16' } elseif (Test-Path 'C:\Program Files\Microsoft OneDrive\26.055.0323.0004\WebView2Loader.dll') { 'C:\Program Files\Microsoft OneDrive\26.055.0323.0004' } else { 'C:\Program Files\Microsoft OneDrive\26.040.0301.0001' }
+# WebView2 DLL resolution. The managed wrappers (Core/Wpf) ship with the SDK
+# (scavenged from Office/Hancom or bundled with the app); the native loader can
+# come from the Evergreen WebView2 Runtime. Version-pinned paths are brittle, so
+# resolve dynamically with fallbacks and only fail if nothing is found.
+function Test-WebView2Dir([string]`$Dir, [string]`$FileName) {
+  if ([string]::IsNullOrWhiteSpace(`$Dir)) { return `$false }
+  return (Test-Path -LiteralPath (Join-Path `$Dir `$FileName))
+}
+function Find-WebView2Dir([string[]]`$Candidates, [string]`$FileName) {
+  foreach (`$dir in `$Candidates) {
+    if (Test-WebView2Dir `$dir `$FileName) { return `$dir }
+  }
+  return `$null
+}
+function Get-WebView2VersionDirs([string]`$BaseDir) {
+  if (-not (Test-Path -LiteralPath `$BaseDir)) { return @() }
+  return @(Get-ChildItem -LiteralPath `$BaseDir -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | ForEach-Object { `$_.FullName })
+}
+function Search-WebView2Dir([string]`$FileName) {
+  `$roots = @(`$env:ProgramFiles, `${env:ProgramFiles(x86)}, (Join-Path `$env:LOCALAPPDATA 'Microsoft')) | Where-Object { `$_ -and (Test-Path -LiteralPath `$_) }
+  foreach (`$root in `$roots) {
+    try {
+      `$hit = Get-ChildItem -LiteralPath `$root -Recurse -Filter `$FileName -Force -ErrorAction SilentlyContinue | Select-Object -First 1
+      if (`$hit) { return (Split-Path -Parent `$hit.FullName) }
+    } catch { }
+  }
+  return `$null
+}
+`$dynamicWebView2Dirs = @()
+`$dynamicWebView2Dirs += Get-WebView2VersionDirs (Join-Path `${env:ProgramFiles(x86)} 'Microsoft\EdgeWebView\Application')
+`$dynamicWebView2Dirs += Get-WebView2VersionDirs (Join-Path `$env:ProgramFiles 'Microsoft\EdgeWebView\Application')
+`$dynamicWebView2Dirs += Get-WebView2VersionDirs 'C:\Program Files\Microsoft OneDrive'
+`$managedCandidates = @(`$env:LIVELYSAM_WEBVIEW2_MANAGED_DIR, (Join-Path `$RootPath 'runtime\webview2'), (Join-Path `$RootPath 'webview2'), 'C:\Program Files (x86)\Hnc\Office 2024\HncUtils\Service', 'C:\Program Files\Microsoft Office\root\Office16')
+`$managedDir = Find-WebView2Dir `$managedCandidates 'Microsoft.Web.WebView2.Wpf.dll'
+if (-not `$managedDir) { `$managedDir = Search-WebView2Dir 'Microsoft.Web.WebView2.Wpf.dll' }
+`$loaderCandidates = @(`$env:LIVELYSAM_WEBVIEW2_LOADER_DIR, 'C:\Program Files\Microsoft Office\root\Office16') + `$dynamicWebView2Dirs + @(`$managedDir)
+`$loaderDir = Find-WebView2Dir `$loaderCandidates 'WebView2Loader.dll'
+if (-not `$loaderDir) { `$loaderDir = Search-WebView2Dir 'WebView2Loader.dll' }
+if (-not `$managedDir -or -not `$loaderDir) {
+  throw ('WebView2 runtime DLLs not found (managed=' + `$managedDir + ' loader=' + `$loaderDir + '). Set LIVELYSAM_WEBVIEW2_MANAGED_DIR / LIVELYSAM_WEBVIEW2_LOADER_DIR.')
+}
+Log-Message ('WebView2 resolved: managed=' + `$managedDir + ' loader=' + `$loaderDir)
 
 `$port = Get-AppServerPort
 `$statusUrl = 'http://127.0.0.1:' + `$port + '/index.html?runtime=desktophost'
@@ -413,6 +453,10 @@ public static class LivelySamInlineNative {
   [DllImport("user32.dll", SetLastError=true)] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
   [DllImport("user32.dll", SetLastError=true)] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
   [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+  [DllImport("shcore.dll")] static extern int SetProcessDpiAwareness(int value);
+  [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(LivelySamPoint pt, uint dwFlags);
+  [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
   [DllImport("user32.dll")] static extern bool ScreenToClient(IntPtr hWnd, ref LivelySamPoint point);
   [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc callback, IntPtr lParam);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
@@ -425,7 +469,21 @@ public static class LivelySamInlineNative {
   [DllImport("ole32.dll")] static extern void OleUninitialize();
   [DllImport("ole32.dll")] static extern int RegisterDragDrop(IntPtr hwnd, [MarshalAs(UnmanagedType.Interface)] ILivelySamDropTarget dropTarget);
   [DllImport("ole32.dll")] static extern int RevokeDragDrop(IntPtr hwnd);
-  public static void EnableDpiAwareness(){ try { SetProcessDPIAware(); } catch { } }
+  static readonly IntPtr DPI_PMV2 = new IntPtr(-4);
+  public static void EnableDpiAwareness(){
+    try { if (SetProcessDpiAwarenessContext(DPI_PMV2)) return; } catch { }
+    try { if (SetProcessDpiAwareness(2) == 0) return; } catch { }
+    try { SetProcessDPIAware(); } catch { }
+  }
+  public static double GetMonitorScale(int x, int y){
+    try {
+      LivelySamPoint p; p.X = x; p.Y = y;
+      IntPtr mon = MonitorFromPoint(p, 2u);
+      uint dx, dy;
+      if (GetDpiForMonitor(mon, 0, out dx, out dy) == 0 && dx > 0) { return (double)dx / 96.0; }
+    } catch { }
+    return 1.0;
+  }
   public static void AttachInteractive(IntPtr hwnd, int x,int y,int w,int h){ long style=GetWindowLongPtr(hwnd,GWL_STYLE).ToInt64(); style=(style & ~(WS_CAPTION|WS_THICKFRAME|WS_SYSMENU|WS_MINIMIZEBOX|WS_MAXIMIZEBOX|WS_POPUP)) | WS_VISIBLE; SetWindowLongPtr(hwnd,GWL_STYLE,new IntPtr(style)); long ex=GetWindowLongPtr(hwnd,GWL_EXSTYLE).ToInt64(); ex=(ex & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW; SetWindowLongPtr(hwnd,GWL_EXSTYLE,new IntPtr(ex)); SetWindowPos(hwnd, HWND_BOTTOM, x,y,w,h, SWP_SHOWWINDOW|SWP_FRAMECHANGED); ShowWindow(hwnd,5); }
   public static void KeepBottom(IntPtr hwnd, int x,int y,int w,int h){ SetWindowPos(hwnd, HWND_BOTTOM, x,y,w,h, SWP_NOACTIVATE|SWP_SHOWWINDOW); }
   public static void BringToFront(IntPtr hwnd, int x,int y,int w,int h){ SetWindowPos(hwnd, HWND_TOPMOST, x,y,w,h, SWP_SHOWWINDOW); ShowWindow(hwnd,5); SetForegroundWindow(hwnd); }
@@ -576,14 +634,24 @@ if (-not `$targetScreen) {
   `$targetTop = `$workArea.Y
   `$targetWidth = `$workArea.Width
   `$targetHeight = `$workArea.Height
+  # WorkingArea/SetWindowPos are physical pixels (per-monitor DPI aware). WPF
+  # Window.Left/Top/Width/Height are logical DIPs, so on a monitor whose scale
+  # differs from where WPF assumes, physical values fight SetWindowPos and the
+  # window shifts/oversizes. Convert to DIP using the target monitor's scale.
+  `$monitorScale = [double][LivelySamInlineNative]::GetMonitorScale([int](`$targetLeft + [Math]::Floor(`$targetWidth / 2)), [int](`$targetTop + [Math]::Floor(`$targetHeight / 2)))
+  if (`$monitorScale -le 0) { `$monitorScale = 1.0 }
+  `$dipLeft = `$targetLeft / `$monitorScale
+  `$dipTop = `$targetTop / `$monitorScale
+  `$dipWidth = `$targetWidth / `$monitorScale
+  `$dipHeight = `$targetHeight / `$monitorScale
   `$activatorWidth = 20
-  `$activatorHeight = [Math]::Min(110, [Math]::Max(78, [int]([Math]::Round(`$targetHeight * 0.16))))
+  `$activatorHeight = [Math]::Min(110, [Math]::Max(78, [int]([Math]::Round(`$dipHeight * 0.16))))
   `$window = New-Object System.Windows.Window
   `$window.Title = 'LivelySam Desktop Host'
-  `$window.Left = `$targetLeft
-  `$window.Top = `$targetTop
-  `$window.Width = `$targetWidth
-  `$window.Height = `$targetHeight
+  `$window.Left = `$dipLeft
+  `$window.Top = `$dipTop
+  `$window.Width = `$dipWidth
+  `$window.Height = `$dipHeight
   `$window.WindowStyle = [System.Windows.WindowStyle]::None
   `$window.ResizeMode = [System.Windows.ResizeMode]::NoResize
   `$window.ShowInTaskbar = `$false
@@ -645,8 +713,8 @@ if (-not `$targetScreen) {
 
   function Update-ActivatorPlacement {
     if (-not `$script:activatorWindow) { return }
-    `$script:activatorWindow.Left = `$targetLeft + `$targetWidth - `$activatorWidth
-    `$script:activatorWindow.Top = `$targetTop + [Math]::Max(28, [int]([Math]::Round((`$targetHeight - `$activatorHeight) / 2)))
+    `$script:activatorWindow.Left = `$dipLeft + `$dipWidth - `$activatorWidth
+    `$script:activatorWindow.Top = `$dipTop + [Math]::Max(28, [int]([Math]::Round((`$dipHeight - `$activatorHeight) / 2)))
     `$script:activatorWindow.Width = `$activatorWidth
     `$script:activatorWindow.Height = `$activatorHeight
   }

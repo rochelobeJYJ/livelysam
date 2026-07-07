@@ -1218,7 +1218,59 @@ class LauncherApp:
             self._log_warning("launcher window close raised TclError", exc)
 
 
+_SINGLE_INSTANCE_MUTEX = None
+
+
+def _acquire_single_instance() -> bool:
+    """Return True if this is the only launcher, False if another is already running.
+
+    Uses a Windows named mutex, which is released automatically when the owning
+    process exits, so a crashed instance never permanently blocks a restart. Any
+    failure degrades to allowing the launch, so this guard can never be the reason
+    the launcher fails to start.
+    """
+    global _SINGLE_INSTANCE_MUTEX
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+        handle = kernel32.CreateMutexW(None, False, "Local\\LivelySamLauncherSingleInstance")
+        if not handle:
+            return True
+        _SINGLE_INSTANCE_MUTEX = handle  # keep alive for the process lifetime
+        return kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+    except Exception:
+        return True
+
+
+def _focus_existing_launcher() -> None:
+    """Best-effort: bring an already-running launcher window to the foreground."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        user32.FindWindowW.restype = wintypes.HWND
+        user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        hwnd = user32.FindWindowW(None, "LivelySam")
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+
+
 def main() -> int:
+    if not _acquire_single_instance():
+        _focus_existing_launcher()
+        return 0
     root = tk.Tk()
     LauncherApp(root)
     root.mainloop()

@@ -731,6 +731,11 @@ def start_wallpaper(
     if preferred_monitor_primary in (0, 1):
         args.extend(["-PreferredMonitorPrimary", str(int(preferred_monitor_primary))])
 
+    # If the saved monitor preference points to a display that is currently
+    # disconnected (e.g. a laptop undocked from an external monitor), fall back
+    # to the primary display instead of failing the whole "배경 실행" action.
+    args.append("-AllowPrimaryFallback")
+
     return run_powershell_script(WALLPAPER_START_SCRIPT, *args, timeout=140)
 
 
